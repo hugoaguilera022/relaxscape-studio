@@ -26,7 +26,7 @@ async function generateAI(type){
   let v=null,m=null;
   try{
     if(type==="video"||type==="both"){
-      status.textContent="Generando vídeo con Veo 3.1… puede tardar unos minutos.";
+      status.textContent="Buscando un vídeo relajante gratuito…";
       v=await api("/api/generate-ai-video",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt,aspectRatio:$("#aiAspect").value})});
       $("#video").src=v.url;$("#download").href=v.url;$("#result").classList.remove("hidden");
     }
