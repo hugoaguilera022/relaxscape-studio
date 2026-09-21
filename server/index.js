@@ -1340,21 +1340,16 @@ function buildFreesoundQueries(input=""){
   return [...new Set(expanded)].filter(Boolean).slice(0,4);
 }
 
-app.get("/api/external-music-search", async (req,res)=>{
-  const key=process.env.FREESOUND_API_KEY;
-  if(!key){
-    return res.status(400).json({
-      error:"Falta FREESOUND_API_KEY en Render. Crea una clave gratuita de Freesound y añádela como variable de entorno."
-    });
-  }
-  const input=String(req.query.q||"").trim();
-  if(!input) return res.status(400).json({error:"Escribe qué música o sonido quieres buscar."});
+const freesoundSearchJobs=new Map();
+
+async function runFreesoundSearchJob(jobId,input){
+  const job=freesoundSearchJobs.get(jobId);
+  if(!job)return;
   try{
+    const key=process.env.FREESOUND_API_KEY;
+    if(!key)throw new Error("Falta FREESOUND_API_KEY en Render.");
     const queries=buildFreesoundQueries(input).slice(0,2);
     const all=[];
-
-    // Mantener la petición muy por debajo del límite de Render: solo se usan
-    // la búsqueda exacta y una variante semántica, ambas en paralelo.
     const results=await Promise.allSettled(queries.map(async query=>{
       const url=new URL("https://freesound.org/apiv2/search/");
       url.searchParams.set("query",query);
@@ -1363,12 +1358,11 @@ app.get("/api/external-music-search", async (req,res)=>{
       url.searchParams.set("fields","id,name,tags,username,license,url,duration,previews,description,avg_rating,num_downloads");
       const r=await fetchWithTimeout(url.toString(),{
         headers:{Authorization:"Token "+key,Accept:"application/json"}
-      },8000);
+      },7000);
       const data=await r.json().catch(()=>({}));
-      if(!r.ok) throw new Error(data.detail||data.error||("HTTP "+r.status));
+      if(!r.ok)throw new Error(data.detail||data.error||("HTTP "+r.status));
       return Array.isArray(data.results)?data.results:[];
     }));
-
     for(let i=0;i<results.length;i++){
       const result=results[i];
       if(result.status==="rejected"){
@@ -1377,7 +1371,7 @@ app.get("/api/external-music-search", async (req,res)=>{
       }
       for(const x of result.value){
         const preview=x.previews?.["preview-hq-mp3"]||x.previews?.["preview-lq-mp3"];
-        if(!preview) continue;
+        if(!preview)continue;
         all.push({
           id:x.id,
           name:x.name||"Freesound audio",
@@ -1393,20 +1387,40 @@ app.get("/api/external-music-search", async (req,res)=>{
         });
       }
     }
-
     const unique=[];
     const seen=new Set();
     for(const x of all){
-      if(seen.has(x.id)) continue;
+      if(seen.has(x.id))continue;
       seen.add(x.id);
       unique.push(x);
     }
-    unique.sort((a,b)=>(b.rating||0)-(a.rating||0) || b.downloads-a.downloads);
-    res.json({provider:"Freesound",query:input,results:unique.slice(0,12)});
+    unique.sort((a,b)=>(b.rating||0)-(a.rating||0)||b.downloads-a.downloads);
+    job.status="succeeded";
+    job.result={provider:"Freesound",query:input,results:unique.slice(0,12)};
   }catch(e){
-    console.error("[Freesound Search] ERROR",e.stack||e.message);
-    res.json({provider:"Freesound",query:input,results:[],error:"Freesound no respondió correctamente: "+e.message});
+    console.error("[Freesound Search] ERROR",e.stack||e.message||e);
+    job.status="failed";
+    job.error=e?.message||String(e);
+  }finally{
+    setTimeout(()=>freesoundSearchJobs.delete(jobId),10*60*1000);
   }
+}
+
+app.post("/api/external-music-search", async (req,res)=>{
+  const input=String(req.body?.q||"").trim().slice(0,500);
+  if(!input)return res.status(400).json({error:"Escribe qué música o sonido quieres buscar."});
+  const jobId="fssearch-"+Date.now()+"-"+Math.random().toString(36).slice(2,8);
+  freesoundSearchJobs.set(jobId,{status:"running",result:null,error:null});
+  runFreesoundSearchJob(jobId,input);
+  res.status(202).json({jobId});
+});
+
+app.get("/api/external-music-search-status",(req,res)=>{
+  const job=freesoundSearchJobs.get(String(req.query.jobId||""));
+  if(!job)return res.status(404).json({error:"No se encontró la búsqueda de Freesound."});
+  if(job.status==="succeeded")return res.json({status:"succeeded",...job.result});
+  if(job.status==="failed")return res.status(200).json({status:"failed",results:[],error:job.error||"Freesound no respondió correctamente."});
+  res.json({status:"running"});
 });
 
 app.post("/api/import-external-music", async (req,res)=>{
