@@ -103,19 +103,16 @@ function listFiles(dir, base) {
     .map(f => ({ name: f, url: `${base}/${encodeURIComponent(f)}` }));
 }
 
-app.get("/api/library", async (_, res) => {
-  try {
-    // La biblioteca debe estar lista antes de pintar la interfaz.
-    // Esto evita que la web aparezca vacía justo después de un reinicio de Render.
-    await ensureBuiltinMusic();
-    res.json({
-      images: listFiles(IMAGE_DIR, "/media/images"),
-      music: listFiles(MUSIC_DIR, "/media/music"),
-      videos: listFiles(VIDEO_DIR, "/media/videos").reverse()
-    });
-  } catch (e) {
-    res.status(500).json({ error: "No se pudo preparar la biblioteca: " + e.message });
-  }
+app.get("/api/library", (_, res) => {
+  // Nunca bloqueamos la carga de la web generando 24 pistas con FFmpeg.
+  // Las pistas que falten se crean en segundo plano.
+  res.json({
+    images: listFiles(IMAGE_DIR, "/media/images"),
+    music: listFiles(MUSIC_DIR, "/media/music"),
+    videos: listFiles(VIDEO_DIR, "/media/videos").reverse()
+  });
+  setImmediate(() => ensureBuiltinMusic(BUILTIN_MUSIC.slice(0, 6))
+    .catch(e => console.error("Error preparando música inicial:", e.message)));
 });
 
 app.post("/api/upload/image", imageUpload.single("image"), (req, res) => {
@@ -261,20 +258,25 @@ app.post("/api/ai-options", async (req, res) => {
         theme + " misty forest"
       ];
 
-      const responses = await Promise.all(queries.map(async q => {
+      const results = await Promise.allSettled(queries.map(async q => {
         const r = await fetchWithTimeout(
           "https://api.pexels.com/v1/search?query=" + encodeURIComponent(q) +
           "&per_page=20&orientation=landscape&size=large&locale=en-US",
-          { headers: { Authorization: key } }, 12000
+          { headers: { Authorization: key } }, 9000
         );
         if (!r.ok) throw new Error("Pexels imágenes HTTP " + r.status);
         return r.json();
       }));
 
       const photos = [];
-      for (const data of responses) {
-        for (const p of (data.photos || [])) {
-          if ((p.src?.large2x || p.src?.large) && p.width >= 1600 && p.height >= 900) {
+      for (const result of results) {
+        if (result.status !== "fulfilled") {
+          imageErrors.push(result.reason?.message || "Una búsqueda de Pexels falló.");
+          continue;
+        }
+        for (const p of (result.value.photos || [])) {
+          if ((p.src?.large2x || p.src?.large || p.src?.original) &&
+              p.width >= 1280 && p.height >= 720) {
             photos.push(p);
           }
         }
@@ -305,9 +307,16 @@ app.post("/api/ai-options", async (req, res) => {
       imageErrors.push("Falta PEXELS_API_KEY en Render.");
     }
 
-    // Solo preparamos 4 pistas para esta pantalla; no esperamos las 24.
-    const musicTracks = [...BUILTIN_MUSIC].sort(() => Math.random() - 0.5).slice(0, 4);
-    await ensureBuiltinMusic(musicTracks);
+    // Respondemos con pistas ya disponibles inmediatamente. Si no hay ninguna,
+    // creamos solo 2 en segundo plano y devolvemos un mensaje para reintentar.
+    const existingMusic = BUILTIN_MUSIC.filter(t => fs.existsSync(path.join(MUSIC_DIR, t.file)));
+    const musicTracks = existingMusic.length
+      ? [...existingMusic].sort(() => Math.random() - 0.5).slice(0, 4)
+      : BUILTIN_MUSIC.slice(0, 2);
+    if (!existingMusic.length) {
+      setImmediate(() => ensureBuiltinMusic(musicTracks)
+        .catch(e => console.error("Error preparando música IA gratuita:", e.message)));
+    }
     for (const track of musicTracks) {
       if (!fs.existsSync(path.join(MUSIC_DIR, track.file))) continue;
       music.push({
@@ -325,7 +334,7 @@ app.post("/api/ai-options", async (req, res) => {
 
     if (!images.length && !music.length) {
       return res.status(502).json({
-        error: "No se pudieron preparar los recursos gratuitos.",
+        error: "Los recursos gratuitos están arrancando. Pulsa Crear IA de nuevo en unos segundos.",
         imageErrors,
         musicErrors
       });
