@@ -47,6 +47,36 @@ function safe(name) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
+const BUILTIN_MUSIC = [
+  { file: "relax-piano.mp3", label: "Piano nocturno", f1: 261.63, f2: 329.63, f3: 392.00 },
+  { file: "relax-ocean.mp3", label: "Ondas del océano", f1: 220.00, f2: 277.18, f3: 329.63 },
+  { file: "relax-meditation.mp3", label: "Meditación profunda", f1: 174.61, f2: 261.63, f3: 349.23 },
+  { file: "relax-dream.mp3", label: "Sueño tranquilo", f1: 196.00, f2: 246.94, f3: 293.66 }
+];
+
+async function ensureBuiltinMusic() {
+  for (const track of BUILTIN_MUSIC) {
+    const out = path.join(MUSIC_DIR, track.file);
+    if (fs.existsSync(out)) continue;
+    try {
+      await runFfmpeg([
+        "-y",
+        "-f","lavfi","-i",
+        `sine=frequency=${track.f1}:sample_rate=44100:duration=90`,
+        "-f","lavfi","-i",
+        `sine=frequency=${track.f2}:sample_rate=44100:duration=90`,
+        "-f","lavfi","-i",
+        `sine=frequency=${track.f3}:sample_rate=44100:duration=90`,
+        "-filter_complex",
+        "[0:a]volume=0.10[a0];[1:a]volume=0.07[a1];[2:a]volume=0.05[a2];[a0][a1][a2]amix=inputs=3:duration=longest,lowpass=f=1800,aecho=0.8:0.7:900:0.18,afade=t=in:st=0:d=8,afade=t=out:st=82:d=8,volume=0.8[out]",
+        "-map","[out]","-c:a","libmp3lame","-b:a","128k",out
+      ]);
+    } catch (e) {
+      console.error("No se pudo crear música integrada:", track.file, e.message);
+    }
+  }
+}
+
 function listFiles(dir, base) {
   return fs.readdirSync(dir)
     .filter(f => !f.startsWith("."))
