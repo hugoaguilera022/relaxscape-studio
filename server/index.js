@@ -8,6 +8,7 @@ import { fileURLToPath } from "url";
 import { spawn } from "child_process";
 import cron from "node-cron";
 import ffmpegPath from "ffmpeg-static";
+import { InferenceClient } from "@huggingface/inference";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -271,70 +272,67 @@ function makeCompositionWav(track, wavPath){
   writeWav(wavPath,samples,sr,2);
 }
 
-async function ensureBuiltinMusic(tracks=BUILTIN_MUSIC){
-  const valid=t=>{
-    const p=path.join(MUSIC_DIR,t.file);
-    try{return fs.existsSync(p)&&fs.statSync(p).size>4096}catch{return false}
-  };
-  const pending=tracks.filter(t=>!valid(t) || t.forceRegenerate);
-  console.log("[Music v13] Pendientes:",pending.length);
-  if(!pending.length) return;
+async function ensureBuiltinMusic(tracks=[]) {
+  const token = process.env.HF_TOKEN || process.env.HUGGINGFACE_API_KEY;
+  if (!token) throw new Error("Falta HF_TOKEN en Render. Crea un token de Hugging Face con permiso de Inference Providers.");
 
-  const generateOne=async track=>{
-    const out=path.join(MUSIC_DIR,track.file);
-    const wav=path.join(MUSIC_DIR,"."+track.file+".wav");
-    try{
-      fs.rmSync(out,{force:true});
-      console.log("[Music v14] Generando:",track.label,track.file);
-      // Motor musical 100% local y gratuito.
-      // No intentamos Pollinations/ElevenLabs ni Lyria: Crear IA no depende
-      // de saldo, cuotas ni APIs de pago.
-      // Fallback gratuito local: nunca dejamos Crear IA sin música.
-          // Cada opción recibe una identidad instrumental y armónica diferente.
-          const userBrief = String(track.userMusicBrief || "professional deep-relaxation ambient music for peace and calm");
-          const fallbackProfiles = [
-            "USER BRIEF: "+userBrief+". Preserve its genre, mood, instruments, environment and tempo. Local timbral engine: felt piano with nylon guitar and cello colors. Do not turn the request into a generic relaxation preset.",
-            "USER BRIEF: "+userBrief+". Preserve its genre, mood, instruments, environment and tempo. Local timbral engine: bowed strings and cello dominate, with sustained orchestral phrasing. Do not turn the request into a generic relaxation preset.",
-            "USER BRIEF: "+userBrief+". Preserve its genre, mood, instruments, environment and tempo. Local timbral engine: warm analog synthesizer, evolving electronic layers and soft sub movement. Do not turn the request into a generic relaxation preset.",
-            "USER BRIEF: "+userBrief+". Preserve its genre, mood, instruments, environment and tempo. Local timbral engine: airy bamboo/woodwind, nylon guitar and organic environmental texture. Do not turn the request into a generic relaxation preset."
-          ];
-          const fallbackProfile = fallbackProfiles[(Number(track.variant || 1) - 1) % fallbackProfiles.length];
-          const fallbackTrack = { ...track, userMusicBrief: userBrief, musicProfile: fallbackProfile };
-          await new Promise(resolve => setImmediate(resolve));
-          makeCompositionWav(fallbackTrack, wav);
-          await runFfmpeg([
-            "-y","-i",wav,
-            "-af","highpass=f=28,lowpass=f=18500,acompressor=threshold=-30dB:ratio=1.25:attack=35:release=400:makeup=1,alimiter=limit=0.94",
-            "-ar","44100","-ac","2","-c:a","libmp3lame","-b:a","320k",out
-          ]);
-          track.provider = "RelaxScape Free Music Engine";
-          track.generated = true;
-          track.fallback = true;
-          console.log("[RelaxScape Free Music Engine] LISTA:",track.file,"variante",track.variant);
-      if(!valid(track)) throw new Error("FFmpeg no creó un MP3 válido");
-      const audioBytes=fs.readFileSync(out);
-      const audioHash=createHash("sha256").update(audioBytes).digest("hex").slice(0,16);
-      console.log("[Music fingerprint]",track.label,track.file,fs.statSync(out).size,"bytes",audioHash);
+  const hf = new InferenceClient(token);
+  const model = process.env.HF_MUSIC_MODEL || "stabilityai/stable-audio-3-small-music";
+
+  const generateOne = async (track) => {
+    const out = path.join(MUSIC_DIR, track.file);
+    try {
+      fs.rmSync(out, { force:true });
+      const basePrompt = String(track.userMusicBrief || track.musicProfile || "").trim();
+      const variationPrompts = [
+        "Create a completely original composition with a memorable but very gentle melodic motif, intimate lead instrument, evolving harmony and spacious stereo depth.",
+        "Create a completely original composition with a different melodic contour, wider harmonic movement, long sustained layers and a slow cinematic evolution.",
+        "Create a completely original composition with a different instrumental hierarchy, subtle environmental texture, deep low ambience and gradual changes in density.",
+        "Create a completely original composition with the most contrasting arrangement possible while staying faithful to the requested mood, instruments, environment and peaceful relaxation genre."
+      ];
+      const prompt = [
+        basePrompt,
+        variationPrompts[((Number(track.variant || 1)-1)%4+4)%4],
+        "Professional high-quality instrumental ambient music.",
+        "No vocals, no speech, no abrupt transitions, no aggressive elements, no harsh percussion unless explicitly requested.",
+        "The user's search description is the source of truth for the musical content. Do not replace it with a generic preset.",
+        "Generate real musical content with melody, harmony, texture and evolving arrangement, not a static tone or simple oscillator."
+      ].join(" ");
+
+      console.log("[Hugging Face Music] Generando", track.label, "con búsqueda:", basePrompt);
+      let audio;
+      try {
+        audio = await hf.textToAudio({ model, inputs: prompt });
+      } catch (firstError) {
+        console.warn("[Hugging Face Music] Stable Audio 3 no disponible, probando Stable Audio Open:", firstError?.message || firstError);
+        audio = await hf.textToAudio({
+          model: "stabilityai/stable-audio-open-1.0",
+          inputs: prompt
+        });
+      }
+
+      const buffer = Buffer.from(await audio.arrayBuffer());
+      if (!buffer.length) throw new Error("Hugging Face devolvió audio vacío.");
+      fs.writeFileSync(out, buffer);
+
+      track.provider = "Hugging Face · Stable Audio";
+      track.generated = true;
+      track.fallback = false;
+      console.log("[Hugging Face Music] LISTA:", track.file, buffer.length, "bytes");
       return true;
-    }catch(e){
-      const msg=(e&&e.message)||String(e);
-      aiMusicErrors.push(track.label+": "+msg);
-      console.error("[Music v11] ERROR",track.file,e.stack||e.message);
+    } catch (e) {
+      aiMusicErrors.push(track.label + ": " + (e?.message || String(e)));
+      console.error("[Hugging Face Music] ERROR", track.file, e?.stack || e?.message || e);
       return false;
-    }finally{
-      try{fs.rmSync(wav,{force:true})}catch{}
     }
   };
 
-  // Generamos dos en paralelo: Lyria puede tardar, pero así las 4 previas
-  // aparecen mucho antes que con una cola estrictamente secuencial.
-  const results=[];
-  for(let i=0;i<pending.length;i+=2){
-    const batch=pending.slice(i,i+2);
-    results.push(...await Promise.all(batch.map(generateOne)));
-  }
-  console.log("[Music v19] Terminadas:",results.filter(Boolean).length,"/",pending.length);
+  const results = [];
+  for (const track of tracks) results.push(await generateOne(track));
+  console.log("[Hugging Face Music] Terminadas:", results.filter(Boolean).length, "/", tracks.length);
+  return results;
 }
+
 function listFiles(dir, base) {
   return fs.readdirSync(dir)
     .filter(f => !f.startsWith("."))
