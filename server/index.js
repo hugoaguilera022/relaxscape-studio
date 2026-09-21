@@ -1393,8 +1393,9 @@ async function aceStepHFGenerate(query, durationSeconds){
   const payload={
     caption:buildAIGenPrompt(query),
     lyrics:"[Instrumental]",
-    audio_duration:Math.max(10,Math.min(600,Number(durationSeconds)||600)),
-    thinking:true,
+    audio_duration:Math.max(10,Math.min(600,Number(durationSeconds)||120)),
+    thinking:false,
+    model:"acestep-v15-turbo",
     audio_format:"mp3",
     batch_size:1,
     inference_steps:8,
@@ -1475,7 +1476,7 @@ async function downloadHFGeneratedAudio(result, stamp){
 async function processFreeAceStepJob(job){
   try{
     job.status="starting";
-    const jobId=await aceStepHFGenerate(job.query,600);
+    const jobId=await aceStepHFGenerate(job.query,120);
     job.eventId=jobId;
     job.status="running";
     const raw=await aceStepHFWait(jobId);
