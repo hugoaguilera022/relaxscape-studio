@@ -120,6 +120,23 @@ async function downloadExternalMusic(x){
   }
 }
 
+async function createFreesoundAIMix(){
+  const status=$("#aiSelectionStatus");
+  if(!S.externalMusic.length){if(status)status.textContent="Primero realiza una búsqueda musical.";return}
+  const btn=$("#createFreesoundMix");
+  if(btn)btn.disabled=true;
+  if(status)status.textContent="🎼 La IA está organizando instrumentos y ambiente para crear una mezcla coherente…";
+  try{
+    const d=await api("/api/generate-freesound-ai-mix",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+      tracks:S.externalMusic.slice(0,6),query:($("#aiMusicPrompt").value||"").trim(),durationHours:1
+    })});
+    S.music=d;
+    if(status)status.textContent="✓ Mezcla musical creada. Ya puedes escucharla y usarla en tu vídeo.";
+    renderAICreator();update();picker();
+  }catch(e){
+    if(status)status.textContent="No se pudo crear la mezcla: "+e.message;
+  }finally{if(btn)btn.disabled=false}
+}
 async function waitForAIMusic(){
   const started=Date.now();
   const timeoutMs=8*60*1000;
@@ -156,7 +173,7 @@ function renderAICreator(){
   }
   if(mg){
     if(S.externalMusic.length){
-      mg.innerHTML=S.externalMusic.map((x,i)=>'<div class="ai-track '+(S.music?.externalId===x.id?"selected":"")+'" data-external-id="'+x.id+'"><div><b>♫ '+escapeHtml(x.name)+'</b><small>Freesound · '+escapeHtml(x.username||"")+' · '+escapeHtml(x.license||"")+' · '+formatDuration(x.duration)+'</small></div><div class="ai-track-actions"><audio controls preload="metadata" src="'+x.preview+'"></audio><button type="button" class="preview-download" data-download-external="'+x.id+'">↓ Descargar previa</button><a class="preview-download" href="'+x.sourceUrl+'" target="_blank" rel="noopener">↗ Ver fuente</a></div></div>').join("");
+      mg.innerHTML='<div class="ai-mix-action"><button type="button" id="createFreesoundMix" class="primary">🎼 Crear mezcla musical con IA</button><small>Combina los resultados de esta búsqueda en una sola pista coherente.</small></div>'+S.externalMusic.map((x,i)=>'<div class="ai-track '+(S.music?.externalId===x.id?"selected":"")+'" data-external-id="'+x.id+'"><div><b>♫ '+escapeHtml(x.name)+'</b><small>Freesound · '+escapeHtml(x.username||"")+' · '+escapeHtml(x.license||"")+' · '+formatDuration(x.duration)+'</small></div><div class="ai-track-actions"><audio controls preload="metadata" src="'+x.preview+'"></audio><button type="button" class="preview-download" data-download-external="'+x.id+'">↓ Descargar previa</button><a class="preview-download" href="'+x.sourceUrl+'" target="_blank" rel="noopener">↗ Ver fuente</a></div></div>').join("");
       $("#aiMusicList .ai-track").forEach(e=>e.onclick=ev=>{
         if(ev.target.tagName==="AUDIO" || ev.target.tagName==="A" || ev.target.closest("[data-download-external]"))return;
         const x=S.externalMusic.find(v=>String(v.id)===String(e.dataset.externalId));
