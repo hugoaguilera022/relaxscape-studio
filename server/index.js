@@ -630,6 +630,34 @@ app.get("/api/library", (_, res) => {
   });
 });
 
+app.get("/api/youtube-info", async (req,res)=>{
+  const raw=String(req.query.url||"").trim();
+  if(!/^https?:\/\/(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(raw)){
+    return res.status(400).json({error:"Introduce un enlace válido de YouTube."});
+  }
+  try{
+    const url=new URL(raw);
+    if(url.hostname==="youtu.be"){
+      if(!url.pathname.slice(1)) throw new Error("Falta el identificador del vídeo.");
+    }else if(!url.searchParams.get("v") && !/^\/shorts\//i.test(url.pathname) && !/^\/embed\//i.test(url.pathname)){
+      throw new Error("No se encontró el identificador del vídeo.");
+    }
+    const oembed="https://www.youtube.com/oembed?url="+encodeURIComponent(raw)+"&format=json";
+    const r=await fetchWithTimeout(oembed,{headers:{Accept:"application/json"}},10000);
+    const data=await r.json().catch(()=>({}));
+    if(!r.ok) return res.status(400).json({error:"YouTube no pudo reconocer ese vídeo."});
+    res.json({
+      title:data.title||"Vídeo de YouTube",
+      author:data.author_name||"",
+      thumbnail:data.thumbnail_url||"",
+      sourceUrl:raw,
+      promptSuggestion:String(data.title||"paisaje relajante").slice(0,180)
+    });
+  }catch(e){
+    res.status(400).json({error:"No se pudo analizar el enlace de YouTube: "+(e.message||e)});
+  }
+});
+
 app.post("/api/upload/image", imageUpload.single("image"), (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No se recibió ninguna imagen." });
   res.json({ name: req.file.filename, url: `/media/images/${encodeURIComponent(req.file.filename)}` });
