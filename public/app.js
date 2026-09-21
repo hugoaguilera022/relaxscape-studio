@@ -72,7 +72,7 @@ $("#aiLoadPhotos").onclick=async()=>{
   const b=$("#aiLoadPhotos");b.disabled=true;
   try{await loadPexels();}finally{b.disabled=false}
 };
-$("#aiGoMusic").onclick=()=>{$$(".nav").forEach(x=>x.classList.remove("active"));$$(".tab").forEach(x=>x.classList.remove("active"));document.querySelector('[data-tab="music"]').classList.add("active");$("#music").classList.add("active");};
+$("#aiGoMusic").onclick=()=>{$(".nav").forEach(x=>x.classList.remove("active"));$$(".tab").forEach(x=>x.classList.remove("active"));document.querySelector('[data-tab="music"]').classList.add("active");$("#music").classList.add("active");};
 $("#aiCreateHour").onclick=async()=>{
   if(!S.image||!S.music){$("#aiSelectionStatus").textContent="Selecciona primero una foto y una música.";return}
   const btn=$("#aiCreateHour");btn.disabled=true;$("#aiSelectionStatus").textContent="Creando tu vídeo real de 1 hora… Esto puede tardar unos minutos.";
