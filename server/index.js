@@ -1548,19 +1548,21 @@ app.post("/api/mix-selected-freesound", async (req,res)=>{
       "-c:a","libmp3lame","-b:a","192k","-ar","48000",base
     ]);
 
-    const finalName="selected-freesound-mix-"+Date.now()+".mp3";
+    const durationHours=Number(req.body?.durationHours||1);
+    if(![1,2].includes(durationHours)) throw new Error("La duración de la mezcla debe ser de 1 o 2 horas.");
+    const finalName="selected-freesound-mix-"+durationHours+"h-"+Date.now()+".mp3";
     const finalPath=path.join(MUSIC_DIR,finalName);
-    await runFfmpeg(["-y","-stream_loop","-1","-i",base,"-t","3600","-c:a","copy",finalPath]);
+    await runFfmpeg(["-y","-stream_loop","-1","-i",base,"-t",String(durationHours*3600),"-c:a","copy",finalPath]);
 
     res.json({
       name:finalName,
       url:"/media/music/"+encodeURIComponent(finalName),
-      label:"Mezcla · "+local.length+" sonidos Freesound",
+      label:"Mezcla · "+local.length+" sonidos Freesound · "+durationHours+" h",
       provider:"Freesound selected mix",
       source:"Freesound",
       isFreesoundMix:true,
       generatedFromSearch:false,
-      durationHours:1,
+      durationHours,
       tracks:tracks.map(t=>({id:t.id,name:t.name,sourceUrl:t.sourceUrl,username:t.username,license:t.license}))
     });
   }catch(e){
