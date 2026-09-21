@@ -128,7 +128,7 @@ $("#aiCreateHour").onclick=async()=>{
   const btn=$("#aiCreateHour");btn.disabled=true;
   try{
     $("#aiSelectionStatus").textContent="1/2 · Preparando 1 hora a partir de la previa musical…";
-    const long=await api("/api/generate-selected-long-music",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({music:S.music.url,durationHours:1})});
+    const long=await api("/api/generate-selected-long-music",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({music:S.music.url,durationHours:1,musicPrompt:($("#aiMusicPrompt")?.value||$("#prompt")?.value||"").trim()})});
     $("#aiSelectionStatus").textContent="2/2 · Creando tu vídeo Full HD de 1 hora…";
     const d=await api("/api/generate-video",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image:S.image.url,music:long.url,durationHours:1})});
     $("#video").src=d.url;$("#download").href=d.url;$("#result").classList.remove("hidden");
