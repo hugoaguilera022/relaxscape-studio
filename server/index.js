@@ -98,7 +98,10 @@ function makeCompositionWav(track, wavPath){
   const variant=Number(track.variant||0)%4;
   const flowing=/ocean|water|river|rain|waterfall|waves/.test(profile);
   const nature=/forest|mountain|nature|bamboo|garden|birds/.test(profile);
-  const dream=/dream|sleep|night|star|moon|meditat|zen/.test(profile);\n  const strings=/string|cello|violin|orchestra|cinematic/.test(profile);\n  const flute=/flute|bamboo|wind|ethereal/.test(profile);\n  const guitar=/guitar|acoustic|nylon/.test(profile);\n  const water=/water|ocean|rain|river|waterfall|waves|stream/.test(profile);\n  const natureFocus=/forest|nature|birds|mountain|garden|bamboo/.test(profile);
+  const dream=/dream|sleep|night|star|moon|meditat|zen/.test(profile);
+  const strings=/string|cello|violin|orchestra|cinematic/.test(profile);\n  const flute=/flute|bamboo|wind|ethereal/.test(profile);
+  const guitar=/guitar|acoustic|nylon/.test(profile);
+  const water=/water|ocean|rain|river|waterfall|waves|stream/.test(profile);\n  const natureFocus=/forest|nature|birds|mountain|garden|bamboo/.test(profile);
   const bpmSet=flowing?[42,46,50,54]:dream?[38,40,43,46]:nature?[44,48,52,56]:[40,44,48,52];
   const bpm=bpmSet[variant], beat=60/bpm, bar=beat*4;
   const hz=m=>440*Math.pow(2,(m-69)/12);
