@@ -248,12 +248,15 @@ $("#aiCreateHour").onclick=async()=>{
   if(!S.image||!S.music){$("#aiSelectionStatus").textContent="Selecciona primero una foto y una música.";return}
   const btn=$("#aiCreateHour");btn.disabled=true;
   try{
-    $("#aiSelectionStatus").textContent="1/2 · Preparando 1 hora a partir de la previa musical…";
-    const long=await api("/api/generate-selected-long-music",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({music:S.music.url,durationHours:1,musicPrompt:($("#aiMusicPrompt")?.value||$("#prompt")?.value||"").trim()})});
-    $("#aiSelectionStatus").textContent="2/2 · Creando tu vídeo Full HD de 1 hora…";
-    const d=await api("/api/generate-video",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image:S.image.url,music:long.url,durationHours:1})});
+    let musicForVideo=S.music;
+    if(!S.music.generatedFromSearch){
+      $("#aiSelectionStatus").textContent="1/2 · Preparando 1 hora a partir de la previa musical…";
+      musicForVideo=await api("/api/generate-selected-long-music",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({music:S.music.url,durationHours:1,musicPrompt:($("#aiMusicPrompt")?.value||$("#prompt")?.value||"").trim()})});
+    }
+    $("#aiSelectionStatus").textContent="2/2 · Creando tu vídeo Full HD de 1 hora con la música IA…";
+    const d=await api("/api/generate-video",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image:S.image.url,music:musicForVideo.url,durationHours:1})});
     $("#video").src=d.url;$("#download").href=d.url;$("#download").setAttribute("download",d.name||"relaxscape-video.mp4");$("#result").classList.remove("hidden");
-    $("#aiSelectionStatus").textContent="¡Vídeo terminado! La música larga se ha creado desde la previa que escuchaste.";
+    $("#aiSelectionStatus").textContent="¡Vídeo terminado! Se ha utilizado la mezcla creada por IA a partir de tu búsqueda y los audios de Freesound.";
     await load();
   }catch(e){$("#aiSelectionStatus").textContent=e.message}
   finally{btn.disabled=false}
