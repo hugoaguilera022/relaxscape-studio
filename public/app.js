@@ -1,7 +1,23 @@
 const S={images:[],music:[],videos:[],image:null,music:null,hours:1,schedule:true,musicCategory:"Todas"};
 const $=s=>document.querySelector(s), $$=s=>document.querySelectorAll(s);
 async function api(url,opt){const r=await fetch(url,opt);let d={};let raw="";try{raw=await r.text();d=raw?JSON.parse(raw):{}}catch{};if(!r.ok)throw Error(d.error||`Error ${r.status}${raw?`: ${raw.slice(0,180)}`:""}`);return d}
-async function load(){try{const d=await api("/api/library");S.images=d.images;S.music=d.music;S.videos=d.videos;render();if(!S.images.length)await loadPexels();}catch(e){$("#builderStatus").textContent=e.message;}}
+async function load(){
+  try{
+    const d=await api("/api/library");
+    S.images=d.images||[];
+    S.music=d.music||[];
+    S.videos=d.videos||[];
+    render();
+    if(!S.images.length){
+      await loadPexels();
+    } else {
+      renderAICreator();
+    }
+  }catch(e){
+    if($("#builderStatus")) $("#builderStatus").textContent=e.message;
+    if($("#aiSelectionStatus")) $("#aiSelectionStatus").textContent=e.message;
+  }
+}
 async function loadPexels(){
   const q=($("#prompt")?.value||"peaceful nature landscape").trim();
   $("#builderStatus").textContent="Buscando 8 paisajes Full HD de Pexels…";
@@ -39,12 +55,23 @@ function picker(){const lp=$("#landscapePicker"),mp=$("#musicPicker");lp.innerHT
 $("#selectedLandscape").onclick=()=>$("#landscapePicker").classList.toggle("open");
 $("#selectedTrack").onclick=()=>$("#musicPicker").classList.toggle("open");
 $$(".dur").forEach(b=>b.onclick=()=>{S.hours=Number(b.dataset.hours);update()});
-$$(".nav").forEach(b=>b.onclick=()=>{$$(".nav").forEach(x=>x.classList.remove("active"));b.classList.add("active");$$(".tab").forEach(x=>x.classList.remove("active"));$("#"+b.dataset.tab).classList.add("active")});
+$(".nav").forEach(b=>b.onclick=async()=>{
+  $(".nav").forEach(x=>x.classList.remove("active"));b.classList.add("active");
+  $(".tab").forEach(x=>x.classList.remove("active"));$("#"+b.dataset.tab).classList.add("active");
+  if(b.dataset.tab==="ai"){
+    renderAICreator();
+    if(!S.images.length) await loadPexels();
+    if(!S.music.length) await load();
+  }
+});
 $("#imageInput").onchange=async e=>{if(!e.target.files[0])return;const fd=new FormData();fd.append("image",e.target.files[0]);$("#builderStatus").textContent="Subiendo imagen…";try{S.image=await api("/api/upload/image",{method:"POST",body:fd});await load()}catch(x){$("#builderStatus").textContent=x.message}};
 $("#musicInput").onchange=async e=>{if(!e.target.files[0])return;const fd=new FormData();fd.append("music",e.target.files[0]);$("#builderStatus").textContent="Subiendo música…";try{S.music=await api("/api/upload/music",{method:"POST",body:fd});await load()}catch(x){$("#builderStatus").textContent=x.message}};
 $("#aiImage").onclick=async()=>{const p=$("#prompt").value||"Ultra-realistic cinematic peaceful landscape, natural light, no people, no text, photorealistic";$("#builderStatus").textContent="Generando paisaje IA…";try{S.image=await api("/api/generate-image",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt:p})});await load()}catch(x){$("#builderStatus").textContent=x.message}};
 $("#generate").onclick=async()=>{if(!S.image||!S.music){$("#builderStatus").textContent="Selecciona un paisaje y una pista.";return}$("#generate").disabled=true;$("#builderStatus").textContent="Generando vídeo…";try{const d=await api("/api/generate-video",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image:S.image.url,music:S.music.url,durationHours:1})});$("#video").src=d.url;$("#download").href=d.url;$("#result").classList.remove("hidden");$("#builderStatus").textContent="Vídeo terminado.";await load();}catch(x){$("#builderStatus").textContent=x.message}finally{$("#generate").disabled=false}};
-$("#aiLoadPhotos").onclick=async()=>{await loadPexels();};
+$("#aiLoadPhotos").onclick=async()=>{
+  const b=$("#aiLoadPhotos");b.disabled=true;
+  try{await loadPexels();}finally{b.disabled=false}
+};
 $("#aiGoMusic").onclick=()=>{$$(".nav").forEach(x=>x.classList.remove("active"));$$(".tab").forEach(x=>x.classList.remove("active"));document.querySelector('[data-tab="music"]').classList.add("active");$("#music").classList.add("active");};
 $("#aiCreateHour").onclick=async()=>{
   if(!S.image||!S.music){$("#aiSelectionStatus").textContent="Selecciona primero una foto y una música.";return}
