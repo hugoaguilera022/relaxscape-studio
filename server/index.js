@@ -344,17 +344,21 @@ function makeCompositionWav(track, wavPath){
 async function ensureBuiltinMusic(tracks=BUILTIN_MUSIC){
   const marker=path.join(MUSIC_DIR,".relaxscape-music-engine-v10");
   if(!fs.existsSync(marker)){try{fs.writeFileSync(marker,MUSIC_ENGINE_VERSION)}catch{}}
-  const pending=tracks.filter(t=>!fs.existsSync(path.join(MUSIC_DIR,t.file)));
-  await Promise.all(pending.map(async track=>{
+  const valid=t=>{const p=path.join(MUSIC_DIR,t.file);try{return fs.existsSync(p)&&fs.statSync(p).size>4096}catch{return false}};
+  const pending=tracks.filter(t=>!valid(t));
+  console.log("[Music v10] Pendientes:",pending.length);
+  for(const track of pending){
     const out=path.join(MUSIC_DIR,track.file), wav=path.join(MUSIC_DIR,"."+track.file+".wav");
     try{
+      fs.rmSync(out,{force:true});
       console.log("[Music v10] Generando:",track.label);
       makeCompositionWav(track,wav);
-      await runFfmpeg(["-y","-stream_loop","-1","-i",wav,"-t","24","-c:a","libmp3lame","-b:a","160k","-ar","44100",out]);
+      await runFfmpeg(["-y","-i",wav,"-t","24","-c:a","libmp3lame","-b:a","160k","-ar","44100",out]);
+      if(!valid(track)) throw new Error("FFmpeg no creó un MP3 válido");
       console.log("[Music v10] Lista:",track.file);
-    }catch(e){console.error("[Music v10] ERROR",track.file,e.message)}
+    }catch(e){console.error("[Music v10] ERROR",track.file,e.stack||e.message)}
     finally{try{fs.rmSync(wav,{force:true})}catch{}}
-  }));
+  }
 }
 function listFiles(dir, base) {
   return fs.readdirSync(dir)
