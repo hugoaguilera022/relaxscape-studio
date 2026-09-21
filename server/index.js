@@ -394,25 +394,69 @@ app.post("/api/ai-options", async (req, res) => {
     // concretas: usamos los rasgos que funcionan en los grandes vídeos de relax:
     // piano muy suave, pads cálidos, agua/lluvia sutil, melodía lenta y pocos
     // elementos para que sirva como música de fondo durante horas.
-    const aiPrompt = [
-      "30-second original instrumental relaxation music preview.",
-      "Very slow 52 BPM, gentle felt piano carrying a simple memorable melody.",
-      "Warm soft ambient pads, airy strings, subtle glassy texture, deep warm bass.",
-      "Very soft natural water ambience and distant rain texture, no thunder.",
-      "Sparse arrangement, long sustained notes, smooth transitions, no vocals, no lyrics.",
-      "No aggressive drums, no sharp transients, no dramatic climax, no sudden changes.",
-      "Peaceful, dreamy, sleep-friendly, meditation and spa atmosphere.",
-      "Premium cinematic ambient production, stereo, spacious reverb, soft dynamics.",
-      "Original composition, do not imitate or reproduce any existing song."
-    ].join(" ");
+    // Varias opciones realmente distintas, como con las imágenes. Cada entrada
+    // cambia el instrumento/ambiente, pero mantiene la misma estética: piano íntimo,
+    // atmósfera soñadora, evolución muy lenta y mezcla profesional.
+    const aiPrompts = [
+      [
+        "30-second original instrumental relaxation music preview.",
+        "Very slow 50 BPM, intimate felt piano as the main instrument, carrying a beautiful simple emotional melody.",
+        "Warm cinematic ambient pads, soft airy strings, deep gentle bass, subtle room texture.",
+        "Peaceful night atmosphere, dreamy and tender, ideal for sleep, meditation and spa.",
+        "Sparse arrangement, long notes, delicate melodic phrases, smooth transitions, no vocals, no lyrics.",
+        "No drums, no sharp transients, no dramatic climax, no sudden changes.",
+        "Wide stereo image, long soft reverb, warm analog-like tone, premium professional production.",
+        "Original composition, do not imitate or reproduce any existing song."
+      ].join(" "),
+      [
+        "30-second original instrumental relaxation music preview.",
+        "Very slow 52 BPM, soft felt piano melody with gentle repeating motifs.",
+        "Subtle ocean waves and distant water ambience underneath warm pads and very soft strings.",
+        "Deep peaceful sleep atmosphere, spacious, weightless, calming and cinematic.",
+        "Melody must be clearly audible and musical, but never busy; gradual evolution only.",
+        "No vocals, no lyrics, no percussion, no dramatic build, no sudden changes.",
+        "Wide stereo field, lush reverb, soft dynamics, professional ambient mix.",
+        "Original composition, do not imitate or reproduce any existing song."
+      ].join(" "),
+      [
+        "30-second original instrumental relaxation music preview.",
+        "Very slow 48 BPM, delicate piano melody with a floating dreamy character.",
+        "Warm ambient pads, glassy shimmer textures, soft cello-like sustained tones and deep sub bass.",
+        "Very subtle rain and forest-at-night ambience, peaceful and intimate.",
+        "Minimal melodic development, gentle breathing-like swells, seamless feeling.",
+        "No vocals, no lyrics, no drums, no sharp sounds, no climax or sudden transitions.",
+        "Spacious stereo reverb, warm frequencies, soft cinematic mastering.",
+        "Original composition, do not imitate or reproduce any existing song."
+      ].join(" "),
+      [
+        "30-second original instrumental relaxation music preview.",
+        "Very slow 55 BPM, emotional but extremely calm felt piano melody.",
+        "Soft nylon guitar harmonics, warm pads, airy strings and subtle water texture.",
+        "Golden sunset spa atmosphere, serene, comforting, luxurious and peaceful.",
+        "Simple memorable melody, gentle pulse without percussion, long sustained harmonies.",
+        "No vocals, no lyrics, no aggressive rhythm, no dramatic climax, no sudden changes.",
+        "Premium cinematic ambient production, wide stereo, smooth reverb tails, soft dynamics.",
+        "Original composition, do not imitate or reproduce any existing song."
+      ].join(" ")
+    ];
 
     try {
       if (process.env.GEMINI_API_KEY) {
-        const generated = await generateLyriaMusicFile(aiPrompt, 1);
-        music.push(generated);
+        const results = await Promise.allSettled(
+          aiPrompts.map((prompt, i) => generateLyriaMusicFile(prompt, i + 1))
+        );
+        for (const result of results) {
+          if (result.status === "fulfilled") music.push(result.value);
+          else musicErrors.push("Opción musical: " + (result.reason?.message || "falló"));
+        }
       } else if (process.env.POLLINATIONS_API_KEY) {
-        const generated = await generatePollinationsMusicFile(aiPrompt, 1);
-        music.push(generated);
+        const results = await Promise.allSettled(
+          aiPrompts.map((prompt, i) => generatePollinationsMusicFile(prompt, i + 1))
+        );
+        for (const result of results) {
+          if (result.status === "fulfilled") music.push(result.value);
+          else musicErrors.push("Opción musical: " + (result.reason?.message || "falló"));
+        }
       }
     } catch (e) {
       console.error("[AI options] IA musical no disponible:", e.message);
