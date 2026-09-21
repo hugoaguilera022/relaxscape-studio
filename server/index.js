@@ -463,24 +463,22 @@ app.post("/api/ai-options", async (req, res) => {
       musicErrors.push("IA musical: " + e.message);
     }
 
-    // Fallback local: siempre habrá una previa aunque el proveedor de IA falle.
+    // Fallback local: si la IA no está disponible o agota cuota, NO mostramos
+    // una sola pista. Creamos 4 previas distintas en WAV, manteniendo el estilo
+    // piano + ambiente + texturas para que el usuario siempre pueda elegir.
     if (!music.length) {
-      try {
-        if (existingMusic.length) {
-          music.push({
-            name: track.file,
-            url: "/media/music/" + encodeURIComponent(track.file),
-            ai: false,
-            provider: "RelaxScape Ambient Engine",
-            generated: true,
-            fallback: true,
-            label: track.label,
-            category: track.category
-          });
-        } else {
-          const previewName = "relaxscape-preview-" + Date.now() + ".wav";
+      const fallbackTracks = [
+        { ...BUILTIN_MUSIC.find(t => t.file === "relax-piano.mp3"), label: "Piano nocturno" },
+        { ...BUILTIN_MUSIC.find(t => t.file === "relax-ocean.mp3"), label: "Piano y océano" },
+        { ...BUILTIN_MUSIC.find(t => t.file === "relax-rain.mp3"), label: "Piano y lluvia" },
+        { ...BUILTIN_MUSIC.find(t => t.file === "relax-dream.mp3"), label: "Piano soñador" }
+      ];
+      for (let i = 0; i < fallbackTracks.length; i++) {
+        try {
+          const t = fallbackTracks[i];
+          const previewName = "relaxscape-ai-style-preview-" + Date.now() + "-" + (i + 1) + ".wav";
           const previewPath = path.join(MUSIC_DIR, previewName);
-          makeCompositionWav(track, previewPath);
+          makeCompositionWav(t, previewPath);
           if (fs.existsSync(previewPath)) {
             music.push({
               name: previewName,
@@ -489,26 +487,43 @@ app.post("/api/ai-options", async (req, res) => {
               provider: "RelaxScape Ambient Engine",
               generated: true,
               fallback: true,
-              label: track.label,
-              category: track.category
+              label: t.label,
+              category: t.category
             });
           }
+        } catch (e) {
+          musicErrors.push("Previa local " + (i + 1) + ": " + e.message);
         }
-      } catch (e) {
-        console.error("[AI options] Fallback musical falló:", e.message);
-        musicErrors.push("Fallback musical: " + e.message);
       }
     }
-    if (!music.length) musicErrors.push("No se pudo preparar la biblioteca musical.");
 
-    if (!images.length && !music.length) {
-      return res.status(502).json({
-        error: "Los recursos gratuitos están arrancando. Pulsa Crear IA de nuevo en unos segundos.",
-        imageErrors,
-        musicErrors
-      });
+    if (music.length < 4) {
+      musicErrors.push("El proveedor IA no devolvió las 4 opciones; se completó la selección con previas locales.");
+      const used = new Set(music.map(x => x.name));
+      const extras = BUILTIN_MUSIC
+        .filter(t => !used.has(t.file))
+        .slice(0, 4 - music.length);
+      for (let i = 0; i < extras.length; i++) {
+        try {
+          const t = extras[i];
+          const previewName = "relaxscape-extra-preview-" + Date.now() + "-" + (i + 1) + ".wav";
+          const previewPath = path.join(MUSIC_DIR, previewName);
+          makeCompositionWav(t, previewPath);
+          music.push({
+            name: previewName,
+            url: "/media/music/" + encodeURIComponent(previewName),
+            ai: false,
+            provider: "RelaxScape Ambient Engine",
+            generated: true,
+            fallback: true,
+            label: t.label,
+            category: t.category
+          });
+        } catch (e) {
+          musicErrors.push("Opción extra " + (i + 1) + ": " + e.message);
+        }
+      }
     }
-
     res.json({
       images,
       music,
