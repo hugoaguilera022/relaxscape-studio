@@ -156,124 +156,106 @@ app.post("/api/upload/music", musicUpload.single("music"), (req, res) => {
 });
 
 app.post("/api/generate-image", async (req, res) => {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) return res.status(400).json({ error: "Falta GEMINI_API_KEY en Render." });
   const prompt = String(req.body.prompt || "Ultra-realistic cinematic peaceful landscape, natural light, no people, no text, photorealistic");
   try {
-    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify({
-        model: "gemini-3.1-flash-image",
-        input: prompt + ". Wide 16:9 landscape composition, suitable for a relaxing video, no text.",
-        response_format: {
-          type: "image",
-          mime_type: "image/jpeg",
-          aspect_ratio: "16:9",
-          image_size: "2K"
-        }
-      })
-    });
-    const data = await r.json();
-    if (!r.ok) return res.status(r.status).json({ error: data.error?.message || JSON.stringify(data) });
-    const imageData = data.output_image?.data;
-    if (!imageData) return res.status(500).json({ error: "Gemini no devolvió output_image. Respuesta: " + JSON.stringify(data).slice(0, 500) });
-    const filename = `ai-${Date.now()}.jpg`;
-    fs.writeFileSync(path.join(IMAGE_DIR, filename), Buffer.from(imageData, "base64"));
-    res.json({ name: filename, url: `/media/images/${filename}` });
+    const item = await generatePollinationsImageFile(
+      prompt + ". Wide 16:9 composition, suitable for a premium relaxing video, no text.",
+      1
+    );
+    res.json(item);
   } catch (e) {
-    res.status(500).json({ error: "Error de Gemini: " + e.message });
+    res.status(502).json({ error: "Error de generación IA gratuita: " + e.message });
   }
 });
 
 
-function googleApiError(label, status, data) {
-  const e = data?.error || {};
-  const code = e.code || status;
-  const reason = e.status ? " [" + e.status + "]" : "";
-  return new Error(label + " HTTP " + status + " (" + code + ")" + reason + ": " + (e.message || JSON.stringify(data)));
+
+function pollinationsHeaders() {
+  const h = {};
+  if (process.env.POLLINATIONS_API_KEY) h.Authorization = "Bearer " + process.env.POLLINATIONS_API_KEY;
+  return h;
 }
 
-async function callGoogleInteraction(body, label) {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) throw new Error("Falta GEMINI_API_KEY en Render.");
-  let lastError;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify(body)
-    });
-    const data = await r.json().catch(() => ({}));
-    if (r.ok) return data;
-    lastError = googleApiError(label, r.status, data);
-    if (![429, 500, 502, 503, 504].includes(r.status)) break;
-    await new Promise(resolve => setTimeout(resolve, 1500 * (attempt + 1)));
+async function fetchWithTimeout(url, options = {}, timeoutMs = 30000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
   }
-  throw lastError;
 }
 
-async function generateGeminiImageFile(prompt, index) {
-  const data = await callGoogleInteraction({
-    model: "gemini-3.1-flash-image",
-    input: prompt,
-    response_format: { type: "image", mime_type: "image/jpeg", aspect_ratio: "16:9", image_size: "2K" }
-  }, "Gemini imagen");
-  const imageData = data.output_image?.data;
-  if (!imageData) throw new Error("Gemini no devolvió output_image. Respuesta: " + JSON.stringify(data).slice(0, 800));
-  const filename = `ai-option-${Date.now()}-${index}.jpg`;
-  fs.writeFileSync(path.join(IMAGE_DIR, filename), Buffer.from(imageData, "base64"));
-  return { name: filename, url: `/media/images/${encodeURIComponent(filename)}`, ai: true };
+async function generatePollinationsImageFile(prompt, index) {
+  const url = "https://gen.pollinations.ai/image/" + encodeURIComponent(prompt) +
+    "?width=1920&height=1080&nologo=true&model=flux";
+  const r = await fetchWithTimeout(url, { headers: pollinationsHeaders() }, 30000);
+  if (!r.ok) throw new Error("Pollinations imagen HTTP " + r.status);
+  const type = r.headers.get("content-type") || "";
+  if (!type.includes("image")) throw new Error("Pollinations no devolvió una imagen.");
+  const filename = "ai-free-option-" + Date.now() + "-" + index + ".jpg";
+  fs.writeFileSync(path.join(IMAGE_DIR, filename), Buffer.from(await r.arrayBuffer()));
+  return { name: filename, url: "/media/images/" + encodeURIComponent(filename), ai: true, provider: "Pollinations" };
 }
 
-async function generateLyriaMusicFile(prompt, imageFile, index) {
-  const data = await callGoogleInteraction({
-    model: "lyria-3.5",
-    input: prompt
-  }, "Lyria música");
-  const audioData = data.output_audio?.data;
-  if (!audioData) throw new Error("Lyria no devolvió output_audio. Respuesta: " + JSON.stringify(data).slice(0, 800));
-  const filename = "ai-music-option-" + Date.now() + "-" + index + ".mp3";
-  fs.writeFileSync(path.join(MUSIC_DIR, filename), Buffer.from(audioData, "base64"));
-  return { name: filename, url: "/media/music/" + encodeURIComponent(filename), ai: true };
+async function generatePollinationsMusicFile(prompt, index) {
+  const url = "https://gen.pollinations.ai/audio/" + encodeURIComponent(prompt);
+  const r = await fetchWithTimeout(url, { headers: pollinationsHeaders() }, 45000);
+  if (!r.ok) throw new Error("Pollinations música HTTP " + r.status);
+  const type = r.headers.get("content-type") || "";
+  if (!type.includes("audio") && !type.includes("mpeg") && !type.includes("octet-stream")) {
+    throw new Error("Pollinations no devolvió audio.");
+  }
+  const filename = "ai-free-music-" + Date.now() + "-" + index + ".mp3";
+  fs.writeFileSync(path.join(MUSIC_DIR, filename), Buffer.from(await r.arrayBuffer()));
+  return { name: filename, url: "/media/music/" + encodeURIComponent(filename), ai: true, provider: "Pollinations" };
 }
+
 
 app.post("/api/ai-options", async (req, res) => {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) return res.status(400).json({ error: "Falta GEMINI_API_KEY en Render. Añade la clave de Gemini en Environment." });
+  const requestedTheme = String(req.body?.theme || "").trim().slice(0, 160);
+  const theme = requestedTheme || "relaxing nature";
+
+  // Proveedor principal: Pollinations, pensado para cubrir imágenes y audio con muchos modelos.
+  // Gemini/Lyria ya NO son necesarios para esta sección.
   const imagePrompts = [
-    "Create an ultra-realistic cinematic 16:9 landscape for a premium relaxation video: alpine lake at sunrise, crystal clear water, mist over mountains, soft golden light, no people, no buildings, no text, photorealistic.",
-    "Create an ultra-realistic cinematic 16:9 landscape for a premium relaxation video: tropical beach at sunset, calm turquoise ocean, gentle waves, warm sky, no people, no buildings, no text, photorealistic.",
-    "Create an ultra-realistic cinematic 16:9 landscape for a premium relaxation video: misty pine forest after light rain, soft volumetric light, deep green tones, no people, no buildings, no text, photorealistic.",
-    "Create an ultra-realistic cinematic 16:9 landscape for a premium relaxation video: moonlit mountain valley with a calm lake, subtle stars, deep blue tones, no people, no buildings, no text, photorealistic."
+    `Ultra-realistic cinematic 16:9 relaxing landscape about ${theme}: majestic mountains, calm lake, soft sunrise, natural light, no people, no buildings, no text, premium photography.`,
+    `Ultra-realistic cinematic 16:9 relaxing landscape about ${theme}: peaceful tropical coast, calm turquoise ocean, golden sunset, gentle waves, no people, no buildings, no text, premium photography.`,
+    `Ultra-realistic cinematic 16:9 relaxing landscape about ${theme}: misty forest, lush green trees, subtle volumetric light, peaceful atmosphere, no people, no buildings, no text, premium photography.`,
+    `Ultra-realistic cinematic 16:9 relaxing landscape about ${theme}: moonlit valley, still water, stars, deep blue tones, tranquil atmosphere, no people, no buildings, no text, premium photography.`
   ];
   const musicPrompts = [
-    "Create a 2-3 minute instrumental ambient relaxation track. Soft piano, warm pads, very slow tempo, subtle natural texture, no vocals, no drums, spacious and peaceful, inspired by an alpine sunrise.",
-    "Create a 2-3 minute instrumental ocean relaxation track. Gentle piano, airy pads, soft chimes, very slow tempo, no vocals, no strong percussion, calm and spacious, inspired by a sunset beach.",
-    "Create a 2-3 minute instrumental forest meditation track. Warm sustained pads, delicate piano, subtle bells, very slow tempo, no vocals, no beat, peaceful and unobtrusive, inspired by a misty rainy forest.",
-    "Create a 2-3 minute deep sleep ambient track. Very soft low pads, sparse piano notes, extremely slow, no vocals, no drums, dark and calming, inspired by a moonlit mountain valley."
+    `Instrumental ambient relaxation music inspired by ${theme}, soft piano and warm pads, slow, peaceful, spacious, no vocals, no aggressive drums.`,
+    `Deep sleep ambient music inspired by ${theme}, very soft pads, sparse piano, slow evolving texture, no vocals, no beat, calming.`,
+    `Meditation music inspired by ${theme}, gentle bells, warm drones, soft piano, spacious, slow, no vocals, unobtrusive.`,
+    `Nature relaxation soundtrack inspired by ${theme}, airy pads, delicate piano, subtle organic textures, slow, peaceful, no vocals.`
   ];
-  try {
-    // Secuencial para no disparar límites de tasa de Gemini/Lyria.
-    const images = [];
-    const music = [];
-    const imageErrors = [];
-    const musicErrors = [];
-    for (let i = 0; i < imagePrompts.length; i++) {
-      try { images.push(await generateGeminiImageFile(imagePrompts[i], i + 1)); }
-      catch (e) { imageErrors.push(e.message); }
-    }
-    for (let i = 0; i < musicPrompts.length; i++) {
-      try { music.push(await generateLyriaMusicFile(musicPrompts[i], null, i + 1)); }
-      catch (e) { musicErrors.push(e.message); }
-    }
-    if(!images.length&&!music.length) {
-      const detail = [...imageErrors, ...musicErrors].filter(Boolean)[0] || "Sin detalle devuelto por Google.";
-      return res.status(502).json({error:"Google no ha podido generar ningún recurso. " + detail,imageErrors,musicErrors});
-    }
-    res.json({images,music,imageErrors,musicErrors});
-  } catch(e) { res.status(500).json({error:"Error de generación IA: "+e.message}); }
+
+  const images = [], music = [], imageErrors = [], musicErrors = [];
+  const runBatch = async (items, worker, output, errors) => {
+    await Promise.all(items.map(async (prompt, i) => {
+      try { output.push(await worker(prompt, i + 1)); }
+      catch (e) { errors.push(e.message); }
+    }));
+  };
+
+  await Promise.all([
+    runBatch(imagePrompts, generatePollinationsImageFile, images, imageErrors),
+    runBatch(musicPrompts, generatePollinationsMusicFile, music, musicErrors)
+  ]);
+
+  if (!images.length && !music.length) {
+    const details = [...imageErrors.map(e => "Imagen: " + e), ...musicErrors.map(e => "Música: " + e)];
+    return res.status(502).json({
+      error: "El proveedor IA gratuito no ha devuelto recursos. " + (details[0] || "Sin detalle."),
+      imageErrors,
+      musicErrors
+    });
+  }
+
+  res.json({ images, music, imageErrors, musicErrors, provider: "Pollinations" });
 });
+
 
 function runFfmpeg(args) {
   return new Promise((resolve, reject) => {
