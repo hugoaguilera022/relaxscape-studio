@@ -47,7 +47,7 @@ function safe(name) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-const MUSIC_ENGINE_VERSION = "v17-lyria35-high-fidelity";
+const MUSIC_ENGINE_VERSION = "v18-helios-style-relaxation-profile";
 
 const BUILTIN_MUSIC = [
   ["relax-piano.mp3","Piano nocturno","Sueño",261.63,329.63,392],
@@ -537,7 +537,7 @@ async function generateLyriaMusicFile(prompt, index=1) {
     headers: { "Content-Type": "application/json", "x-goog-api-key": key },
     body: JSON.stringify({
       model: "lyria-3.5",
-      input: String(prompt || "") + ". Instrumental only. Professional relaxation ambient music, very slow, organic acoustic instruments, natural dynamics, warm spacious studio mix, no vocals, no lyrics.",
+      input: String(prompt || "") + ". Instrumental only. Deep relaxation piano ambience: soft felt piano as the dominant instrument, sparse slow notes with long decay, gentle consonant harmony, subtle warm pad underneath, intimate close piano tone blended into wide spacious reverb, very low energy, no hook, no pop structure, no drums, no percussion, no beat, no rhythmic pulse, no vocals, no lyrics. Do not reproduce any existing melody or recording.",
       response_format: { type: "audio" }
     })
   }, 120000);
@@ -591,7 +591,7 @@ function getAIMusicOptions(){
 
 app.post("/api/ai-options", async (req, res) => {
   const theme = String(req.body?.theme || "peaceful lake, misty mountains, soft dawn light").trim().slice(0, 120);
-  const musicPrompt = String(req.body?.musicPrompt || "very slow peaceful ambient piano, warm soft pads, gentle evolving harmony, deep calm atmosphere, spacious reverb, no drums, no rhythmic pulse").trim().slice(0, 220);
+  const musicPrompt = String(req.body?.musicPrompt || "very slow deep relaxation piano, soft felt piano as the main instrument, sparse emotional notes, long sustained chords, warm intimate tone, subtle deep ambient pad, very spacious reverb, extremely gentle dynamics, no drums, no percussion, no beat, no rhythmic pulse, no vocals").trim().slice(0, 220);
   const images = [];
   const imageErrors = [];
 
