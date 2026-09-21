@@ -1378,119 +1378,173 @@ function buildAIGenPrompt(query){
     "Generate an original, professionally produced piece that STRICTLY follows this user search:",
     q || "relaxing ambient piano",
     "The requested genre/style is the primary constraint. Preserve its authentic rhythm, harmony, instrumentation, sound palette and production language.",
-    "Create a coherent long-form composition with an intro, evolving sections, recurring motifs, tasteful variation, transitions, dynamics and a resolved ending.",
+    "Create a coherent composition with intro, evolving sections, recurring motifs, tasteful variation, transitions, dynamics and a resolved ending.",
     "Do not turn it into generic ambient music unless ambient is explicitly requested.",
     "Clean professional mix, natural instrument timbres, controlled low end, detailed stereo image, musical phrasing."
   ].join(" ");
 }
 
-async function startReplicateMusicGeneration(query){
-  const token=process.env.REPLICATE_API_TOKEN;
-  if(!token) throw new Error("Falta REPLICATE_API_TOKEN en Render. Añade tu clave de Replicate para activar la generación musical IA.");
-  const input={
-    prompt:buildAIGenPrompt(query), lyrics:"[Instrumental]", duration:600,
-    thinking:true, key_scale:"", batch_size:1, audio_format:"mp3",
-    guidance_scale:7, time_signature:"auto", inference_steps:8, shift:3, seed:-1
+// GRATUITO: usamos el Space oficial de ACE-Step 1.5 en Hugging Face.
+// El Space expone la API de cola de Gradio; no requiere REPLICATE_API_TOKEN.
+// Si el Space está dormido, Hugging Face lo despierta y puede tardar más en arrancar.
+const ACESTEP_HF_SPACE="https://ace-step-ace-step-v1-5.hf.space";
+
+async function aceStepHFGenerate(query, durationSeconds){
+  const prompt=buildAIGenPrompt(query);
+  // API pública del botón /generate_music del Space oficial.
+  // Orden actual de controles: prompt, lyrics, duration, bpm, language,
+  // instrumental, guidance scale, seed.
+  const payload={
+    data:[
+      prompt,
+      "[Instrumental]",
+      Math.max(10,Math.min(600,Number(durationSeconds)||600)),
+      null,
+      "英文 (en)",
+      "是",
+      7,
+      null
+    ]
   };
-  // Replicate requires the version in the prediction payload when using the
-  // generic /v1/predictions endpoint. Using the model-specific predictions URL
-  // can return a 404 even though the model itself is public.
-  const version="fishaudio/ace-step-1.5:74e3a7d383b18815e277de5223f5fe9d53d38832de15aa567fe729fa129d0d85";
-  // Con cuentas sin método de pago, Replicate puede responder 429 aunque el
-  // siguiente intento sea válido. Esperamos automáticamente al reset para que
-  // el usuario no tenga que pulsar el botón varias veces. No cambiamos ningún
-  // parámetro de la generación ni tocamos el pipeline de imágenes/Freesound.
-  let lastDetail="";
-  for(let attempt=0;attempt<4;attempt++){
-    const r=await fetchWithTimeout("https://api.replicate.com/v1/predictions",{
+  const r=await fetchWithTimeout(
+    ACESTEP_HF_SPACE+"/gradio_api/call/generate_music",
+    {
       method:"POST",
-      headers:{"Authorization":"Bearer "+token,"Content-Type":"application/json","Prefer":"wait=1","Cancel-After":"15m"},
-      body:JSON.stringify({version,input})
-    },20000);
-    const text=await r.text(); let data={}; try{data=JSON.parse(text)}catch{}
-    if(r.ok) return data;
-    const detail=data?.detail||data?.error||text.slice(0,500)||"Replicate rechazó la generación.";
-    lastDetail=detail;
-    if(r.status===429 && attempt<3){
-      const m=String(detail).match(/resets? in ~?(\d+)s/i);
-      const waitMs=Math.max(11000,((m?Number(m[1]):10)+2)*1000);
-      console.log("[AI Music] Replicate rate limit; reintentando en",Math.round(waitMs/1000),"s.");
-      await new Promise(resolve=>setTimeout(resolve,waitMs));
-      continue;
-    }
-    if(r.status===429){
-      throw new Error("Replicate sigue limitando la cuenta. El código ya reintenta automáticamente; si no hay método de pago, Replicate aplica un máximo de 6 predicciones por minuto.");
-    }
-    throw new Error(detail);
-  }
-  throw new Error(lastDetail||"Replicate rechazó la generación.");
+      headers:{"Content-Type":"application/json","Accept":"application/json"},
+      body:JSON.stringify(payload)
+    },
+    30000
+  );
+  const text=await r.text();
+  let data={}; try{data=JSON.parse(text)}catch{}
+  if(!r.ok) throw new Error(data?.detail||data?.error||text.slice(0,500)||("Hugging Face HTTP "+r.status));
+  if(!data.event_id) throw new Error("El Space de ACE-Step no devolvió un event_id.");
+  return data.event_id;
 }
-async function finalizeReplicateMusicJob(job){
-  const token=process.env.REPLICATE_API_TOKEN;
-  const r=await fetchWithTimeout("https://api.replicate.com/v1/predictions/"+encodeURIComponent(job.predictionId),{
-    headers:{"Authorization":"Bearer "+token}
-  },15000);
-  const data=await r.json();
-  job.status=data.status;
-  if(data.status==="failed"||data.status==="canceled") throw new Error(data.error||"La generación musical IA falló.");
-  if(data.status!=="succeeded") return false;
-  const raw=Array.isArray(data.output)?data.output[0]:data.output;
-  const audioUrl=typeof raw==="string"?raw:(raw?.url||raw?.href);
-  if(!audioUrl) throw new Error("Replicate terminó la generación pero no devolvió audio.");
-  const audio=await fetchWithTimeout(audioUrl,{},30000);
-  if(!audio.ok) throw new Error("No se pudo descargar el audio generado por la IA.");
-  const stamp=Date.now(), source=path.join(MUSIC_DIR,"replicate-ai-source-"+stamp+".mp3");
-  const finalName="relaxscape-ai-"+stamp+".mp3", out=path.join(MUSIC_DIR,finalName);
-  fs.writeFileSync(source,Buffer.from(await audio.arrayBuffer()));
-  const looped=path.join(MUSIC_DIR,"replicate-ai-loop-"+stamp+".mp3");
-  const hours=Number(job.durationHours)||1;
-  await runFfmpeg([
-    "-y","-stream_loop","-1","-i",source,"-t",String(hours*3600),
-    "-af","afade=t=in:st=0:d=4,afade=t=out:st="+Math.max(0,hours*3600-5)+":d=5,loudnorm=I=-16:TP=-1.5:LRA=8",
-    "-c:a","libmp3lame","-b:a","192k",looped
-  ]);
-  fs.renameSync(looped,out); fs.rmSync(source,{force:true});
-  job.result={name:finalName,url:"/media/music/"+encodeURIComponent(finalName),hours,provider:"ACE-Step 1.5 vía Replicate",generatedFromSearch:true,query:job.query};
-  job.status="succeeded"; return true;
+
+async function aceStepHFWait(eventId, timeoutMs=12*60*1000){
+  const started=Date.now();
+  const r=await fetch(
+    ACESTEP_HF_SPACE+"/gradio_api/call/generate_music/"+encodeURIComponent(eventId),
+    {headers:{Accept:"text/event-stream"}}
+  );
+  if(!r.ok) throw new Error("ACE-Step/Hugging Face no pudo consultar la generación (HTTP "+r.status+").");
+  if(!r.body) throw new Error("ACE-Step no devolvió un flujo de resultados.");
+
+  const reader=r.body.getReader();
+  const decoder=new TextDecoder();
+  let buffer="";
+  let result=null;
+  while(Date.now()-started<timeoutMs){
+    const {value,done}=await reader.read();
+    if(value) buffer+=decoder.decode(value,{stream:!done});
+    const chunks=buffer.split("\n\n");
+    buffer=chunks.pop()||"";
+    for(const chunk of chunks){
+      const lines=chunk.split("\n");
+      let event="", payload="";
+      for(const line of lines){
+        if(line.startsWith("event:")) event=line.slice(6).trim();
+        if(line.startsWith("data:")) payload+=line.slice(5).trim();
+      }
+      if(event==="error"){
+        let e={}; try{e=JSON.parse(payload)}catch{}
+        throw new Error(e?.message||e?.error||payload||"ACE-Step devolvió un error.");
+      }
+      if(event==="complete"){
+        try{result=JSON.parse(payload)}catch{result=payload}
+        return result;
+      }
+    }
+    if(done) break;
+  }
+  throw new Error("ACE-Step tardó demasiado en responder. El Space gratuito puede estar despertando la GPU.");
+}
+
+function findAudioUrl(value){
+  if(!value) return null;
+  if(typeof value==="string"){
+    if(/^https?:\/\//i.test(value)) return value;
+    if(/\.(wav|mp3|flac)(\?|$)/i.test(value)) return ACESTEP_HF_SPACE+"/file="+encodeURIComponent(value.replace(/^\/+/, ""));
+    return null;
+  }
+  if(Array.isArray(value)){
+    for(const item of value){const u=findAudioUrl(item);if(u)return u}
+    return null;
+  }
+  if(typeof value==="object"){
+    for(const k of ["url","audio","path","value"]){
+      const u=findAudioUrl(value[k]); if(u)return u;
+    }
+    for(const k of Object.keys(value)){const u=findAudioUrl(value[k]);if(u)return u}
+  }
+  return null;
+}
+
+async function downloadHFGeneratedAudio(result, stamp){
+  const audioUrl=findAudioUrl(result);
+  if(!audioUrl) throw new Error("ACE-Step terminó pero no devolvió un archivo de audio utilizable.");
+  const audio=await fetchWithTimeout(audioUrl,{headers:{Accept:"audio/*"}},120000);
+  if(!audio.ok) throw new Error("No se pudo descargar el audio generado por ACE-Step (HTTP "+audio.status+").");
+  const filename="relaxscape-ai-"+stamp+".mp3";
+  const source=path.join(MUSIC_DIR,"ace-step-source-"+stamp+".wav");
+  const out=path.join(MUSIC_DIR,filename);
+  const bytes=Buffer.from(await audio.arrayBuffer());
+  if(!bytes.length) throw new Error("ACE-Step devolvió un archivo vacío.");
+  // El Space puede devolver WAV aunque la interfaz pida música. Normalizamos a MP3.
+  fs.writeFileSync(source,bytes);
+  await runFfmpeg(["-y","-i",source,"-af","loudnorm=I=-16:TP=-1.5:LRA=8","-c:a","libmp3lame","-b:a","192k",out]);
+  fs.rmSync(source,{force:true});
+  return {name:filename,url:"/media/music/"+encodeURIComponent(filename),provider:"ACE-Step 1.5 vía Hugging Face Space gratuito",generatedFromSearch:true,query:""};
+}
+
+async function processFreeAceStepJob(job){
+  try{
+    job.status="starting";
+    const eventId=await aceStepHFGenerate(job.query,Math.min(600,Number(job.sourceDuration)||600));
+    job.eventId=eventId;
+    job.status="running";
+    const raw=await aceStepHFWait(eventId);
+    const stamp=Date.now();
+    const result=await downloadHFGeneratedAudio(raw,stamp);
+    result.query=job.query;
+    job.result=result;
+    job.status="succeeded";
+  }catch(e){
+    job.status="failed";
+    job.error=e.message;
+    console.error("[AI Music] ACE-Step gratuito ERROR",e.stack||e.message);
+  }
 }
 
 app.post("/api/generate-freesound-ai-mix", async (req,res)=>{
-  const {query="",durationHours=1}=req.body||{}, cleanQuery=String(query||"").trim(), hours=Number(durationHours);
+  const {query="",durationHours=1}=req.body||{};
+  const cleanQuery=String(query||"").trim();
+  const hours=Number(durationHours);
   if(!cleanQuery) return res.status(400).json({error:"Escribe primero el género, estilo o descripción musical."});
   if(![1,2].includes(hours)) return res.status(400).json({error:"La duración debe ser de 1 o 2 horas."});
-  if(!process.env.REPLICATE_API_TOKEN) return res.status(503).json({error:"Falta REPLICATE_API_TOKEN en Render. Añade tu clave de Replicate para activar la generación musical IA."});
-  try{
-    const prediction=await startReplicateMusicGeneration(cleanQuery);
-    const jobId="music-"+Date.now()+"-"+Math.random().toString(36).slice(2,9);
-    const job={id:jobId,predictionId:prediction.id,status:prediction.status||"starting",query:cleanQuery,durationHours:hours,result:null,error:null,createdAt:Date.now()};
-    FREESOUND_MIX_JOBS.set(jobId,job);
-    return res.json({jobId,status:job.status,provider:"ACE-Step 1.5 vía Replicate"});
-  }catch(e){
-    console.error("[AI Music] start ERROR",e.stack||e.message);
-    return res.status(500).json({error:e.message});
-  }
+
+  const jobId="music-"+Date.now()+"-"+Math.random().toString(36).slice(2,9);
+  const job={id:jobId,status:"queued",query:cleanQuery,durationHours:hours,sourceDuration:600,result:null,error:null,createdAt:Date.now(),eventId:null};
+  FREESOUND_MIX_JOBS.set(jobId,job);
+  processFreeAceStepJob(job);
+  return res.json({jobId,status:"queued",provider:"ACE-Step 1.5 vía Hugging Face Space gratuito"});
 });
 
 app.get("/api/generate-freesound-ai-mix-status", async (req,res)=>{
   const job=FREESOUND_MIX_JOBS.get(String(req.query.jobId||""));
   if(!job) return res.status(404).json({error:"No se encontró la generación musical."});
-  try{
-    if(!["succeeded","failed","canceled"].includes(job.status)) await finalizeReplicateMusicJob(job);
-  }catch(e){
-    job.status="failed"; job.error=e.message;
-    console.error("[AI Music] status ERROR",e.stack||e.message);
-  }
-  if(Date.now()-job.createdAt>20*60*1000 && !["succeeded","failed","canceled"].includes(job.status)){
-    job.status="failed"; job.error="La generación musical superó el tiempo máximo.";
+  if(Date.now()-job.createdAt>20*60*1000 && !["succeeded","failed"].includes(job.status)){
+    job.status="failed";
+    job.error="La generación musical superó el tiempo máximo. El Space gratuito de Hugging Face puede estar ocupado.";
   }
   if(job.status==="succeeded") return res.json({status:"succeeded",result:job.result,query:job.query});
-  if(job.status==="failed"||job.status==="canceled"){
+  if(job.status==="failed"){
     FREESOUND_MIX_JOBS.delete(job.id);
-    return res.status(500).json({status:job.status,error:job.error||"Generación cancelada."});
+    return res.status(500).json({status:"failed",error:job.error||"Generación cancelada."});
   }
   return res.json({status:job.status,query:job.query});
 });
-
 
 app.post("/api/import-external-music", async (req,res)=>{
   const {preview,name="Freesound preview",soundId,sourceUrl,username,license}=req.body||{};
