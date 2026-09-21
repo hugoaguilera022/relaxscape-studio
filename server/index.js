@@ -346,7 +346,7 @@ app.post("/api/ai-options", async (req, res) => {
     // que Pexels tenga clave o de que alguna búsqueda haya fallado.
     const existingMusic = BUILTIN_MUSIC.filter(t => fs.existsSync(path.join(MUSIC_DIR, t.file)));
     const musicTracks = [...(existingMusic.length ? existingMusic : BUILTIN_MUSIC)]
-      .sort(() => Math.random() - 0.5).slice(0, 4);
+      .sort(() => Math.random() - 0.5).slice(0, 2);
     try {
       await ensureBuiltinMusic(musicTracks);
     } catch (e) {
@@ -764,8 +764,19 @@ async function generateDaily() {
 }
 
 
-const hour = Number(process.env.DAILY_VIDEO_HOUR || 7);
-cron.schedule(`0 ${hour} * * *`, generateDaily);
+app.get("/health", (_, res) => res.json({ ok: true, service: "RelaxScape", musicEngine: MUSIC_ENGINE_VERSION }));
+
+try {
+  const rawHour = Number(process.env.DAILY_VIDEO_HOUR ?? 7);
+  const hour = Number.isInteger(rawHour) && rawHour >= 0 && rawHour <= 23 ? rawHour : 7;
+  cron.schedule("0 " + hour + " * * *", generateDaily);
+  console.log("[Cron] Programado a las", hour + ":00");
+} catch (e) {
+  console.error("[Cron] Desactivado por configuración inválida:", e.message);
+}
+
+process.on("unhandledRejection", e => console.error("[UnhandledRejection]", e));
+process.on("uncaughtException", e => console.error("[UncaughtException]", e));
 
 app.get("*splat", (_, res) => res.sendFile(path.join(PUBLIC, "index.html")));
 
