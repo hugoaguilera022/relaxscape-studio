@@ -126,8 +126,8 @@ app.post("/api/generate-video", async (req, res) => {
 async function generatePexelsVideo(prompt, aspectRatio, key, durationHours = 1) {
   const rawPrompt = String(prompt || "peaceful nature landscape");
   const aliases = {
-    lluvia: "rain rainfall storm",
-    bosque: "forest woods woodland",
+    lluvia: "rain nature drops",
+    bosque: "forest woodland nature",
     oceano: "ocean sea waves",
     mar: "ocean sea waves",
     montanas: "mountains mountain landscape",
@@ -140,13 +140,15 @@ async function generatePexelsVideo(prompt, aspectRatio, key, durationHours = 1) 
     cascada: "waterfall nature",
     rio: "river flowing water nature",
     fuego: "fireplace fire cozy",
-    nubes: "clouds sky timelapse"
+    nubes: "clouds sky"
   };
+
   const normalized = rawPrompt.toLowerCase();
   const extra = Object.entries(aliases)
     .filter(([word]) => normalized.includes(word))
     .map(([, terms]) => terms)
     .join(" ");
+
   const query = (rawPrompt + " " + extra)
     .replace(/[^a-zA-Z0-9áéíóúüñÁÉÍÓÚÜÑ ,.-]/g, " ")
     .replace(/\s+/g, " ").trim().slice(0, 180) || "peaceful nature landscape";
@@ -155,132 +157,113 @@ async function generatePexelsVideo(prompt, aspectRatio, key, durationHours = 1) 
   if (![1, 2].includes(hours)) throw new Error("La duración debe ser de 1 o 2 horas.");
 
   const orientation = aspectRatio === "9:16" ? "portrait" : "landscape";
-  // Cambiamos de página para no devolver siempre el mismo vídeo cuando la búsqueda es igual.
-  // Pexels ordena los resultados de forma muy estable, así que una página aleatoria
-  // + selección aleatoria entre los mejores candidatos evita repetir siempre el primero.
   const page = 1 + Math.floor(Math.random() * 5);
+
+  // Usamos FOTOS de Pexels: hay mucha más variedad que en vídeo.
+  // Pedimos muchos resultados y después escogemos varias fotos de máxima calidad.
   const search = await fetch(
-    `https://api.pexels.com/v1/videos/search?query=${encodeURIComponent(query)}&per_page=10&page=${page}&orientation=${orientation}&size=medium&locale=en-US`,
+    `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=80&page=${page}&orientation=${orientation}&size=large&locale=en-US`,
     { headers: { Authorization: key } }
   );
   const data = await search.json();
   if (!search.ok) throw new Error("Pexels: " + (data.error || data.message || ("HTTP " + search.status)));
 
-  const videos = (data.videos || [])
-    .filter(v => v.video_files?.length && Number(v.duration || 0) >= 5);
+  const photos = (data.photos || []).filter(p => p.src?.large2x || p.src?.large);
+  if (!photos.length) throw new Error("Pexels no encontró fotos para esa búsqueda. Prueba con otro paisaje.");
 
-  if (!videos.length) {
-    throw new Error("Pexels no encontró un vídeo de buena calidad para esa búsqueda. Prueba con otro paisaje.");
-  }
+  const targetW = aspectRatio === "9:16" ? 1080 : 1920;
+  const targetH = aspectRatio === "9:16" ? 1920 : 1080;
+  const targetPixels = targetW * targetH;
 
-  const targetWidth = aspectRatio === "9:16" ? 1080 : 1920;
-  const targetHeight = aspectRatio === "9:16" ? 1920 : 1080;
-
-  // Equilibrio entre calidad y velocidad: usamos archivos MEDIUM y evitamos 4K,
-  // porque construir un vídeo de 1–2 horas con un archivo 4K tarda demasiado en Render.
-  const candidates = [];
-  for (const video of videos) {
-    for (const file of video.video_files || []) {
-      if (!file.link || !file.width || !file.height) continue;
-
-      const isPortrait = file.height > file.width;
-      const correctOrientation = aspectRatio === "9:16" ? isPortrait : !isPortrait;
-      if (!correctOrientation) continue;
-
-      const width = Number(file.width);
-      const height = Number(file.height);
-      const targetWidth = aspectRatio === "9:16" ? 1080 : 1920;
-      const targetHeight = aspectRatio === "9:16" ? 1920 : 1080;
-      const exact1080 = width === targetWidth && height === targetHeight;
-      const atLeast1080 = width >= targetWidth * 0.9 && height >= targetHeight * 0.9;
+  const candidates = photos
+    .map(photo => {
+      const src = photo.src?.large2x || photo.src?.large || photo.src?.original;
+      const width = Number(photo.width || 0);
+      const height = Number(photo.height || 0);
       const pixels = width * height;
-
-      candidates.push({
-        video,
-        file,
-        width,
-        height,
-        exact1080,
-        atLeast1080,
-        pixels,
-        duration: Number(video.duration || 0)
-      });
-    }
-  }
+      const isPortrait = height > width;
+      const correctOrientation = aspectRatio === "9:16" ? isPortrait : !isPortrait;
+      return { photo, src, width, height, pixels, correctOrientation };
+    })
+    .filter(x => x.src && x.correctOrientation && x.width >= targetW * 0.8 && x.height >= targetH * 0.8);
 
   if (!candidates.length) {
-    throw new Error("Pexels no encontró un vídeo compatible con el formato solicitado.");
+    throw new Error("Pexels no encontró fotos con resolución suficiente para ese formato.");
   }
 
-  candidates.sort((a, b) => {
-    // 1. Exactamente 1080p/1080x1920
-    if (a.exact1080 !== b.exact1080) return a.exact1080 ? -1 : 1;
+  // Primero calidad: nos quedamos con el 35% de mayor resolución.
+  candidates.sort((a, b) => b.pixels - a.pixels);
+  const qualityPoolSize = Math.max(12, Math.ceil(candidates.length * 0.35));
+  const qualityPool = candidates.slice(0, qualityPoolSize);
 
-    // 2. Cualquier HD cercano a 1080p
-    if (a.atLeast1080 !== b.atLeast1080) return a.atLeast1080 ? -1 : 1;
+  // Después variedad: seleccionamos 10 fotos aleatorias del grupo de mayor calidad.
+  const shuffled = qualityPool.sort(() => Math.random() - 0.5);
+  const selected = shuffled.slice(0, Math.min(10, shuffled.length));
 
-    // 3. Entre HD, elige la resolución más cercana a 1080p.
-    const targetPixels =
-      (aspectRatio === "9:16" ? 1080 : 1920) *
-      (aspectRatio === "9:16" ? 1920 : 1080);
-    const distanceA = Math.abs(a.pixels - targetPixels);
-    const distanceB = Math.abs(b.pixels - targetPixels);
-    if (distanceA !== distanceB) return distanceA - distanceB;
+  if (selected.length < 4) {
+    throw new Error("Pexels no encontró suficientes fotos de calidad para crear la secuencia.");
+  }
 
-    // 4. Como desempate, un clip algo más largo.
-    return b.duration - a.duration;
-  });
-
-  // Nos quedamos con los candidatos de calidad equivalente y elegimos uno al azar.
-  // Así mantenemos 1080p/HD sin sacrificar variedad.
-  const bestScore = candidates[0];
-  const topCandidates = candidates.filter(c =>
-    c.exact1080 === bestScore.exact1080 &&
-    c.atLeast1080 === bestScore.atLeast1080 &&
-    Math.abs(c.pixels - ((aspectRatio === "9:16" ? 1080 : 1920) * (aspectRatio === "9:16" ? 1920 : 1080))) <=
-      Math.max(300000, bestScore.pixels * 0.18)
-  );
-  const preferred = topCandidates[Math.floor(Math.random() * topCandidates.length)] || bestScore;
-  const video = preferred.video;
-  const url = preferred.file.link;
-
-  console.log(
-    "[Pexels] Seleccionado:",
-    video.id,
-    preferred.width + "x" + preferred.height,
-    "para", aspectRatio,
-    "| consulta:", query
-  );
   const stamp = Date.now();
-  const source = path.join(VIDEO_DIR, `pexels-${stamp}-source.mp4`);
-  const finalName = `relaxscape-${stamp}-${hours}h.mp4`;
+  const workDir = path.join(VIDEO_DIR, `photo-${stamp}`);
+  const finalName = `relaxscape-photos-${stamp}-${hours}h.mp4`;
   const finalPath = path.join(VIDEO_DIR, finalName);
+  fs.mkdirSync(workDir, { recursive: true });
 
   try {
-    console.log("[Pexels] Descargando vídeo HD:", video.id);
-    const download = await fetch(url);
-    if (!download.ok) throw new Error("No se pudo descargar el vídeo de Pexels (HTTP " + download.status + ").");
-    fs.writeFileSync(source, Buffer.from(await download.arrayBuffer()));
+    console.log("[Pexels Fotos] Seleccionadas:", selected.map(x => x.photo.id).join(", "));
 
-    // NO generamos físicamente 1–2 horas de vídeo aquí.
-    // Guardamos únicamente el clip original para que la reproducción lo repita.
-    // Esto evita que Render tenga que escribir gigabytes antes de responder.
-    console.log("[Pexels] Clip listo. Reproducción en bucle:", preferred.width + "x" + preferred.height);
-    fs.renameSync(source, finalPath);
+    // Descargamos las fotos seleccionadas en paralelo.
+    await Promise.all(selected.map(async (item, i) => {
+      const r = await fetch(item.src);
+      if (!r.ok) throw new Error("No se pudo descargar una foto de Pexels (HTTP " + r.status + ").");
+      fs.writeFileSync(path.join(workDir, `photo-${i}.jpg`), Buffer.from(await r.arrayBuffer()));
+    }));
+
+    // Creamos solo un clip corto (~60 s) y lo repetimos en el navegador.
+    // Así la generación sigue siendo rápida aunque el usuario elija 1 o 2 horas.
+    const clipSeconds = 6;
+    const inputs = [];
+    const filters = [];
+
+    for (let i = 0; i < selected.length; i++) {
+      inputs.push("-loop", "1", "-t", String(clipSeconds), "-i", path.join(workDir, `photo-${i}.jpg`));
+      filters.push(
+        `[${i}:v]scale=${targetW}:${targetH}:force_original_aspect_ratio=increase,crop=${targetW}:${targetH},setsar=1,format=yuv420p[v${i}]`
+      );
+    }
+
+    const concatInputs = selected.map((_, i) => `[v${i}]`).join("");
+    filters.push(`${concatInputs}concat=n=${selected.length}:v=1:a=0[outv]`);
+
+    const clipPath = path.join(workDir, "slideshow.mp4");
+    await runFfmpeg([
+      "-y",
+      ...inputs,
+      "-filter_complex", filters.join(";"),
+      "-map", "[outv]",
+      "-c:v", "libx264",
+      "-preset", "veryfast",
+      "-crf", "20",
+      "-movflags", "+faststart",
+      clipPath
+    ]);
+
+    fs.renameSync(clipPath, finalPath);
 
     return {
       name: finalName,
       url: `/media/videos/${finalName}`,
-      source: "Pexels",
-      sourceUrl: video.url,
-      resolution: `${preferred.file.width}x${preferred.file.height}`,
-      clips: 1,
+      source: "Pexels Photos",
+      sourceUrl: "https://www.pexels.com/",
+      resolution: `${targetW}x${targetH}`,
+      photos: selected.length,
       durationHours: hours,
       loop: true,
-      sourceDurationSeconds: Number(video.duration || 0)
+      clipDurationSeconds: selected.length * clipSeconds
     };
   } finally {
-    try { fs.unlinkSync(source); } catch {}
+    fs.rmSync(workDir, { recursive: true, force: true });
   }
 }
 
