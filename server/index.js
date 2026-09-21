@@ -899,11 +899,11 @@ app.post("/api/video-preview-options",(req,res)=>{
       for(let i=0;i<variants.length;i++){
         const track=variants[i];
         const musicPath=path.join(work,track.file);
-        await generateAIMusicFile(track,musicPath,60000);
+        await generateAIMusicFile(track,musicPath,30000);
         const videoName="video-preview-"+jobId+"-"+track.variant+".mp4";
         const out=path.join(VIDEO_DIR,videoName);
         await runFfmpeg([
-          "-y","-loop","1","-i",imagePath,"-i",musicPath,
+          "-y","-loop","1","-i",imagePath,"-stream_loop","-1","-i",musicPath,
           "-t","60",
           "-vf","scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
           "-c:v","libx264","-preset","veryfast","-crf","27",
