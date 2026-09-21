@@ -55,7 +55,7 @@ function safe(name) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-const MUSIC_ENGINE_VERSION = "v25-free-music-engine";
+const MUSIC_ENGINE_VERSION = "v26-local-only-music-engine";
 
 const BUILTIN_MUSIC = [
   ["relax-piano.mp3","Piano nocturno","Sueño",261.63,329.63,392],
@@ -100,7 +100,7 @@ function makeCompositionWav(track, wavPath){
   // pero ahora pertenecen al mismo universo sonoro pedido.
   const sr=12000, dur=18, n=sr*dur, samples=new Float32Array(n*2);
   const variant=((Number(track.variant||1)-1)%4+4)%4;
-  const brief=String(track.userMusicBrief||track.musicProfile||track.label||"relaxing ambient music").toLowerCase();
+  const brief=String(track.musicProfile||track.userMusicBrief||"professional deep-relaxation ambient music").toLowerCase();
   const hz=m=>440*Math.pow(2,(m-69)/12);
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   const has=(...words)=>words.some(w=>brief.includes(w));
@@ -286,24 +286,13 @@ async function ensureBuiltinMusic(tracks=BUILTIN_MUSIC){
     try{
       fs.rmSync(out,{force:true});
       console.log("[Music v14] Generando:",track.label,track.file);
-      try{
-        const alt=await generatePollinationsMusicFile(track.musicProfile || track.label, track.variant||1);
-        const altPath=path.join(MUSIC_DIR,alt.name);
-        fs.copyFileSync(altPath,out);
-        fs.rmSync(altPath,{force:true});
-        console.log("[ElevenLabs Music v2.5/Pollinations] LISTA:",track.file);
-      }catch(e){
-        console.warn("[ElevenLabs Music v2.5/Pollinations] No disponible:",e.message);
-        try{
-          const generated=await generateLyriaMusicFile(track.musicProfile || track.label, track.variant||1);
-          const generatedPath=path.join(MUSIC_DIR, generated.name);
-          fs.copyFileSync(generatedPath, out);
-          fs.rmSync(generatedPath,{force:true});
-          console.log("[Lyria 3.5] LISTA:",track.file);
-        }catch(lyriaError){
+      // Motor musical 100% local y gratuito.
+      // No intentamos Pollinations/ElevenLabs ni Lyria: Crear IA no depende
+      // de saldo, cuotas ni APIs de pago.
+      try {
           // Fallback gratuito local: nunca dejamos Crear IA sin música.
           // Cada opción recibe una identidad instrumental y armónica diferente.
-          const userBrief = String(track.userMusicBrief || track.musicProfile || track.label || "relaxing ambient music");
+          const userBrief = "professional deep-relaxation ambient music for peace and calm";
           const fallbackProfiles = [
             "USER BRIEF: "+userBrief+". Preserve its genre, mood, instruments, environment and tempo. Local timbral engine: felt piano with nylon guitar and cello colors. Do not turn the request into a generic relaxation preset.",
             "USER BRIEF: "+userBrief+". Preserve its genre, mood, instruments, environment and tempo. Local timbral engine: bowed strings and cello dominate, with sustained orchestral phrasing. Do not turn the request into a generic relaxation preset.",
@@ -323,7 +312,6 @@ async function ensureBuiltinMusic(tracks=BUILTIN_MUSIC){
           track.generated = true;
           track.fallback = true;
           console.log("[RelaxScape Free Music Engine] LISTA:",track.file,"variante",track.variant);
-        }
       }
       if(!valid(track)) throw new Error("FFmpeg no creó un MP3 válido");
       const audioBytes=fs.readFileSync(out);
