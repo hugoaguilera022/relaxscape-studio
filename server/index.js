@@ -463,12 +463,15 @@ async function generateDaily() {
 }
 
 
-await ensureBuiltinMusic();
-
 const hour = Number(process.env.DAILY_VIDEO_HOUR || 7);
 cron.schedule(`0 ${hour} * * *`, generateDaily);
 
 app.get("*splat", (_, res) => res.sendFile(path.join(PUBLIC, "index.html")));
 
 const port = Number(process.env.PORT || 3000);
-app.listen(port, () => console.log(`RelaxScape activo en http://localhost:${port}`));
+app.listen(port, () => {
+  console.log(`RelaxScape activo en http://localhost:${port}`);
+  ensureBuiltinMusic()
+    .then(() => console.log("Biblioteca musical integrada lista."))
+    .catch(e => console.error("Error preparando la música integrada:", e.message));
+});
