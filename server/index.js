@@ -462,16 +462,24 @@ let aiMusicPreparing = false;
 let aiMusicTracks = [];
 
 function getAIMusicOptions(){
-  const defs = aiMusicTracks.length ? aiMusicTracks.map(t=>({file:t.file,label:t.label})) : [
-    { file:"relax-piano.mp3", label:"Piano nocturno" },
-    { file:"relax-ocean.mp3", label:"Piano y océano" },
-    { file:"relax-rain.mp3", label:"Piano y lluvia" },
-    { file:"relax-dream.mp3", label:"Piano soñador" }
+  const defs = aiMusicTracks.length ? aiMusicTracks : [
+    { ...BUILTIN_MUSIC[0], label:"Piano nocturno" },
+    { ...BUILTIN_MUSIC[1], label:"Piano y océano" },
+    { ...BUILTIN_MUSIC[16], label:"Piano y lluvia" },
+    { ...BUILTIN_MUSIC[3], label:"Piano soñador" }
   ];
-  return defs.map(d => {
-    const t = BUILTIN_MUSIC.find(x => x.file === d.file);
-    if(!t || !fs.existsSync(path.join(MUSIC_DIR,t.file))) return null;
-    return { name:t.file, url:"/media/music/"+encodeURIComponent(t.file), ai:false, provider:"RelaxScape Ambient Engine", generated:true, fallback:true, label:d.label, category:t.category };
+  return defs.map(t => {
+    if(!t || !t.file || !fs.existsSync(path.join(MUSIC_DIR,t.file))) return null;
+    return {
+      name:t.file,
+      url:"/media/music/"+encodeURIComponent(t.file),
+      ai:true,
+      provider:"RelaxScape Ambient Engine",
+      generated:true,
+      fallback:false,
+      label:t.label,
+      category:t.category
+    };
   }).filter(Boolean);
 }
 
