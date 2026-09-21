@@ -90,7 +90,7 @@ function makeCompositionWav(track, wavPath){
   // Motor armónico v7: ambient cinematográfico, progresiones lentas, voice-leading
   // estricto, melodía respirada y capas suaves. Se renderiza a 22.05 kHz y se
   // entrega a FFmpeg a 44.1 kHz para mantener calidad sin bloquear Render.
-  const sr=11025, dur=10, n=sr*dur, samples=new Float32Array(n*2);
+  const sr=8000, dur=7, n=sr*dur, samples=new Float32Array(n*2);
   const profile=String(track.musicProfile||"").toLowerCase();
   const ultraCalm=/relax|calm|sleep|meditat|peace|soft|ambient|piano|nature|spa|healing|stress|anxiety/.test(profile);
   const darkCalm=/deep|night|dream|sleep/.test(profile);
@@ -310,17 +310,17 @@ function makeCompositionWav(track, wavPath){
   writeWav(wavPath,samples,sr,2);
 }
 async function ensureBuiltinMusic(tracks=BUILTIN_MUSIC){
-  const marker=path.join(MUSIC_DIR,".relaxscape-music-engine-v9");
+  const marker=path.join(MUSIC_DIR,".relaxscape-music-engine-v10");
   if(!fs.existsSync(marker)){try{fs.writeFileSync(marker,MUSIC_ENGINE_VERSION)}catch{}}
   const pending=tracks.filter(t=>!fs.existsSync(path.join(MUSIC_DIR,t.file)));
   await Promise.all(pending.map(async track=>{
     const out=path.join(MUSIC_DIR,track.file), wav=path.join(MUSIC_DIR,"."+track.file+".wav");
     try{
-      console.log("[Music v9] Generando:",track.label);
+      console.log("[Music v10] Generando:",track.label);
       makeCompositionWav(track,wav);
       await runFfmpeg(["-y","-stream_loop","-1","-i",wav,"-t","24","-c:a","libmp3lame","-b:a","160k","-ar","44100",out]);
-      console.log("[Music v9] Lista:",track.file);
-    }catch(e){console.error("[Music v9] ERROR",track.file,e.message)}
+      console.log("[Music v10] Lista:",track.file);
+    }catch(e){console.error("[Music v10] ERROR",track.file,e.message)}
     finally{try{fs.rmSync(wav,{force:true})}catch{}}
   }));
 }
@@ -599,7 +599,7 @@ function aiTracksForBackground(prompt=""){
       "variation 4: deep cinematic ambient, different chord voicings and descending melody"
     ];
     return {...b,
-      file:"ai-prompt-"+hashText(p)+"-"+(i+1)+".mp3",
+      file:"ai-prompt-"+hashText(p)+"-v10-"+(i+1)+".mp3",
       label:"IA · "+(i+1),
       variant,
       f1:f[0]*Math.pow(2,shift/12),f2:f[1]*Math.pow(2,shift/12),f3:f[2]*Math.pow(2,shift/12),
