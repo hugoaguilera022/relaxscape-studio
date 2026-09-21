@@ -71,15 +71,45 @@ async function generateAIMusicOnly(){
   const prompt=(($( "#aiMusicPrompt").value||"").trim()||"deep relaxation ambient music");
   S.aiLoading=true; S.aiMusic=[]; S.music=null;
   const status=$( "#aiSelectionStatus"), mg=$( "#aiMusicList");
-  if(status)status.textContent="Generando 4 músicas según tu descripción…";
-  if(mg)mg.innerHTML='<div class="empty">♫ Preparando 4 músicas independientes…</div>';
+  if(status)status.textContent="♫ Analizando tu búsqueda y generando 4 versiones profesionales con IA…";
+  if(mg)mg.innerHTML='<div class="empty">♫ Eleven Music está componiendo 4 versiones distintas a partir de tu búsqueda…</div>';
   try{
     await api("/api/ai-music",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({musicPrompt:prompt})});
     await waitForAIMusic();
-    if(status)status.textContent="✓ Música generada. Ahora puedes elegir una pista.";
-  }catch(e){if(status)status.textContent="Error de música: "+e.message}
-  finally{S.aiLoading=false;renderAICreator()}
+    if(!S.aiMusic.length)throw Error("La IA no devolvió ninguna versión musical.");
+    if(status)status.textContent="✓ 4 versiones musicales generadas. Escucha las previas y elige una.";
+  }catch(e){
+    if(status)status.textContent="Error de música: "+e.message;
+    if(mg)mg.innerHTML='<div class="empty">No se pudo generar la música.<br><small>'+e.message+'</small><br><small>Comprueba ELEVENLABS_API_KEY en Render.</small></div>';
+  }finally{S.aiLoading=false;renderAICreator()}
 }
+
+async function waitForAIMusic(){
+  const started=Date.now();
+  const timeoutMs=8*60*1000;
+  while(Date.now()-started<timeoutMs){
+    const d=await api("/api/ai-options-status");
+    S.aiMusic=d.music||[];
+    renderAICreator();
+    if(d.musicReady || S.aiMusic.length>=4){
+      if(S.aiMusic[0] && !S.music)S.music=S.aiMusic[0];
+      return d;
+    }
+    if(d.musicErrors?.length && !d.musicPreparing){
+      throw Error(d.musicErrors.join(" | "));
+    }
+    const status=$( "#aiSelectionStatus");
+    if(status){
+      const count=S.aiMusic.length;
+      status.textContent=count
+        ? "♫ "+count+"/4 versiones listas. Eleven Music sigue generando las restantes…"
+        : "♫ Generando 4 versiones profesionales con IA…";
+    }
+    await new Promise(r=>setTimeout(r,3000));
+  }
+  throw Error("La generación musical tardó demasiado. Vuelve a intentarlo.");
+}
+
 function renderAICreator(){
   const ig=$("#aiImageGrid"),mg=$("#aiMusicList");
   if(ig){
