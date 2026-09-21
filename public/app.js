@@ -71,6 +71,7 @@ async function waitForAIMusic(){
         if($("#aiSelectionStatus"))$("#aiSelectionStatus").textContent="✓ 4 paisajes y 4 músicas listas.";
         return;
       }
+      if(d.musicErrors?.length){ if($("#aiSelectionStatus"))$("#aiSelectionStatus").textContent="Error de música: "+d.musicErrors[0]; return; }
       if($("#aiSelectionStatus"))$("#aiSelectionStatus").textContent="✓ Paisajes listos · generando música "+Math.min(4,attempt+1)+"/4…";
     }catch(e){}
   }
