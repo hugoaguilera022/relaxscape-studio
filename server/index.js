@@ -149,23 +149,32 @@ app.post("/api/upload/music", musicUpload.single("music"), (req, res) => {
 });
 
 app.post("/api/generate-image", async (req, res) => {
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) return res.status(400).json({ error: "Añade OPENAI_API_KEY para activar la generación de paisajes con IA." });
-  const prompt = req.body.prompt || "Ultra-realistic cinematic landscape for a relaxing meditation video, natural light, no people, no text, wide composition, photorealistic";
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) return res.status(400).json({ error: "Falta GEMINI_API_KEY en Render." });
+  const prompt = String(req.body.prompt || "Ultra-realistic cinematic peaceful landscape, natural light, no people, no text, photorealistic");
   try {
-    const r = await fetch("https://api.openai.com/v1/images/generations", {
+    const r = await fetch("https://generativelanguage.googleapis.com/v1/models/gemini-3.1-flash-image:generateContent", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}` },
-      body: JSON.stringify({ model: "gpt-image-2", prompt, size: "1536x1024", quality: "medium" })
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt + ". Wide 16:9 landscape composition, suitable for a relaxing video, no text." }] }],
+        generationConfig: {
+          responseModalities: ["IMAGE"],
+          responseFormat: { image: { aspectRatio: "16:9", imageSize: "2K" } }
+        }
+      })
     });
     const data = await r.json();
-    if (!r.ok) return res.status(r.status).json({ error: data.error?.message || "Error generando imagen." });
-    const b64 = data.data?.[0]?.b64_json;
-    if (!b64) return res.status(500).json({ error: "La API no devolvió una imagen." });
+    if (!r.ok) return res.status(r.status).json({ error: data.error?.message || "Error generando imagen con Gemini." });
+    const parts = data.candidates?.[0]?.content?.parts || [];
+    const imagePart = parts.find(p => p.inlineData?.data);
+    if (!imagePart) return res.status(500).json({ error: "Gemini terminó pero no devolvió una imagen." });
     const filename = `ai-${Date.now()}.png`;
-    fs.writeFileSync(path.join(IMAGE_DIR, filename), Buffer.from(b64, "base64"));
+    fs.writeFileSync(path.join(IMAGE_DIR, filename), Buffer.from(imagePart.inlineData.data, "base64"));
     res.json({ name: filename, url: `/media/images/${filename}` });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    res.status(500).json({ error: "Error de Gemini: " + e.message });
+  }
 });
 
 function runFfmpeg(args) {
