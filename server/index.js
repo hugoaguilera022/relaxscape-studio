@@ -3,6 +3,7 @@ import cors from "cors";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { createHash } from "crypto";
 import { fileURLToPath } from "url";
 import { spawn } from "child_process";
 import cron from "node-cron";
@@ -399,7 +400,9 @@ async function ensureBuiltinMusic(tracks=BUILTIN_MUSIC){
         await runFfmpeg(["-y","-i",wav,"-t","12","-af","highpass=f=28,lowpass=f=16500,acompressor=threshold=-22dB:ratio=2:attack=35:release=220:makeup=1,alimiter=limit=0.92","-c:a","libmp3lame","-b:a","192k","-ar","44100",out]);
       }
       if(!valid(track)) throw new Error("FFmpeg no creó un MP3 válido");
-      console.log("[Music v11] LISTA:",track.file,fs.statSync(out).size,"bytes");
+      const audioBytes=fs.readFileSync(out);
+      const audioHash=createHash("sha256").update(audioBytes).digest("hex").slice(0,16);
+      console.log("[Music fingerprint]",track.label,track.file,fs.statSync(out).size,"bytes",audioHash);
       return true;
     }catch(e){
       const msg=(e&&e.message)||String(e);
@@ -588,7 +591,8 @@ async function generateLyriaMusicFile(prompt,index=1){
     "Create a real musical arrangement with identifiable sections, phrases, motifs, harmonic movement, counterpoint or complementary layers where appropriate. Do not make a single static drone or one-sound loop.",
     "Make this option substantially different from the other three while preserving the user's brief.",
     "Variation for this option: "+directions[n%directions.length]+".",
-    "The result must sound professionally produced, coherent and intentional, with realistic timbre, dynamics, stereo depth and controlled frequency balance.",
+    "Explore a broad timbral and frequency spectrum from deep controlled lows through detailed mids to airy highs, while keeping the mix soft, balanced and non-fatiguing.",
+    "The result must sound professionally produced, coherent and intentional, with realistic timbre, dynamics, stereo depth, layered textures and controlled frequency balance.",
     "Do not reproduce an existing song, melody, recording or distinctive musical phrase.",
     "USER'S MUSIC DESCRIPTION: "+userDescription
   ].join(" ");
@@ -786,10 +790,22 @@ function musicIntentProfile(prompt=""){
   return parts.join(", ");
 }
 
+const SONIC_PALETTES = [
+  { name:"Organic acoustic", brief:"premium organic acoustic palette: felt piano or intimate keys when compatible, nylon guitar, bowed strings, airy flute, warm room ambience, subtle natural textures, rich harmonic overtones, human-like phrasing" },
+  { name:"Cinematic strings", brief:"premium cinematic ambient palette: evolving string ensemble, cello warmth, soft piano only when compatible, deep harmonic pads, wide stereo image, slow orchestral swells, detailed dynamics and long-tail reverb" },
+  { name:"Ethereal electronic", brief:"premium ethereal electronic palette: warm analog synths, evolving pads, glassy high textures, soft sub bass, delicate plucks, granular atmosphere and slowly changing stereo movement, never harsh or dance-oriented" },
+  { name:"Dream acoustic", brief:"premium dreamlike palette: intimate guitar, felted keys when compatible, soft strings, breathy flute, harmonic shimmer, close room detail and spacious ambient tails, with a clearly developing motif" },
+  { name:"Nature cinematic", brief:"premium nature-cinematic palette: organic instrumental layers, warm strings, airy woodwind, subtle water/wind ambience when requested, deep environmental space and gradual harmonic evolution" },
+  { name:"Minimal piano", brief:"premium minimalist palette: expressive felt piano when compatible, soft low strings, distant pad, subtle harmonic resonance and very spacious room, with varied voicings and melodic development rather than repeated notes" },
+  { name:"Meditative world", brief:"premium meditative world palette: bamboo flute, nylon guitar, warm strings, soft resonant plucked textures, organic room tone and slow modal harmony, avoiding obvious rhythmic percussion unless requested" },
+  { name:"Ambient sound design", brief:"premium sound-design palette: evolving synth beds, tonal drones with harmonic movement, delicate bell-like overtones, filtered textures, deep spatial field and slow modulation, while keeping a real musical motif in the foreground" }
+];
+
 function aiTracksForBackground(prompt="", generationId=0){
   const p=String(prompt||"deep relaxation ambient music").trim().slice(0,700);
   const seed=Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8);
   const sessionNonce="session-"+generationId+"-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,10);
+  const paletteOrder=[...SONIC_PALETTES].sort(()=>Math.random()-0.5).slice(0,4);
   const variants=[
     "Version A: make the arrangement substantially different, with a distinct melodic motif, different chord voicings and a clearly different lead instrument or lead role.",
     "Version B: reinterpret the same brief with a different musical structure, register, harmonic movement, rhythmic feel and instrumentation balance. Do not copy Version A.",
@@ -809,6 +825,8 @@ function aiTracksForBackground(prompt="", generationId=0){
         "This is a fresh generation. Do not reuse, imitate or follow the arrangement of any previous generation.",
         "UNIQUE GENERATION NONCE: "+sessionNonce+". Treat this as a hard instruction to create a newly composed performance, not a cached or repeated result.",
         "The user's description is the source of truth. Follow its genre, instruments, melody, harmony, rhythm, structure, production and atmosphere.",
+        "Use the widest compatible professional sonic range: acoustic, orchestral, electronic, textural and environmental colors may be combined when they fit the brief.",
+        "Sonic palette for this option: "+paletteOrder[i].brief+". Treat this as a production palette, not a requirement to add instruments that conflict with the user brief.",
         "Do not reduce the request to a generic relaxing preset.",
         "If the user requests multiple instruments, make every requested instrument clearly audible and musically integrated.",
         "Do not add piano unless the user asks for piano.",
