@@ -272,37 +272,80 @@ function makeCompositionWav(track, wavPath){
   writeWav(wavPath,samples,sr,2);
 }
 
-async function generateElevenMusic(prompt, musicLengthMs=60000, options={}) {
-  const key = process.env.ELEVENLABS_API_KEY;
-  if (!key) throw new Error("Falta ELEVENLABS_API_KEY en Render. Añade una API key de ElevenLabs para generar música IA real.");
+async function generateReplicateMusic(prompt, durationSeconds=60) {
+  const key = process.env.REPLICATE_API_TOKEN;
+  if (!key) {
+    throw new Error("Falta REPLICATE_API_TOKEN en Render. Añade un token de Replicate para generar música IA.");
+  }
 
-  const modelId = process.env.ELEVEN_MUSIC_MODEL || "music_v2_5";
+  const duration = Math.max(1, Math.min(190, Math.round(Number(durationSeconds) || 60)));
   const body = {
-    prompt: String(prompt || "").slice(0, 4100),
-    music_length_ms: Math.max(3000, Math.min(600000, Number(musicLengthMs) || 60000)),
-    model_id: modelId,
-    force_instrumental: options.forceInstrumental !== false,
-    output_format: process.env.ELEVEN_MUSIC_FORMAT || "mp3_48000_192"
+    input: {
+      steps: 8,
+      prompt: String(prompt || "").slice(0, 2000),
+      duration,
+      cfg_scale: 3
+    }
   };
 
-  const r = await fetch("https://api.elevenlabs.io/v1/music", {
+  const create = await fetch("https://api.replicate.com/v1/models/stability-ai/stable-audio-2.5/predictions", {
     method: "POST",
-    headers: { "Content-Type": "application/json", "xi-api-key": key },
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + key,
+      "Prefer": "wait=60"
+    },
     body: JSON.stringify(body)
   });
 
-  if (!r.ok) {
-    const raw = await r.text();
-    let detail = raw;
-    try {
-      const data = JSON.parse(raw);
-      detail = data.detail?.message || data.detail?.status || data.message || raw;
-    } catch {}
-    throw new Error("ElevenLabs Music HTTP " + r.status + ": " + detail);
+  const raw = await create.text();
+  let data = {};
+  try { data = raw ? JSON.parse(raw) : {}; } catch {}
+
+  if (!create.ok) {
+    const detail = data.detail || data.error || data.message || raw;
+    throw new Error("Replicate Music HTTP " + create.status + ": " + String(detail).slice(0, 500));
   }
 
-  const buffer = Buffer.from(await r.arrayBuffer());
-  if (!buffer.length) throw new Error("ElevenLabs devolvió un audio vacío.");
+  let prediction = data;
+  const getPrediction = async (id) => {
+    const r = await fetch("https://api.replicate.com/v1/predictions/" + encodeURIComponent(id), {
+      headers: { "Authorization": "Bearer " + key }
+    });
+    const txt = await r.text();
+    let d = {};
+    try { d = txt ? JSON.parse(txt) : {}; } catch {}
+    if (!r.ok) throw new Error("Replicate Music status HTTP " + r.status + ": " + txt.slice(0, 400));
+    return d;
+  };
+
+  // Si el modelo no termina dentro de Prefer: wait=60, seguimos consultando.
+  if (prediction.status !== "succeeded" && prediction.status !== "failed" && prediction.status !== "canceled") {
+    for (let attempt = 0; attempt < 90; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      prediction = await getPrediction(prediction.id);
+      if (prediction.status === "succeeded" || prediction.status === "failed" || prediction.status === "canceled") break;
+    }
+  }
+
+  if (prediction.status !== "succeeded") {
+    throw new Error("Replicate Music terminó con estado " + (prediction.status || "desconocido") + ": " + String(prediction.error || "").slice(0, 500));
+  }
+
+  let outputUrl = null;
+  if (typeof prediction.output === "string") outputUrl = prediction.output;
+  else if (Array.isArray(prediction.output)) outputUrl = prediction.output[0];
+  else if (prediction.output?.url) outputUrl = prediction.output.url;
+
+  if (!outputUrl) throw new Error("Replicate terminó correctamente pero no devolvió una URL de audio.");
+
+  const audioResponse = await fetch(outputUrl);
+  if (!audioResponse.ok) {
+    throw new Error("No se pudo descargar el audio generado por Replicate (HTTP " + audioResponse.status + ").");
+  }
+
+  const buffer = Buffer.from(await audioResponse.arrayBuffer());
+  if (!buffer.length) throw new Error("Replicate devolvió un audio vacío.");
   return buffer;
 }
 
@@ -324,25 +367,25 @@ async function ensureBuiltinMusic(tracks=[]) {
         "Create a fresh performance that is different from previous generations."
       ].join(" ");
 
-      console.log("[ElevenLabs Music] Generando", track.label, "con búsqueda:", track.userMusicBrief || basePrompt);
-      const audio = await generateElevenMusic(prompt, 60000, { forceInstrumental:true });
+      console.log("[Replicate Stable Audio] Generando", track.label, "con búsqueda:", track.userMusicBrief || basePrompt);
+      const audio = await generateReplicateMusic(prompt, 60);
       fs.writeFileSync(out, audio);
-      track.provider = "ElevenLabs Music " + (process.env.ELEVEN_MUSIC_MODEL || "music_v2_5");
+      track.provider = "Replicate · Stable Audio 2.5";
       track.generated = true;
       track.fallback = false;
       track.musicPrompt = basePrompt;
-      console.log("[ElevenLabs Music] LISTA:", track.file, audio.length, "bytes");
+      console.log("[Replicate Stable Audio] LISTA:", track.file, audio.length, "bytes");
       return true;
     } catch (e) {
       aiMusicErrors.push(track.label + ": " + (e?.message || String(e)));
-      console.error("[ElevenLabs Music] ERROR", track.file, e?.stack || e?.message || e);
+      console.error("[Replicate Stable Audio] ERROR", track.file, e?.stack || e?.message || e);
       return false;
     }
   };
 
   const results = [];
   for (const track of tracks) results.push(await generateOne(track));
-  console.log("[ElevenLabs Music] Terminadas:", results.filter(Boolean).length, "/", tracks.length);
+  console.log("[Replicate Stable Audio] Terminadas:", results.filter(Boolean).length, "/", tracks.length);
   return results;
 }
 
@@ -582,7 +625,7 @@ app.post("/api/ai-options", async (req, res) => {
     musicPreparing: aiMusicPreparing,
     imageErrors,
     musicErrors: aiMusicErrors.slice(),
-    provider: "Pollinations Images + ElevenLabs Music"
+    provider: "Pollinations Images + Replicate Stable Audio 2.5"
   });
 });
 
@@ -773,7 +816,7 @@ app.post("/api/generate-selected-long-music", async (req,res)=>{
       "The result will be used as the musical bed for a one-hour relaxing landscape video."
     ].join(" ");
 
-    const audio=await generateElevenMusic(longPrompt,600000,{forceInstrumental:true});
+    const audio=await generateReplicateMusic(longPrompt,190);
     fs.writeFileSync(base,audio);
 
     await runFfmpeg([
@@ -787,7 +830,7 @@ app.post("/api/generate-selected-long-music", async (req,res)=>{
       url:"/media/music/"+encodeURIComponent(finalName),
       hours,
       sourcePreview:name,
-      provider:"ElevenLabs Music "+(process.env.ELEVEN_MUSIC_MODEL||"music_v2_5"),
+      provider:"Replicate · Stable Audio 2.5",
       generatedFromSearch:true
     });
   }catch(e){
