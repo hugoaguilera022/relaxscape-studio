@@ -311,7 +311,6 @@ async function ensureBuiltinMusic(tracks=BUILTIN_MUSIC){
           track.generated = true;
           track.fallback = true;
           console.log("[RelaxScape Free Music Engine] LISTA:",track.file,"variante",track.variant);
-      }
       if(!valid(track)) throw new Error("FFmpeg no creó un MP3 válido");
       const audioBytes=fs.readFileSync(out);
       const audioHash=createHash("sha256").update(audioBytes).digest("hex").slice(0,16);
