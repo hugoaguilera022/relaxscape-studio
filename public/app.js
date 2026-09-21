@@ -28,7 +28,7 @@ async function generateAI(type){
     if(type==="video"||type==="both"){
       status.textContent="Buscando un vídeo relajante gratuito…";
       v=await api("/api/generate-ai-video",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt,aspectRatio:$("#aiAspect").value,durationHours})});
-      $("#video").src=v.url;$("#download").href=v.url;$("#result").classList.remove("hidden");
+      $("#video").src=v.url;$("#video").loop=true;$("#download").href=v.url;$("#result").classList.remove("hidden");
     }
     if(type==="music"||type==="both"){
       status.textContent="Generando música con Lyria 3.5…";
