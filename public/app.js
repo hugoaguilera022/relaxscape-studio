@@ -47,8 +47,8 @@ async function ensureAIOptions(){
     if(status&&problems.length)status.textContent="Se generaron "+S.aiImages.length+" imágenes y "+S.aiMusic.length+" músicas. "+problems[0];
   }catch(e){
     if(status)status.textContent=e.message;
-    if(ig)ig.innerHTML='<div class="empty">No se pudieron generar las imágenes IA.</div>';
-    if(mg)mg.innerHTML='<div class="empty">No se pudo generar la música IA.</div>';
+    if(ig)ig.innerHTML='<div class="empty">No se pudieron generar las imágenes IA.<br><small>'+e.message+'</small></div>';
+    if(mg)mg.innerHTML='<div class="empty">No se pudo generar la música IA.<br><small>'+e.message+'</small></div>';
   }finally{S.aiLoading=false}
 }
 function renderAICreator(){
