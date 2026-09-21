@@ -130,7 +130,7 @@ function makeCompositionWav(track, wavPath){
     kalimba:has("kalimba","mbira"),
     rain:has("lluvia","rain","tormenta","storm"),
     ocean:has("oceano","ocean","mar","olas","waves","sea","costa","beach"),
-    river:has("rio","river","corriente","stream","arroyo","agua corriendo","agua corriente","flowing water"),
+    river:has("rio","river","corriente","stream","arroyo","agua corriendo","agua corriente","corriente de agua","agua fluyendo","agua que corre","flowing water","running water","creek"),
     waterfall:has("cascada","waterfall"),
     forest:has("bosque","forest","woodland","pajaros","birds","naturaleza","nature"),
     mountain:has("montana","mountain","alpine"),
@@ -266,7 +266,7 @@ function makeCompositionWav(track, wavPath){
   const register=semantic.night||semantic.sleep?-1:(semantic.flamenco||semantic.energetic?1:0);
   const noteStep=semantic.flamenco||semantic.jazz||semantic.trap?beat/2:beat/2;
   const harmonyRole=lead==="guitar"?"guitar":lead==="strings"?"strings":lead==="flute"?"flute":lead==="synth"?"synth":lead==="harp"?"harp":lead==="kalimba"?"kalimba":"piano";
-  const leadVelocity=lead==="piano"?.145:lead==="guitar"?.135:lead==="flute"?.125:lead==="strings"?.115:lead==="harp"?.12:lead==="kalimba"?.12:.105;
+  const leadVelocity=lead==="piano"?.205:lead==="guitar"?.195:lead==="flute"?.18:lead==="strings"?.17:lead==="harp"?.18:lead==="kalimba"?.18:.16;
 
   for(let b=0;b<4;b++){
     const c=progression[b%progression.length];
@@ -342,50 +342,58 @@ function makeCompositionWav(track, wavPath){
   const texture=(t)=>{
     let x=0;
     if(semantic.river){
-      // Corriente: ruido continuo + pequeñas turbulencias + burbujas y brillo del agua.
-      const flow=.72+.28*Math.sin(2*Math.PI*.065*t+1.8*Math.sin(t*.13));
-      const current=noiseAt(t,3)*.020+noiseAt(t*.61+1.7,7)*.012+grain(t*1.7,13)*.006;
-      const ripple=Math.pow(Math.max(0,Math.sin(2*Math.PI*(.72+.11*Math.sin(t*.17))*t+1.4)),12);
-      const bubble=Math.pow(Math.max(0,Math.sin(2*Math.PI*(.37+.09*Math.sin(t*.21))*t+2.1)),22);
-      x += flow*current;
-      x += ripple*.014 + bubble*.010;
-      x += .004*Math.sin(2*Math.PI*(650+90*Math.sin(t*.19))*t);
+      // Corriente de agua claramente reconocible: caudal, turbulencia, ondas,
+      // burbujas y pequeños brillos irregulares.
+      const flow=.78+.22*Math.sin(2*Math.PI*.047*t+Math.sin(t*.11)*.8);
+      const current=.055*flow*(
+        noiseAt(t*.92,3)*.72+
+        noiseAt(t*1.73+1.3,7)*.38+
+        grain(t*5.7,13)*.16
+      );
+      const ripple=Math.pow(Math.max(0,Math.sin(2*Math.PI*(.63+.08*Math.sin(t*.13))*t+1.1)),18);
+      const ripple2=Math.pow(Math.max(0,Math.sin(2*Math.PI*(1.17+.13*Math.sin(t*.21))*t+2.8)),22);
+      const bubble=Math.pow(Math.max(0,Math.sin(2*Math.PI*(.29+.07*Math.sin(t*.17))*t+2.1)),30);
+      x += current;
+      x += ripple*.030 + ripple2*.018 + bubble*.022;
+      x += .010*Math.sin(2*Math.PI*(820+150*Math.sin(t*.19))*t);
+      x += .004*grain(t*19.1,71);
     }
     if(semantic.ocean){
       const swell=.5+.5*Math.sin(2*Math.PI*.055*t+Math.sin(t*.07));
       const foam=Math.max(0,Math.sin(2*Math.PI*.23*t+Math.sin(t*.11)));
-      x += swell*(noiseAt(t,11)*.018+grain(t*.45,17)*.004);
-      x += Math.pow(foam,7)*.014;
+      x += swell*(noiseAt(t*.8,11)*.048+grain(t*.45,17)*.012);
+      x += Math.pow(foam,7)*.035;
     }
     if(semantic.rain){
-      // Lluvia: capa constante fina + gotas independientes de brillo alto.
-      const rainDensity=.75+.25*Math.sin(2*Math.PI*.17*t);
-      x += grain(t*7.3,19)*.012*rainDensity;
-      x += noiseAt(t*1.9,23)*.010*rainDensity;
+      const rainDensity=.78+.22*Math.sin(2*Math.PI*.17*t);
+      x += grain(t*7.3,19)*.034*rainDensity;
+      x += noiseAt(t*1.9,23)*.026*rainDensity;
       const drop1=Math.pow(Math.max(0,Math.sin(2*Math.PI*3.17*t+1.2)),32);
       const drop2=Math.pow(Math.max(0,Math.sin(2*Math.PI*5.73*t+2.7)),38);
-      x += drop1*.028*Math.sin(2*Math.PI*(1850+260*Math.sin(t*.31))*t);
-      x += drop2*.020*Math.sin(2*Math.PI*(2650+340*Math.sin(t*.23))*t);
+      const drop3=Math.pow(Math.max(0,Math.sin(2*Math.PI*8.41*t+.4)),44);
+      x += drop1*.045*Math.sin(2*Math.PI*(1850+260*Math.sin(t*.31))*t);
+      x += drop2*.034*Math.sin(2*Math.PI*(2650+340*Math.sin(t*.23))*t);
+      x += drop3*.022*Math.sin(2*Math.PI*(3400+420*Math.sin(t*.17))*t);
     }
     if(semantic.waterfall){
       const roar=.5+.5*Math.sin(2*Math.PI*.11*t);
-      x += roar*(grain(t*1.7,29)*.018+noiseAt(t,29)*.016);
-      x += .006*Math.sin(2*Math.PI*(105+18*Math.sin(t*.17))*t);
+      x += roar*(grain(t*1.7,29)*.052+noiseAt(t*.9,29)*.042);
+      x += .012*Math.sin(2*Math.PI*(105+18*Math.sin(t*.17))*t);
     }
     if(semantic.forest){
-      x += grain(t*2.1,37)*.004+noiseAt(t,37)*.004;
+      x += grain(t*2.1,37)*.010+noiseAt(t,37)*.010;
       const bird=Math.pow(Math.max(0,Math.sin(2*Math.PI*.17*t)),18);
-      x += bird*.007*Math.sin(2*Math.PI*(1500+180*Math.sin(t*.27))*t);
+      x += bird*.014*Math.sin(2*Math.PI*(1500+180*Math.sin(t*.27))*t);
     }
     if(semantic.fireplace){
       const crack=Math.pow(Math.max(0,Math.sin(2*Math.PI*.31*t+Math.sin(t*.7))),22);
-      x += grain(t*3.1,43)*.005+crack*.035*Math.sin(2*Math.PI*700*t);
+      x += grain(t*3.1,43)*.012+crack*.055*Math.sin(2*Math.PI*700*t);
     }
     if(semantic.night){
-      x += .0015*Math.sin(2*Math.PI*92*t)*(.65+.35*Math.sin(t*.05));
+      x += .002*Math.sin(2*Math.PI*92*t)*(.65+.35*Math.sin(t*.05));
     }
     if(semantic.sunset||semantic.sunrise||semantic.bright){
-      x += .0014*Math.sin(2*Math.PI*330*t)*(.7+.3*Math.sin(t*.08));
+      x += .002*Math.sin(2*Math.PI*330*t)*(.7+.3*Math.sin(t*.08));
     }
     return x;
   };
@@ -417,7 +425,11 @@ function makeCompositionWav(track, wavPath){
       }
     }
     const tx=texture(t);
-    l+=tx*(1+pan); r+=tx*(1-pan);
+    // Bus ambiental separado y estéreo: la búsqueda de "lluvia/río/océano..."
+    // debe ser audible, no una modulación casi imperceptible.
+    const envPan=.08*Math.sin(t*.37);
+    l+=tx*(1.35-envPan);
+    r+=tx*(1.35+envPan);
     if(semantic.sleep||semantic.night){l*=.82;r*=.82;}
     if(semantic.warm){l*=1.02;r*=1.02;}
     const fadeIn=Math.min(1,t/1.5),fadeOut=Math.min(1,(dur-t)/3),m=fadeIn*fadeOut;
