@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RelaxScape Studio</title><link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<header><div class="brand">Relax<span>Scape</span><small> STUDIO</small></div><div class="top-actions"><span id="serverStatus" class="online">● Servidor online</span><button id="refresh" class="ghost">↻</button></div></header>
+<div class="layout">
+<aside>
+  <nav>
+    <button class="nav active" data-tab="dashboard">⌂ <span>Inicio</span></button>
+    <button class="nav" data-tab="landscapes">◉ <span>Paisajes</span></button>
+    <button class="nav" data-tab="music">♫ <span>Música</span></button>
+    <button class="nav" data-tab="schedule">◷ <span>Programación</span></button>
+    <button class="nav" data-tab="library">▣ <span>Biblioteca</span></button>
+  </nav>
+  <div class="aside-bottom"><small>RELAXSCAPE STUDIO</small><p>Genera contenido relajante de forma automática.</p></div>
+</aside>
+<main>
+<section id="dashboard" class="tab active">
+  <div class="hero"><div><p class="eyebrow">CENTRO DE CONTROL</p><h1>Tu próximo vídeo,<br><em>sin complicaciones.</em></h1><p class="sub">Crea paisajes relajantes en 1 o 2 horas, revisa el resultado y descarga el MP4.</p></div><div class="hero-art"><div class="moon"></div><div class="mountains"></div></div></div>
+  <div class="stats"><div><small>VÍDEOS GENERADOS</small><b id="statVideos">0</b></div><div><small>PROGRAMACIÓN</small><b id="statSchedule">Diaria</b></div><div><small>DURACIÓN</small><b>1–2 h</b></div></div>
+  <div class="builder">
+    <div class="builder-head"><div><span class="step">01</span><div><h2>Crear vídeo</h2><p>Configura paisaje, música y duración.</p></div></div><span class="badge">MP4 · 1080p</span></div>
+    <div class="builder-grid">
+      <div class="field"><label>PAISAJE</label><div id="selectedLandscape" class="selectbox">Selecciona un paisaje <span>⌄</span></div><div id="landscapePicker" class="picker"></div></div>
+      <div class="field"><label>MÚSICA</label><div id="selectedTrack" class="selectbox">Selecciona una pista <span>⌄</span></div><div id="musicPicker" class="picker"></div></div>
+      <div class="field"><label>DURACIÓN</label><div class="duration"><button class="dur active" data-hours="1">1 hora</button><button class="dur" data-hours="2">2 horas</button></div></div>
+      <div class="field"><label>CALIDAD</label><div class="selectbox disabled">Full HD · 1920×1080</div></div>
+    </div>
+    <div class="builder-bottom"><div id="builderStatus">Selecciona tus recursos para comenzar.</div><button id="generate" class="primary">Generar vídeo <b>→</b></button></div>
+  </div>
+</section>
+
+<section id="landscapes" class="tab"><div class="section-head"><div><p class="eyebrow">BIBLIOTECA VISUAL</p><h2>Paisajes</h2></div><div class="actions"><label class="button">＋ Subir imagen<input id="imageInput" type="file" accept="image/*" hidden></label><button id="aiImage" class="primary small">✨ Crear con IA</button></div></div><input id="prompt" class="text" placeholder="Ej.: lago alpino al amanecer, niebla suave, fotorealista, sin personas ni texto"><div id="imageGrid" class="gallery"></div></section>
+
+<section id="music" class="tab"><div class="section-head"><div><p class="eyebrow">BIBLIOTECA SONORA</p><h2>Música</h2></div><label class="button">＋ Subir música<input id="musicInput" type="file" accept="audio/*" hidden></label></div><div id="musicList" class="track-grid"></div></section>
+
+<section id="schedule" class="tab"><div class="section-head"><div><p class="eyebrow">AUTOMATIZACIÓN</p><h2>Vídeo diario</h2></div></div><div class="schedule-card"><div class="schedule-icon">◷</div><div><h3>Generación automática diaria</h3><p>Cada día se puede crear un vídeo automáticamente usando el primer paisaje y la primera pista disponibles.</p></div><label class="switch"><input id="scheduleToggle" type="checkbox" checked><span></span></label></div><div class="schedule-options"><label>HORA<input id="scheduleHour" type="time" value="07:00"></label><label>DURACIÓN<select id="scheduleDuration"><option value="1">1 hora</option><option value="2">2 horas</option></select></label><button id="saveSchedule" class="primary">Guardar programación</button></div><p class="note">La hora se interpreta según la zona horaria del servidor donde esté desplegada la aplicación.</p></section>
+
+<section id="library" class="tab"><div class="section-head"><div><p class="eyebrow">HISTORIAL</p><h2>Vídeos generados</h2></div></div><div id="videos" class="video-list"></div></section>
+
+<section id="result" class="result hidden"><div class="result-head"><div><p class="eyebrow">VÍDEO LISTO</p><h2>Tu vídeo está preparado.</h2></div><button id="closeResult" class="ghost">×</button></div><video id="video" controls playsinline></video><a id="download" class="download">↓ Descargar MP4</a></section>
+</main>
+</div>
+<footer>RelaxScape Studio · Usa imágenes y música con derechos de uso adecuados.</footer>
+<script src="/app.js"></script>
+</body></html>
