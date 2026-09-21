@@ -1352,40 +1352,34 @@ app.get("/api/external-music-search", async (req,res)=>{
   try{
     const queries=buildFreesoundQueries(input);
     const all=[];
-    // Freesound can occasionally respond slowly from Render. Do not abort a
-    // valid search after 10 seconds; retry timed-out requests once and then
-    // continue with the other query variants so one slow variant cannot kill
-    // the whole search.
-    for(const query of queries){
+
+    // Las variantes de búsqueda se hacen EN PARALELO. Antes se esperaban una
+    // detrás de otra y, si Freesound tardaba, Render podía devolver 502 antes
+    // de que Express terminara. Un fallo de una variante nunca cancela las demás.
+    const results=await Promise.allSettled(queries.map(async query=>{
       const url=new URL("https://freesound.org/apiv2/search/");
       url.searchParams.set("query",query);
       url.searchParams.set("page_size","8");
       url.searchParams.set("sort","score");
       url.searchParams.set("fields","id,name,tags,username,license,url,duration,previews,description,avg_rating,num_downloads");
-      let r=null;
-      let lastError=null;
-      for(let attempt=0;attempt<2;attempt++){
-        try{
-          r=await fetchWithTimeout(url.toString(),{
-            headers:{Authorization:"Token "+key,Accept:"application/json"}
-          },30000);
-          lastError=null;
-          break;
-        }catch(err){
-          lastError=err;
-          if(attempt===0) await new Promise(resolve=>setTimeout(resolve,800));
-        }
-      }
-      if(lastError){
-        console.warn("[Freesound Search] Query timed out:",query,lastError.message);
-        continue;
-      }
+      const r=await fetchWithTimeout(url.toString(),{
+        headers:{Authorization:"Token "+key,Accept:"application/json"}
+      },12000);
       const data=await r.json().catch(()=>({}));
       if(!r.ok){
-        console.warn("[Freesound Search] Query failed:",query,data.detail||data.error||("HTTP "+r.status));
+        throw new Error(data.detail||data.error||("HTTP "+r.status));
+      }
+      return Array.isArray(data.results)?data.results:[];
+    }));
+
+    for(let i=0;i<results.length;i++){
+      const result=results[i];
+      const query=queries[i];
+      if(result.status==="rejected"){
+        console.warn("[Freesound Search] Query skipped:",query,result.reason?.message||result.reason);
         continue;
       }
-      for(const x of (data.results||[])){
+      for(const x of result.value){
         const preview=x.previews?.["preview-hq-mp3"]||x.previews?.["preview-lq-mp3"];
         if(!preview) continue;
         all.push({
@@ -1403,6 +1397,7 @@ app.get("/api/external-music-search", async (req,res)=>{
         });
       }
     }
+
     const unique=[];
     const seen=new Set();
     for(const x of all){
@@ -1414,7 +1409,9 @@ app.get("/api/external-music-search", async (req,res)=>{
     res.json({provider:"Freesound",query:input,results:unique.slice(0,12)});
   }catch(e){
     console.error("[Freesound Search] ERROR",e.stack||e.message);
-    res.status(502).json({error:"No se pudo buscar en Freesound: "+e.message});
+    // No convertimos un fallo puntual de Freesound en un 502 del servidor:
+    // el frontend puede mostrar el error real y volver a intentar la búsqueda.
+    res.json({provider:"Freesound",query:input,results:[],error:"Freesound no respondió correctamente: "+e.message});
   }
 });
 
