@@ -395,9 +395,22 @@ async function ensureBuiltinMusic(tracks=BUILTIN_MUSIC){
         fs.rmSync(generatedPath,{force:true});
         console.log("[Lyria 3.5] LISTA:",track.file);
       }catch(e){
-        console.warn("[Lyria 3.5] No disponible, usando motor local:",e.message);
-        makeCompositionWav(track,wav);
-        await runFfmpeg(["-y","-i",wav,"-t","12","-af","highpass=f=28,lowpass=f=16500,acompressor=threshold=-22dB:ratio=2:attack=35:release=220:makeup=1,alimiter=limit=0.92","-c:a","libmp3lame","-b:a","192k","-ar","44100",out]);
+        // IMPORTANTE: no ocultamos un fallo de Lyria detrás del mismo sintetizador local.
+        // Primero intentamos otro generador de audio externo con el MISMO briefing único.
+        // Así, si Lyria no está disponible, las cuatro opciones siguen siendo composiciones
+        // generadas de forma independiente y no cuatro variaciones del mismo timbre local.
+        console.warn("[Lyria 3.5] No disponible:",e.message);
+        try{
+          const alt=await generatePollinationsMusicFile(track.musicProfile || track.label, track.variant||1);
+          const altPath=path.join(MUSIC_DIR,alt.name);
+          fs.copyFileSync(altPath,out);
+          fs.rmSync(altPath,{force:true});
+          console.log("[Pollinations] LISTA:",track.file);
+        }catch(altError){
+          console.warn("[Pollinations] No disponible, usando motor local diferenciado:",altError.message);
+          makeCompositionWav(track,wav);
+          await runFfmpeg(["-y","-i",wav,"-t","12","-af","highpass=f=28,lowpass=f=16500,acompressor=threshold=-22dB:ratio=2:attack=35:release=220:makeup=1,alimiter=limit=0.92","-c:a","libmp3lame","-b:a","192k","-ar","44100",out]);
+        }
       }
       if(!valid(track)) throw new Error("FFmpeg no creó un MP3 válido");
       const audioBytes=fs.readFileSync(out);
