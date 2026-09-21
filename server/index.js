@@ -256,78 +256,130 @@ function makeCompositionWav(track, wavPath){
     : diatonicProgressions;
   const progression=progressionPool[(Math.floor(hash01(19)*progressionPool.length)+variant-1)%progressionPool.length];
 
+  // Melodía más desarrollada: cada compás tiene una célula principal, notas de
+  // aproximación, variaciones rítmicas y una respuesta en registro diferente.
   const motifs=[
-    [0,1,2,4,2,1,3,2],[0,2,4,3,1,4,2,0],[0,3,2,4,5,3,1,0],
-    [0,1,4,2,3,5,4,2],[0,4,3,1,2,5,3,0],[0,2,1,3,5,4,2,1]
+    [0,1,2,4,5,4,2,1],[0,2,4,5,4,3,1,0],[0,3,2,4,6,5,3,2],
+    [0,2,1,4,3,5,4,1],[0,4,3,2,5,4,2,0],[0,1,3,5,4,2,6,3]
   ];
   const motif=motifs[(Math.floor(hash01(23)*motifs.length)+variant-1)%motifs.length];
   const register=semantic.night||semantic.sleep?-1:(semantic.flamenco||semantic.energetic?1:0);
-  const noteStep=semantic.flamenco||semantic.jazz||semantic.trap?beat/2:variant%2?beat:beat*.75;
+  const noteStep=semantic.flamenco||semantic.jazz||semantic.trap?beat/2:beat/2;
+  const harmonyRole=lead==="guitar"?"guitar":lead==="strings"?"strings":lead==="flute"?"flute":lead==="synth"?"synth":lead==="harp"?"harp":lead==="kalimba"?"kalimba":"piano";
+  const leadVelocity=lead==="piano"?.145:lead==="guitar"?.135:lead==="flute"?.125:lead==="strings"?.115:lead==="harp"?.12:lead==="kalimba"?.12:.105;
 
-  // La armonía se mantiene simple y coherente, mientras el lead expresa la búsqueda.
   for(let b=0;b<4;b++){
     const c=progression[b%progression.length];
     const chord=[degree(c,0),degree(c+2,0),degree(c+4,0)];
+    // Bajo/armonía con inversiones y pequeñas anticipaciones para que el acorde
+    // tenga movimiento y no sea una sucesión de notas aisladas.
     if(lead==="piano"){
-      events.push({t:b*bar,f:hz(chord[0]-12),v:.13,role:"piano"});
-      events.push({t:b*bar+bar*.45,f:hz(chord[1]),v:.075,role:"piano"});
-      events.push({t:b*bar+bar*.72,f:hz(chord[2]),v:.06,role:"piano"});
+      events.push({t:b*bar,f:hz(chord[0]-12),v:.12,role:"piano"});
+      events.push({t:b*bar+bar*.25,f:hz(chord[1]),v:.052,role:"piano"});
+      events.push({t:b*bar+bar*.50,f:hz(chord[2]),v:.058,role:"piano"});
+      events.push({t:b*bar+bar*.75,f:hz(chord[1]),v:.045,role:"piano"});
     }else{
-      const harmonyRole=lead==="guitar"?"guitar":lead==="strings"?"strings":lead==="flute"?"flute":lead==="synth"?"synth":lead==="harp"?"harp":lead==="kalimba"?"kalimba":"pad";
-      events.push({t:b*bar,f:hz(chord[0]-12),v:.045,role:harmonyRole});
-      events.push({t:b*bar,f:hz(chord[1]),v:.028,role:harmonyRole});
-      events.push({t:b*bar,f:hz(chord[2]),v:.022,role:harmonyRole});
+      events.push({t:b*bar,f:hz(chord[0]-12),v:.038,role:harmonyRole});
+      events.push({t:b*bar+bar*.5,f:hz(chord[1]),v:.024,role:harmonyRole});
+      events.push({t:b*bar+bar*.75,f:hz(chord[2]),v:.021,role:harmonyRole});
     }
 
-    const density=semantic.energetic?7:(semantic.flamenco||semantic.jazz?6:4);
-    const offset=(variant+b)%motif.length;
-    for(let j=0;j<density;j++){
+    // Frase A: ocho posiciones con silencios y duraciones implícitas distintas.
+    const offset=(variant+b*2)%motif.length;
+    for(let j=0;j<8;j++){
       const idx=(offset+j)%motif.length;
       const d=motif[idx]+c;
+      const rhythm=(j===3||j===7) ? .72 : (j%3===1 ? .42 : .50);
       const t=b*bar+j*noteStep;
       if(t>=dur) continue;
-      const vel=(lead==="piano"?.13:lead==="guitar"?.12:lead==="flute"?.105:.09)+(j%3===0?.025:0);
+      const vel=leadVelocity*(j%4===0?1.12:(j%3===0?.82:1));
       events.push({t,f:hz(degree(d,register)),v:vel,role:lead});
-      if(j%3===2) events.push({t:t+noteStep*.45,f:hz(degree(motif[(idx+2)%motif.length]+c,register+1)),v:vel*.42,role:lead});
+      // Nota de paso/acercamiento: añade lenguaje melódico sin salir de la escala.
+      if(j===2||j===6){
+        const passing=motif[(idx+1)%motif.length]+c+(variant%2?0:1);
+        events.push({t:t+noteStep*.48,f:hz(degree(passing,register)),v:vel*.42,role:lead});
+      }
+      // Eco una octava arriba en finales de frase.
+      if(j===3||j===7){
+        const answer=motif[(idx+2)%motif.length]+c;
+        events.push({t:t+noteStep*.52,f:hz(degree(answer,register+1)),v:vel*.34,role:lead});
+      }
+    }
+
+    // Respuesta contrapuntística: una segunda línea más lenta y baja, siempre
+    // construida sobre grados del acorde/escala para mantener consonancia.
+    if(b>0){
+      const response=[c+4,c+2,c+1,c+3][(b+variant)%4];
+      for(let k=0;k<3;k++){
+        const rt=b*bar+bar*.33+k*bar*.22;
+        if(rt>=dur) continue;
+        events.push({
+          t:rt,
+          f:hz(degree(response+(k%2),register-1)),
+          v:leadVelocity*.28,
+          role:lead
+        });
+      }
     }
   }
 
   // Ambientes reales reconocibles, únicamente cuando aparecen en la búsqueda.
+  // Texturas ambientales dedicadas. No son una melodía: son capas de sonido
+  // continuo/irregular que se activan solo cuando el usuario las pide.
   const noiseAt=(t,seed=0)=>{
     let x=0;
-    for(let k=1;k<=9;k++) x+=Math.sin(2*Math.PI*(17*k+seed*3.1)*t+Math.sin(t*(.7+k*.11))*k)*((k%3===0)?.65:1);
-    return x/7;
+    const freqs=[37.1,61.7,89.3,127.9,173.6,241.4,337.7,479.2,691.8];
+    for(let k=0;k<freqs.length;k++){
+      const f=freqs[k]+seed*(k%3+1)*.73;
+      x+=Math.sin(2*Math.PI*f*t+Math.sin(t*(.31+k*.047)+seed)*1.7)*((k<3)?.9:1);
+    }
+    return x/8.2;
+  };
+  const grain=(t,seed=0)=>{
+    const a=Math.sin((t*173.17+seed*19.37)*12.9898)*43758.5453;
+    return (a-Math.floor(a))*2-1;
   };
   const texture=(t)=>{
     let x=0;
     if(semantic.river){
-      const flow=.62+.38*Math.sin(2*Math.PI*.09*t+1.2*Math.sin(t*.17));
-      const n1=noiseAt(t,3), n2=noiseAt(t*.73+1.7,7);
-      const bubbles=Math.pow(Math.max(0,Math.sin(2*Math.PI*(.55+.16*Math.sin(t*.13))*t)),18);
-      x += flow*(.020*n1+.012*n2)+bubbles*.012;
-      x += .004*Math.sin(2*Math.PI*(420+55*Math.sin(t*.21))*t);
+      // Corriente: ruido continuo + pequeñas turbulencias + burbujas y brillo del agua.
+      const flow=.72+.28*Math.sin(2*Math.PI*.065*t+1.8*Math.sin(t*.13));
+      const current=noiseAt(t,3)*.020+noiseAt(t*.61+1.7,7)*.012+grain(t*1.7,13)*.006;
+      const ripple=Math.pow(Math.max(0,Math.sin(2*Math.PI*(.72+.11*Math.sin(t*.17))*t+1.4)),12);
+      const bubble=Math.pow(Math.max(0,Math.sin(2*Math.PI*(.37+.09*Math.sin(t*.21))*t+2.1)),22);
+      x += flow*current;
+      x += ripple*.014 + bubble*.010;
+      x += .004*Math.sin(2*Math.PI*(650+90*Math.sin(t*.19))*t);
     }
     if(semantic.ocean){
       const swell=.5+.5*Math.sin(2*Math.PI*.055*t+Math.sin(t*.07));
       const foam=Math.max(0,Math.sin(2*Math.PI*.23*t+Math.sin(t*.11)));
-      x += swell*(.012*noiseAt(t,11)+.005*Math.sin(2*Math.PI*170*t));
-      x += Math.pow(foam,7)*.012;
+      x += swell*(noiseAt(t,11)*.018+grain(t*.45,17)*.004);
+      x += Math.pow(foam,7)*.014;
     }
     if(semantic.rain){
-      x += .012*noiseAt(t,19)*(.5+.5*Math.sin(2*Math.PI*.73*t));
-      if(Math.sin(2*Math.PI*3.7*t)>0.985) x+=.035*Math.sin(2*Math.PI*2100*t);
+      // Lluvia: capa constante fina + gotas independientes de brillo alto.
+      const rainDensity=.75+.25*Math.sin(2*Math.PI*.17*t);
+      x += grain(t*7.3,19)*.012*rainDensity;
+      x += noiseAt(t*1.9,23)*.010*rainDensity;
+      const drop1=Math.pow(Math.max(0,Math.sin(2*Math.PI*3.17*t+1.2)),32);
+      const drop2=Math.pow(Math.max(0,Math.sin(2*Math.PI*5.73*t+2.7)),38);
+      x += drop1*.028*Math.sin(2*Math.PI*(1850+260*Math.sin(t*.31))*t);
+      x += drop2*.020*Math.sin(2*Math.PI*(2650+340*Math.sin(t*.23))*t);
     }
     if(semantic.waterfall){
-      x += .018*noiseAt(t,29)+.006*Math.sin(2*Math.PI*110*t);
+      const roar=.5+.5*Math.sin(2*Math.PI*.11*t);
+      x += roar*(grain(t*1.7,29)*.018+noiseAt(t,29)*.016);
+      x += .006*Math.sin(2*Math.PI*(105+18*Math.sin(t*.17))*t);
     }
     if(semantic.forest){
-      x += .004*noiseAt(t,37);
+      x += grain(t*2.1,37)*.004+noiseAt(t,37)*.004;
       const bird=Math.pow(Math.max(0,Math.sin(2*Math.PI*.17*t)),18);
-      x += bird*.006*Math.sin(2*Math.PI*(1500+180*Math.sin(t*.27))*t);
+      x += bird*.007*Math.sin(2*Math.PI*(1500+180*Math.sin(t*.27))*t);
     }
     if(semantic.fireplace){
       const crack=Math.pow(Math.max(0,Math.sin(2*Math.PI*.31*t+Math.sin(t*.7))),22);
-      x += .006*noiseAt(t,43)+crack*.035*Math.sin(2*Math.PI*700*t);
+      x += grain(t*3.1,43)*.005+crack*.035*Math.sin(2*Math.PI*700*t);
     }
     if(semantic.night){
       x += .0015*Math.sin(2*Math.PI*92*t)*(.65+.35*Math.sin(t*.05));
