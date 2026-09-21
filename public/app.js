@@ -39,7 +39,7 @@ async function ensureAIOptions(){
   if(mg)mg.innerHTML='<div class="empty">♫ Generando 4 músicas con IA gratuita…</div>';
   try{
     const d=await api("/api/ai-options",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({theme:($("#prompt")?.value||"relaxing nature").trim()})});
-    S.aiImages=d.images||[];S.aiMusic=d.music||[];S.aiReady=true;
+    S.aiImages=d.images||[];S.aiMusic=d.music||[];S.aiReady=!!(S.aiImages.length&&S.aiMusic.length);
     if(S.aiImages[0])S.image=S.aiImages[0];
     if(S.aiMusic[0])S.music=S.aiMusic[0];
     renderAICreator();
