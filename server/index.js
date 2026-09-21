@@ -74,8 +74,8 @@ const BUILTIN_MUSIC = [
   { file: "relax-study.mp3", label: "Estudio profundo", category: "Concentración", f1: 196, f2: 293.66, f3: 392 }
 ];
 
-async function ensureBuiltinMusic() {
-  for (const track of BUILTIN_MUSIC) {
+async function ensureBuiltinMusic(tracks = BUILTIN_MUSIC) {
+  for (const track of tracks) {
     const out = path.join(MUSIC_DIR, track.file);
     if (fs.existsSync(out)) continue;
     try {
@@ -241,50 +241,75 @@ async function generatePollinationsMusicFile(prompt, index) {
 
 
 app.post("/api/ai-options", async (req, res) => {
-  const requestedTheme = String(req.body?.theme || "").trim().slice(0, 160);
-  const theme = requestedTheme || "relaxing nature";
+  const theme = String(req.body?.theme || "relaxing nature").trim().slice(0, 120);
 
-  // Proveedor principal: Pollinations, pensado para cubrir imágenes y audio con muchos modelos.
-  // Gemini/Lyria ya NO son necesarios para esta sección.
-  const imagePrompts = [
-    `Ultra-realistic cinematic 16:9 relaxing landscape about ${theme}: majestic mountains, calm lake, soft sunrise, natural light, no people, no buildings, no text, premium photography.`,
-    `Ultra-realistic cinematic 16:9 relaxing landscape about ${theme}: peaceful tropical coast, calm turquoise ocean, golden sunset, gentle waves, no people, no buildings, no text, premium photography.`,
-    `Ultra-realistic cinematic 16:9 relaxing landscape about ${theme}: misty forest, lush green trees, subtle volumetric light, peaceful atmosphere, no people, no buildings, no text, premium photography.`,
-    `Ultra-realistic cinematic 16:9 relaxing landscape about ${theme}: moonlit valley, still water, stars, deep blue tones, tranquil atmosphere, no people, no buildings, no text, premium photography.`
-  ];
-  const musicPrompts = [
-    `Instrumental ambient relaxation music inspired by ${theme}, soft piano and warm pads, slow, peaceful, spacious, no vocals, no aggressive drums.`,
-    `Deep sleep ambient music inspired by ${theme}, very soft pads, sparse piano, slow evolving texture, no vocals, no beat, calming.`,
-    `Meditation music inspired by ${theme}, gentle bells, warm drones, soft piano, spacious, slow, no vocals, unobtrusive.`,
-    `Nature relaxation soundtrack inspired by ${theme}, airy pads, delicate piano, subtle organic textures, slow, peaceful, no vocals.`
-  ];
+  // Modo gratuito y robusto: no hacemos depender el botón de un proveedor IA
+  // externo. Las imágenes salen de Pexels (ya configurado) y la música de la
+  // biblioteca ambiental local de RelaxScape.
+  try {
+    const key = process.env.PEXELS_API_KEY;
+    const images = [];
+    const music = [];
+    const imageErrors = [];
+    const musicErrors = [];
 
-  const images = [], music = [], imageErrors = [], musicErrors = [];
-  const runBatch = async (items, worker, output, errors) => {
-    await Promise.all(items.map(async (prompt, i) => {
-      try { output.push(await worker(prompt, i + 1)); }
-      catch (e) { errors.push(e.message); }
-    }));
-  };
+    if (key) {
+      const queries = [
+        theme + " peaceful landscape",
+        theme + " mountains lake sunrise",
+        theme + " tropical ocean sunset",
+        theme + " misty forest"
+      ];
 
-  // Las imágenes siguen intentando Pollinations y caen a Pexels si la API pide
-  // autenticación. Para música no bloqueamos la creación por un proveedor externo:
-  // si Pollinations no está disponible, usamos inmediatamente la biblioteca
-  // ambiental integrada de RelaxScape, que se genera localmente con FFmpeg.
-  await ensureBuiltinMusic();
-  const builtinAvailable = BUILTIN_MUSIC
-    .map(t => ({ ...t, filePath: path.join(MUSIC_DIR, t.file) }))
-    .filter(t => fs.existsSync(t.filePath));
+      const responses = await Promise.all(queries.map(async q => {
+        const r = await fetchWithTimeout(
+          "https://api.pexels.com/v1/search?query=" + encodeURIComponent(q) +
+          "&per_page=20&orientation=landscape&size=large&locale=en-US",
+          { headers: { Authorization: key } }, 12000
+        );
+        if (!r.ok) throw new Error("Pexels imágenes HTTP " + r.status);
+        return r.json();
+      }));
 
-  await runBatch(imagePrompts, generatePollinationsImageFile, images, imageErrors);
+      const photos = [];
+      for (const data of responses) {
+        for (const p of (data.photos || [])) {
+          if ((p.src?.large2x || p.src?.large) && p.width >= 1600 && p.height >= 900) {
+            photos.push(p);
+          }
+        }
+      }
 
-  if (process.env.POLLINATIONS_API_KEY) {
-    await runBatch(musicPrompts, generatePollinationsMusicFile, music, musicErrors);
-  }
+      const unique = [...new Map(photos.map(p => [p.id, p])).values()]
+        .sort(() => Math.random() - 0.5)
+        .slice(0, 4);
 
-  if (!music.length && builtinAvailable.length) {
-    const shuffledMusic = [...builtinAvailable].sort(() => Math.random() - 0.5);
-    shuffledMusic.slice(0, 4).forEach((track, i) => {
+      for (let i = 0; i < unique.length; i++) {
+        const photo = unique[i];
+        const src = photo.src?.large2x || photo.src?.large;
+        const img = await fetchWithTimeout(src, {}, 15000);
+        if (!img.ok) continue;
+        const filename = "free-ai-option-" + Date.now() + "-" + (i + 1) + ".jpg";
+        fs.writeFileSync(path.join(IMAGE_DIR, filename), Buffer.from(await img.arrayBuffer()));
+        images.push({
+          name: filename,
+          url: "/media/images/" + encodeURIComponent(filename),
+          ai: false,
+          provider: "Pexels",
+          fallback: true,
+          label: "Paisaje gratuito " + (i + 1)
+        });
+      }
+      if (!images.length) imageErrors.push("Pexels no devolvió imágenes.");
+    } else {
+      imageErrors.push("Falta PEXELS_API_KEY en Render.");
+    }
+
+    // Solo preparamos 4 pistas para esta pantalla; no esperamos las 24.
+    const musicTracks = [...BUILTIN_MUSIC].sort(() => Math.random() - 0.5).slice(0, 4);
+    await ensureBuiltinMusic(musicTracks);
+    for (const track of musicTracks) {
+      if (!fs.existsSync(path.join(MUSIC_DIR, track.file))) continue;
       music.push({
         name: track.file,
         url: "/media/music/" + encodeURIComponent(track.file),
@@ -295,22 +320,29 @@ app.post("/api/ai-options", async (req, res) => {
         label: track.label,
         category: track.category
       });
-    });
-    musicErrors.length = 0;
-  }
+    }
+    if (!music.length) musicErrors.push("No se pudo preparar la biblioteca musical.");
 
-  if (!images.length && !music.length) {
-    const details = [...imageErrors.map(e => "Imagen: " + e), ...musicErrors.map(e => "Música: " + e)];
-    return res.status(502).json({
-      error: "El proveedor IA gratuito no ha devuelto recursos. " + (details[0] || "Sin detalle."),
+    if (!images.length && !music.length) {
+      return res.status(502).json({
+        error: "No se pudieron preparar los recursos gratuitos.",
+        imageErrors,
+        musicErrors
+      });
+    }
+
+    res.json({
+      images,
+      music,
       imageErrors,
-      musicErrors
+      musicErrors,
+      provider: "RelaxScape Free"
     });
+  } catch (e) {
+    console.error("Error en /api/ai-options:", e.message);
+    res.status(500).json({ error: "No se pudieron generar las opciones: " + e.message });
   }
-
-  res.json({ images, music, imageErrors, musicErrors, provider: "Pollinations" });
 });
-
 
 function runFfmpeg(args) {
   return new Promise((resolve, reject) => {
