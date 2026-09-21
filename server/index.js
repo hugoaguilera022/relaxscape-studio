@@ -857,6 +857,77 @@ app.post("/api/ai-images", async (req, res) => {
   }
 });
 
+const musicPreviewJobs=new Map();
+
+app.post("/api/music-preview-options", (req,res)=>{
+  const prompt=String(req.body?.musicPrompt||"").trim().slice(0,700);
+  if(!prompt)return res.status(400).json({error:"Escribe primero qué música quieres crear."});
+  const jobId="mp-"+Date.now()+"-"+Math.random().toString(36).slice(2,8);
+  const tracks=[1,2,3].map((variant)=>({
+    userSearch:prompt,originalMusicPrompt:prompt,
+    musicProfile:buildAIMusicPrompt(prompt,variant),
+    userMusicBrief:buildAIMusicPrompt(prompt,variant),
+    variant,generationSeed:jobId+"-"+variant,
+    file:"music-preview-"+jobId+"-"+variant+".mp3",
+    label:"Propuesta "+variant,
+    forceRegenerate:true
+  }));
+  musicPreviewJobs.set(jobId,{status:"running",progress:0,results:[],error:null});
+  (async()=>{
+    const job=musicPreviewJobs.get(jobId);
+    try{
+      const results=await Promise.all(tracks.map(async(track,i)=>{
+        const out=path.join(MUSIC_DIR,track.file);
+        await generateAIMusicFile(track,out,60000);
+        job.progress=Math.round(((i+1)/tracks.length)*100);
+        return {name:track.file,url:"/media/music/"+encodeURIComponent(track.file),label:track.label,provider:"RelaxScape Free AI Music Engine",generatedFromSearch:true,originalMusicPrompt:prompt,variant:track.variant,durationSeconds:60};
+      }));
+      job.results=results;job.status="succeeded";
+    }catch(e){job.status="failed";job.error=e?.message||String(e);}
+    setTimeout(()=>musicPreviewJobs.delete(jobId),20*60*1000);
+  })();
+  res.status(202).json({jobId});
+});
+
+app.get("/api/music-preview-options-status",(req,res)=>{
+  const job=musicPreviewJobs.get(String(req.query.jobId||""));
+  if(!job)return res.status(404).json({error:"No se encontró la generación de propuestas."});
+  res.json({status:job.status,progress:job.progress||0,results:job.results||[],error:job.error||null});
+});
+
+app.post("/api/music-preview-final", async(req,res)=>{
+  const music=String(req.body?.music||"").trim();
+  const prompt=String(req.body?.musicPrompt||"").trim().slice(0,700);
+  const hours=Number(req.body?.durationHours||1);
+  if(!music||!prompt)return res.status(400).json({error:"Faltan la propuesta musical o la búsqueda original."});
+  if(![1,2,3,4,6,8].includes(hours))return res.status(400).json({error:"Duración no válida."});
+  const name=decodeURIComponent(music.split("/").pop());
+  const source=path.join(MUSIC_DIR,name);
+  if(!fs.existsSync(source))return res.status(404).json({error:"No se encontró la propuesta seleccionada."});
+  const finalName="relaxscape-final-"+hours+"h-"+Date.now()+".mp3";
+  const out=path.join(MUSIC_DIR,finalName);
+  try{
+    const profile=buildAIMusicPrompt(prompt,1);
+    const track={userSearch:prompt,originalMusicPrompt:prompt,musicProfile:profile,variant:1,generationSeed:"final-"+Date.now()};
+    const work=path.join(MUSIC_DIR,"final-"+Date.now());
+    fs.mkdirSync(work,{recursive:true});
+    try{
+      const segments=[];
+      for(let i=0;i<4;i++){
+        const seg=path.join(work,"segment-"+i+".mp3");
+        await generateAIMusicFile({...track,variant:(i%4)+1,generationSeed:"final-"+Date.now()+"-"+i},seg,180000);
+        segments.push(seg);
+      }
+      const list=path.join(work,"concat.txt");
+      fs.writeFileSync(list,segments.map(x=>"file '"+x.replace(/'/g,"'\\''")+"'").join("\n"));
+      const base=path.join(work,"base.mp3");
+      await runFfmpeg(["-y","-f","concat","-safe","0","-i",list,"-c:a","libmp3lame","-b:a","192k","-ar","48000",base]);
+      await runFfmpeg(["-y","-stream_loop","-1","-i",base,"-t",String(hours*3600),"-c:a","copy",out]);
+    }finally{fs.rmSync(work,{recursive:true,force:true});}
+    res.json({name:finalName,url:"/media/music/"+encodeURIComponent(finalName),hours,provider:"RelaxScape Free AI Music Engine",generatedFromSearch:true});
+  }catch(e){res.status(500).json({error:"No se pudo crear la música final: "+e.message});}
+});
+
 app.post("/api/ai-music", async (req,res)=>{
   const musicPrompt=String(req.body?.musicPrompt||"deep relaxation ambient music").trim().slice(0,700);
   const generationId=++aiMusicGenerationId;
