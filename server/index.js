@@ -108,11 +108,20 @@ async function generateDaily() {
   if (!music.length) return console.log("Daily render omitido: falta música.");
   try {
     const dailyImage = await refreshDailyLandscape();
-    const musicItem = music[Math.floor(Math.random() * music.length)];
+
+    // Cada día elegimos una pista diferente de forma determinista según la fecha.
+    // Así evitamos repetir la misma música en días consecutivos mientras haya pistas disponibles.
+    const today = new Date().toISOString().slice(0, 10);
+    const dayNumber = Math.floor(Date.parse(today + "T00:00:00Z") / 86400000);
+    const musicPool = music.filter(x => !x.name.startsWith("ai-music-"));
+    const pool = musicPool.length ? musicPool : music;
+    const musicItem = pool[((dayNumber % pool.length) + pool.length) % pool.length];
+
     const imagePath = path.join(IMAGE_DIR, dailyImage.name);
     const musicPath = path.join(MUSIC_DIR, musicItem.name);
-    const filename = `daily-${new Date().toISOString().slice(0,10)}.mp4`;
+    const filename = `daily-${today}.mp4`;
     const out = path.join(VIDEO_DIR, filename);
+
     await runFfmpeg([
       "-y","-loop","1","-i",imagePath,"-stream_loop","-1","-i",musicPath,"-t","3600",
       "-vf","scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
