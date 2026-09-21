@@ -301,9 +301,11 @@ app.post("/api/generate-relax-mix", async (req, res) => {
   try {
     await ensureBuiltinMusic();
     const available = BUILTIN_MUSIC.map(t => path.join(MUSIC_DIR, t.file)).filter(fs.existsSync);
-    if (available.length < 6) return res.status(503).json({ error: "La biblioteca musical todavía no está lista. Inténtalo de nuevo en unos segundos." });
+    if (available.length < 6) return res.status(503).json({ error: "La biblioteca musical todavía no está lista." });
 
-    const shuffled = [...available].sort(() => Math.random() - 0.5);
+    // No renderizamos 24 pistas completas: creamos un collage corto y lo repetimos.
+    // Esto hace que la generación tarde segundos/minutos, no una hora real de FFmpeg.
+    const selected = [...available].sort(() => Math.random() - 0.5).slice(0, Math.min(12, available.length));
     const stamp = Date.now();
     const workDir = path.join(MUSIC_DIR, "mix-" + stamp);
     fs.mkdirSync(workDir, { recursive: true });
@@ -314,19 +316,20 @@ app.post("/api/generate-relax-mix", async (req, res) => {
     try {
       const inputs = [];
       const filters = [];
-      for (let i = 0; i < shuffled.length; i++) {
-        inputs.push("-i", shuffled[i]);
-        filters.push("[" + i + ":a]aresample=44100,volume=0.72[a" + i + "]");
+      for (let i = 0; i < selected.length; i++) {
+        inputs.push("-i", selected[i]);
+        filters.push("[" + i + ":a]aresample=44100,volume=0.82[a" + i + "]");
       }
       let current = "a0";
-      for (let i = 1; i < shuffled.length; i++) {
+      for (let i = 1; i < selected.length; i++) {
         const next = "mix" + i;
-        filters.push("[" + current + "][a" + i + "]acrossfade=d=6:c1=tri:c2=tri[" + next + "]");
+        filters.push("[" + current + "][a" + i + "]acrossfade=d=4:c1=tri:c2=tri[" + next + "]");
         current = next;
       }
 
-      await runFfmpeg(["-y", ...inputs, "-filter_complex", filters.join(";"), "-map", "[" + current + "]", "-c:a", "libmp3lame", "-b:a", "128k", basePath]);
-      await runFfmpeg(["-y", "-stream_loop", "-1", "-i", basePath, "-t", String(hours * 3600), "-c:a", "libmp3lame", "-b:a", "160k", "-af", "afade=t=out:st=" + String(hours * 3600 - 18) + ":d=18", finalPath]);
+      await runFfmpeg(["-y", ...inputs, "-filter_complex", filters.join(";"), "-map", "[" + current + "]", "-t", "300", "-c:a", "libmp3lame", "-b:a", "128k", basePath]);
+      // El archivo final se crea como un bucle rápido. No se recodifica toda la hora.
+      await runFfmpeg(["-y", "-stream_loop", "-1", "-i", basePath, "-t", String(hours * 3600), "-c:a", "copy", finalPath]);
 
       res.json({
         name: finalName,
@@ -334,7 +337,7 @@ app.post("/api/generate-relax-mix", async (req, res) => {
         hours,
         provider: "RelaxScape",
         type: "mixed-library",
-        tracks: shuffled.map(f => path.basename(f)),
+        tracks: selected.map(f => path.basename(f)),
         styles: [...new Set(BUILTIN_MUSIC.map(x => x.category))]
       });
     } finally {
