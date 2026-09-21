@@ -1,4 +1,4 @@
-const S={images:[],music:[],aiImages:[],aiMusic:[],externalMusic:[],selectedExternalMusic:[],videos:[],image:null,music:null,hours:1,schedule:true,musicCategory:"Todas",aiReady:false,aiLoading:false};
+const S={images:[],music:[],aiImages:[],aiMusic:[],externalMusic:[],selectedExternalMusic:[],aiMixHours:1,videos:[],image:null,music:null,hours:1,schedule:true,musicCategory:"Todas",aiReady:false,aiLoading:false};
 const $=s=>document.querySelector(s), $$=s=>document.querySelectorAll(s);
 async function api(url,opt){const r=await fetch(url,opt);let d={};let raw="";try{raw=await r.text();d=raw?JSON.parse(raw):{}}catch{};if(!r.ok)throw Error(d.error||`Error ${r.status}${raw?`: ${raw.slice(0,180)}`:""}`);return d}
 async function load(){
@@ -155,11 +155,12 @@ async function createSelectedFreesoundMix(){
       method:"POST",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({
-        tracks:selected.map(x=>({id:x.id,preview:x.preview,name:x.name,sourceUrl:x.sourceUrl,username:x.username,license:x.license}))
+        tracks:selected.map(x=>({id:x.id,preview:x.preview,name:x.name,sourceUrl:x.sourceUrl,username:x.username,license:x.license})),
+        durationHours:S.aiMixHours
       })
     });
     S.music=d;
-    if(status)status.textContent="✓ Mezcla creada con "+selected.length+" sonidos seleccionados. Ya puedes escucharla y usarla en el vídeo.";
+    if(status)status.textContent="✓ Mezcla de "+S.aiMixHours+" hora"+(S.aiMixHours===1?"":"s")+" creada. Puedes escuchar la previa completa antes de crear el vídeo.";
     renderAICreator();update();picker();
   }catch(e){
     if(status)status.textContent="No se pudo crear la mezcla: "+e.message;
@@ -231,8 +232,10 @@ function renderAICreator(){
   }
   if(mx){
     if(S.selectedExternalMusic.length){
-      mx.innerHTML='<div class="mixer-selected-head"><div><b>🎚️ Sonidos seleccionados</b><small>'+S.selectedExternalMusic.length+'/6 · Puedes quitar cualquiera antes de mezclar.</small></div></div>'+S.selectedExternalMusic.map((x,i)=>'<div class="mixer-item"><span>'+String(i+1).padStart(2,"0")+'</span><div><b>'+escapeHtml(x.name)+'</b><small>Freesound · '+escapeHtml(x.username||"")+'</small></div><button type="button" class="ghost" data-remove-mix="'+x.id+'">Quitar</button></div>').join("")+'<button type="button" id="createSelectedFreesoundMix" class="primary mixer-create" '+(S.selectedExternalMusic.length<2?"disabled":"")+'>🎚️ Crear mezcla de los sonidos seleccionados</button>';
+      mx.innerHTML='<div class="mixer-selected-head"><div><b>🎚️ Sonidos seleccionados</b><small>'+S.selectedExternalMusic.length+'/6 · Puedes quitar cualquiera antes de mezclar.</small></div></div>'+S.selectedExternalMusic.map((x,i)=>'<div class="mixer-item"><span>'+String(i+1).padStart(2,"0")+'</span><div><b>'+escapeHtml(x.name)+'</b><small>Freesound · '+escapeHtml(x.username||"")+'</small></div><button type="button" class="ghost" data-remove-mix="'+x.id+'">Quitar</button></div>').join("")+'<div class="mixer-duration"><label>Duración de la mezcla <select id="aiMixHours"><option value="1" '+(S.aiMixHours===1?"selected":"")+'>1 hora</option><option value="2" '+(S.aiMixHours===2?"selected":"")+'>2 horas</option></select></label><small>La previa que escuches será exactamente la mezcla seleccionada.</small></div><button type="button" id="createSelectedFreesoundMix" class="primary mixer-create" '+(S.selectedExternalMusic.length<2?"disabled":"")+'>🎚️ Crear mezcla de los sonidos seleccionados</button>'+(S.music?.isFreesoundMix?'<div class="mixer-preview"><b>▶ Previa de la mezcla · '+(S.music.durationHours||S.aiMixHours)+' h</b><audio controls preload="metadata" src="'+S.music.url+'"></audio><small>Puedes escucharla completa, pausarla y mover el cursor por cualquier parte de la mezcla.</small></div>':'');
       $$("#aiMixer [data-remove-mix]").forEach(b=>b.onclick=()=>{S.selectedExternalMusic=S.selectedExternalMusic.filter(v=>String(v.id)!==String(b.dataset.removeMix));renderAICreator()});
+      const dh=$("#aiMixHours");
+      if(dh)dh.onchange=()=>{S.aiMixHours=Number(dh.value)===2?2:1};
       const mb=$("#createSelectedFreesoundMix");
       if(mb)mb.onclick=createSelectedFreesoundMix;
     }else{
