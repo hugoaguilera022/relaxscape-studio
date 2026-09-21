@@ -90,7 +90,7 @@ function makeCompositionWav(track, wavPath){
   // Motor armónico v7: ambient cinematográfico, progresiones lentas, voice-leading
   // estricto, melodía respirada y capas suaves. Se renderiza a 22.05 kHz y se
   // entrega a FFmpeg a 44.1 kHz para mantener calidad sin bloquear Render.
-  const sr=16000, dur=48, n=sr*dur, samples=new Float32Array(n*2);
+  const sr=12000, dur=12, n=sr*dur, samples=new Float32Array(n*2);
   const profile=String(track.musicProfile||"").toLowerCase();
   const ultraCalm=/relax|relaj|calm|calma|tranquil|peace|soft|ambient|piano|nature|spa|healing|bienestar|stress|estrés|ansiedad|anxiety|meditat|sleep|suave/.test(profile);
   const darkCalm=/deep|night|dream|sleep/.test(profile);
@@ -372,7 +372,7 @@ async function ensureBuiltinMusic(tracks=BUILTIN_MUSIC){
       }catch(e){
         console.warn("[Lyria 3.5] No disponible, usando motor local:",e.message);
         makeCompositionWav(track,wav);
-        await runFfmpeg(["-y","-i",wav,"-t","24","-af","highpass=f=28,lowpass=f=16500,acompressor=threshold=-22dB:ratio=2:attack=35:release=220:makeup=1,alimiter=limit=0.92","-c:a","libmp3lame","-b:a","192k","-ar","44100",out]);
+        await runFfmpeg(["-y","-i",wav,"-t","12","-af","highpass=f=28,lowpass=f=16500,acompressor=threshold=-22dB:ratio=2:attack=35:release=220:makeup=1,alimiter=limit=0.92","-c:a","libmp3lame","-b:a","192k","-ar","44100",out]);
       }
       if(!valid(track)) throw new Error("FFmpeg no creó un MP3 válido");
       console.log("[Music v11] LISTA:",track.file,fs.statSync(out).size,"bytes");
@@ -597,7 +597,7 @@ async function generateLyriaMusicFile(prompt,index=1){
     method:"POST",
     headers:{"Content-Type":"application/json","x-goog-api-key":key},
     body:JSON.stringify({model:"lyria-3.5",input:finalPrompt,response_format:{type:"audio"}})
-  },180000);
+  },45000);
   const data=await r.json().catch(()=>({}));
   if(!r.ok) throw new Error(data.error?.message||("Lyria 3.5 HTTP "+r.status));
   const b64=data.output_audio?.data||data.steps?.flatMap(s=>s.content||[]).find(x=>x.type==="audio")?.data;
@@ -674,10 +674,20 @@ app.post("/api/ai-options", async (req, res) => {
       .filter(p => p.src?.large || p.src?.large2x)
       .sort(() => Math.random() - 0.5)
       .slice(0, 4);
-    pool.forEach((photo,i) => {
-      const src=photo.src?.large || photo.src?.large2x;
-      images.push({name:"pexels-"+photo.id+".jpg",url:src,sourceUrl:src,ai:false,provider:"Pexels",fallback:false,label:"Paisaje gratuito "+(i+1)});
-    });
+    for (let i=0;i<pool.length;i++) {
+      const photo=pool[i];
+      const src=photo.src?.large2x || photo.src?.large;
+      try {
+        const img=await fetchWithTimeout(src,{},12000);
+        if(!img.ok) continue;
+        const filename="pexels-ai-"+photo.id+"-"+Date.now()+"-"+i+".jpg";
+        fs.writeFileSync(path.join(IMAGE_DIR,filename),Buffer.from(await img.arrayBuffer()));
+        images.push({name:filename,url:"/media/images/"+encodeURIComponent(filename),sourceUrl:photo.url||src,ai:false,provider:"Pexels",fallback:false,label:"Paisaje gratuito "+(images.length+1)});
+      } catch(e) {
+        imageErrors.push("Foto Pexels "+photo.id+": "+e.message);
+      }
+      if(images.length>=4) break;
+    }
     if(images.length<4) imageErrors.push("Pexels devolvió "+images.length+" de 4 imágenes.");
   } catch(e) {
     imageErrors.push(e.message || "Error de Pexels");
