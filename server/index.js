@@ -267,10 +267,37 @@ app.post("/api/ai-options", async (req, res) => {
     }));
   };
 
-  await Promise.all([
-    runBatch(imagePrompts, generatePollinationsImageFile, images, imageErrors),
-    runBatch(musicPrompts, generatePollinationsMusicFile, music, musicErrors)
-  ]);
+  // Las imágenes siguen intentando Pollinations y caen a Pexels si la API pide
+  // autenticación. Para música no bloqueamos la creación por un proveedor externo:
+  // si Pollinations no está disponible, usamos inmediatamente la biblioteca
+  // ambiental integrada de RelaxScape, que se genera localmente con FFmpeg.
+  await ensureBuiltinMusic();
+  const builtinAvailable = BUILTIN_MUSIC
+    .map(t => ({ ...t, filePath: path.join(MUSIC_DIR, t.file) }))
+    .filter(t => fs.existsSync(t.filePath));
+
+  await runBatch(imagePrompts, generatePollinationsImageFile, images, imageErrors);
+
+  if (process.env.POLLINATIONS_API_KEY) {
+    await runBatch(musicPrompts, generatePollinationsMusicFile, music, musicErrors);
+  }
+
+  if (!music.length && builtinAvailable.length) {
+    const shuffledMusic = [...builtinAvailable].sort(() => Math.random() - 0.5);
+    shuffledMusic.slice(0, 4).forEach((track, i) => {
+      music.push({
+        name: track.file,
+        url: "/media/music/" + encodeURIComponent(track.file),
+        ai: false,
+        provider: "RelaxScape",
+        generated: true,
+        fallback: true,
+        label: track.label,
+        category: track.category
+      });
+    });
+    musicErrors.length = 0;
+  }
 
   if (!images.length && !music.length) {
     const details = [...imageErrors.map(e => "Imagen: " + e), ...musicErrors.map(e => "Música: " + e)];
