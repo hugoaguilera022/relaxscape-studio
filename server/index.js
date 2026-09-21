@@ -532,22 +532,81 @@ async function generatePollinationsMusicFile(prompt, index) {
 async function generateLyriaMusicFile(prompt, index=1) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("GEMINI_API_KEY no configurada");
+
+  const variants = [
+    "clean felt piano, intimate close-mic piano tone, very sparse slow notes, long natural decay, warm soft pedal resonance, extremely gentle dynamics",
+    "clean felt piano with an almost inaudible warm air pad, sparse slow piano phrases, long sustained harmony, soft pedal resonance, wide but clean stereo space",
+    "clean felt piano with very soft legato string ambience underneath, sparse notes, long decay, warm consonant chords, no dramatic swells, transparent mix",
+    "clean felt piano with extremely subtle water-like air texture, sparse slow notes, long decay, warm consonant harmony, natural room and spacious reverb"
+  ];
+  const detail = variants[(Math.max(1, Number(index)) - 1) % variants.length];
+
+  const finalPrompt = [
+    String(prompt || "deep relaxation piano ambience"),
+    "Professional high-end relaxation ambient instrumental.",
+    detail + ".",
+    "The piano must sound like a real professionally recorded acoustic felt piano, clean, soft, detailed and natural.",
+    "Continuous background meditation music, not a pop song.",
+    "No verse, no chorus, no hook, no dramatic build, no cinematic impact, no rhythmic groove.",
+    "Very slow 40-55 BPM feel, mostly sustained consonant harmony, gentle voice leading, large spaces between notes.",
+    "Natural stereo image, low noise, smooth transients, no distortion, no harsh highs, no muddy low end, no clipping.",
+    "No drums, no percussion, no bass pulse, no vocals, no lyrics.",
+    "Do not reproduce any existing melody or recording."
+  ].join(" ");
+
   const r = await fetchWithTimeout("https://generativelanguage.googleapis.com/v1beta/interactions", {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": key },
     body: JSON.stringify({
       model: "lyria-3.5",
-      input: String(prompt || "") + ". Instrumental only. Deep relaxation piano ambience: soft felt piano as the dominant instrument, sparse slow notes with long decay, gentle consonant harmony, subtle warm pad underneath, intimate close piano tone blended into wide spacious reverb, very low energy, no hook, no pop structure, no drums, no percussion, no beat, no rhythmic pulse, no vocals, no lyrics. Do not reproduce any existing melody or recording.",
+      input: finalPrompt,
       response_format: { type: "audio" }
     })
-  }, 120000);
+  }, 180000);
+
   const data = await r.json();
   if (!r.ok) throw new Error(data.error?.message || ("Lyria 3.5 HTTP " + r.status));
-  const b64 = data.output_audio?.data || data.steps?.flatMap(s=>s.content||[]).find(x=>x.type==="audio")?.data;
+
+  const b64 =
+    data.output_audio?.data ||
+    data.steps?.flatMap(s => s.content || []).find(x => x.type === "audio")?.data;
+
   if (!b64) throw new Error("Lyria 3.5 no devolvió audio.");
-  const filename = "ai-lyria35-relax-" + Date.now() + "-" + index + ".mp3";
-  fs.writeFileSync(path.join(MUSIC_DIR, filename), Buffer.from(b64, "base64"));
-  return { name: filename, url: "/media/music/" + encodeURIComponent(filename), ai: true, provider: "Google Lyria 3.5", generated: true, fallback: false };
+
+  const filename = "ai-lyria35-clean-relax-" + Date.now() + "-" + index + ".mp3";
+  const rawPath = path.join(MUSIC_DIR, filename);
+  fs.writeFileSync(rawPath, Buffer.from(b64, "base64"));
+
+  // Limpieza final: conservamos el detalle del piano y evitamos graves/altos
+  // agresivos. Lyria ya entrega 44.1 kHz estéreo de alta calidad.
+  const cleanName = "ai-lyria35-clean-master-" + Date.now() + "-" + index + ".mp3";
+  const cleanPath = path.join(MUSIC_DIR, cleanName);
+  try {
+    await runFfmpeg([
+      "-y", "-i", rawPath,
+      "-af", "highpass=f=32,lowpass=f=17000,acompressor=threshold=-26dB:ratio=1.5:attack=25:release=300:makeup=1,alimiter=limit=0.95",
+      "-ar", "44100", "-ac", "2", "-c:a", "libmp3lame", "-b:a", "320k",
+      cleanPath
+    ]);
+    fs.rmSync(rawPath, {force:true});
+    return {
+      name: cleanName,
+      url: "/media/music/" + encodeURIComponent(cleanName),
+      ai: true,
+      provider: "Google Lyria 3.5",
+      generated: true,
+      fallback: false
+    };
+  } catch (e) {
+    return {
+      name: filename,
+      url: "/media/music/" + encodeURIComponent(filename),
+      ai: true,
+      provider: "Google Lyria 3.5",
+      generated: true,
+      fallback: false
+    };
+  }
 }
 
 function makeFallbackLandscape(filename, theme="nature") {
