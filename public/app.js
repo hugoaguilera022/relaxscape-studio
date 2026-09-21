@@ -1,4 +1,4 @@
-const S={images:[],music:[],aiImages:[],aiMusic:[],videoOptions:[],selectedVideoOption:null,externalMusic:[],selectedExternalMusic:[],aiMixHours:1,videos:[],image:null,music:null,hours:1,schedule:true,musicCategory:"Todas",aiReady:false,aiLoading:false};
+const S={images:[],music:[],aiImages:[],aiMusic:[],externalMusic:[],selectedExternalMusic:[],aiMixHours:1,videos:[],image:null,music:null,hours:1,schedule:true,musicCategory:"Todas",aiReady:false,aiLoading:false};
 const $=s=>document.querySelector(s), $$=s=>document.querySelectorAll(s);
 async function api(url,opt){const r=await fetch(url,opt);let d={};let raw="";try{raw=await r.text();d=raw?JSON.parse(raw):{}}catch{};if(!r.ok)throw Error(d.error||`Error ${r.status}${raw?`: ${raw.slice(0,180)}`:""}`);return d}
 async function load(){
@@ -68,34 +68,20 @@ function bindAIButtons(){
 }
 
 async function generateAIMusicOnly(){
-  const prompt=(($("#aiMusicPrompt").value||"").trim()||"piano relaxing ambient");
-  if(!S.image){
-    const status=$("#aiSelectionStatus");
-    if(status)status.textContent="Selecciona primero uno de los paisajes IA.";
-    return;
-  }
-  S.aiLoading=true; S.aiMusic=[]; S.videoOptions=[]; S.selectedVideoOption=null; S.externalMusic=[]; S.selectedExternalMusic=[]; S.music=null;
-  const status=$("#aiSelectionStatus"), mg=$("#aiMusicList");
-  if(status)status.textContent="🎬 Creando 3 vídeos de 1 minuto…";
-  if(mg)mg.innerHTML='<div class="empty">🎬 Generando 3 vídeos reales a partir de tu búsqueda…</div>';
+  const prompt=(($( "#aiMusicPrompt").value||"").trim()||"piano relaxing ambient");
+  S.aiLoading=true; S.aiMusic=[]; S.externalMusic=[]; S.selectedExternalMusic=[]; S.music=null;
+  const status=$( "#aiSelectionStatus"), mg=$( "#aiMusicList");
+  if(status)status.textContent="🔎 Buscando audios reales en Freesound según tu búsqueda…";
+  if(mg)mg.innerHTML='<div class="empty">🔎 Buscando grabaciones reales de los instrumentos y ambientes solicitados…</div>';
   try{
-    const started=await api("/api/video-preview-options",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({musicPrompt:prompt,image:S.image.url})});
-    let d=null;
-    for(let i=0;i<180;i++){
-      await new Promise(r=>setTimeout(r,1000));
-      d=await api("/api/video-preview-options-status?jobId="+encodeURIComponent(started.jobId));
-      if(status)status.textContent="🎬 Generando vídeos… "+(d.progress||0)+"%";
-      if(d.status==="succeeded")break;
-      if(d.status==="failed")throw Error(d.error||"No se pudieron crear los vídeos.");
-    }
-    if(!d||d.status!=="succeeded")throw Error("La generación de los tres vídeos está tardando demasiado.");
-    S.videoOptions=d.results||[];
-    if(S.videoOptions.length!==3)throw Error("No se generaron los 3 vídeos completos.");
-    if(status)status.textContent="✓ Los 3 vídeos de 1 minuto están listos. Elige uno.";
+    const d=await api("/api/external-music-search?q="+encodeURIComponent(prompt));
+    S.externalMusic=d.results||[];
+    if(!S.externalMusic.length)throw Error("No se encontraron audios que coincidan con la búsqueda.");
+    if(status)status.textContent="✓ "+S.externalMusic.length+" previas reales encontradas. Escucha y elige una.";
     renderAICreator();
   }catch(e){
-    if(status)status.textContent="Error de generación: "+e.message;
-    if(mg)mg.innerHTML='<div class="empty">No se pudieron generar los 3 vídeos.<br><small>'+e.message+"</small></div>";
+    if(status)status.textContent="Error de búsqueda: "+e.message;
+    if(mg)mg.innerHTML='<div class="empty">No se pudo buscar audio externo.<br><small>'+e.message+'</small></div>';
   }finally{S.aiLoading=false;renderAICreator()}
 }
 
@@ -253,31 +239,6 @@ function renderAICreator(){
         const x=S.externalMusic.find(v=>String(v.id)===String(b.dataset.downloadExternal));
         if(x)downloadExternalMusic(x);
       });
-    }else if(S.videoOptions.length){
-      mg.innerHTML='<div class="music-options-title"><b>🎬 3 vídeos · 1 minuto cada uno</b><small>Son vídeos reales creados a partir de tu paisaje y de tres interpretaciones diferentes de tu búsqueda musical.</small></div>'+S.videoOptions.map((x,i)=>'<div class="ai-track '+(S.selectedVideoOption?.url===x.url?"selected":"")+'"><div><b>🎬 Vídeo '+(i+1)+'</b><small>Previa real de 1 minuto · propuesta musical '+x.variant+'</small></div><div class="ai-track-actions"><video controls preload="metadata" playsinline style="width:100%;max-width:520px;border-radius:12px" src="'+x.url+'"></video><button type="button" class="primary" data-select-video="'+i+'">'+(S.selectedVideoOption?.url===x.url?"✓ Seleccionado":"Seleccionar este vídeo")+'</button></div></div>').join("")+'<div class="mixer-duration"><label>Duración final <select id="aiFinalHours"><option value="1">1 hora</option><option value="2">2 horas</option><option value="3">3 horas</option><option value="4">4 horas</option><option value="6">6 horas</option><option value="8">8 horas</option><option value="12">12 horas</option><option value="24">24 horas</option></select></label><button type="button" id="createFinalAIVideo" class="primary" '+(!S.selectedVideoOption?"disabled":"")+'>🎬 Crear vídeo final</button></div>';
-      $$("#aiMusicList [data-select-video]").forEach(b=>b.onclick=ev=>{
-        ev.stopPropagation();
-        const x=S.videoOptions[Number(b.dataset.selectVideo)];
-        if(x){S.selectedVideoOption=x;S.music={url:x.musicUrl,name:"music-"+x.variant,previewOnly:true,originalMusicPrompt:x.originalMusicPrompt,variant:x.variant};renderAICreator()}
-      });
-      const finalBtn=$("#createFinalAIVideo");
-      if(finalBtn)finalBtn.onclick=async()=>{
-        if(!S.selectedVideoOption||!S.image)return;
-        finalBtn.disabled=true;
-        const hours=Number($("#aiFinalHours")?.value||1);
-        const st=$("#aiSelectionStatus");
-        if(st)st.textContent="🎬 Creando el vídeo final de "+hours+" hora"+(hours===1?"":"s")+"…";
-        try{
-          const d=await api("/api/video-preview-final",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
-            image:S.image.url,musicPrompt:S.selectedVideoOption.originalMusicPrompt||($("#aiMusicPrompt")?.value||"").trim(),variant:S.selectedVideoOption.variant,durationHours:hours
-          })});
-          $("#video").src=d.url;$("#download").href=d.url;$("#download").setAttribute("download",d.name||"relaxscape-video.mp4");$("#result").classList.remove("hidden");
-          S.music={...d,generatedFromSearch:true,durationHours:hours};
-          if(st)st.textContent="✓ Vídeo final de "+hours+" hora"+(hours===1?"":"s")+" listo.";
-          await load();
-        }catch(e){if(st)st.textContent="No se pudo crear el vídeo final: "+e.message}
-        finally{finalBtn.disabled=false}
-      };
     }else{
       mg.innerHTML='<div class="empty">♫ Busca una música o un sonido para seleccionar las fuentes de tu mezcla.</div>';
     }
@@ -322,7 +283,25 @@ $("#musicInput").onchange=async e=>{if(!e.target.files[0])return;const fd=new Fo
 $("#aiImage").onclick=async()=>{const p=$("#prompt").value||"Ultra-realistic cinematic peaceful landscape, natural light, no people, no text, photorealistic";$("#builderStatus").textContent="Generando paisaje IA…";try{S.image=await api("/api/generate-image",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt:p})});await load()}catch(x){$("#builderStatus").textContent=x.message}};
 $("#generate").onclick=async()=>{if(!S.image||!S.music){$("#builderStatus").textContent="Selecciona un paisaje y una pista.";return}$("#generate").disabled=true;$("#builderStatus").textContent="Generando vídeo…";try{const d=await api("/api/generate-video",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image:S.image.url,music:S.music.url,durationHours:1})});$("#video").src=d.url;$("#download").href=d.url;$("#download").setAttribute("download",d.name||"relaxscape-video.mp4");$("#result").classList.remove("hidden");$("#builderStatus").textContent="Vídeo terminado.";await load();}catch(x){$("#builderStatus").textContent=x.message}finally{$("#generate").disabled=false}};
 $("#aiGoMusic").onclick=()=>{$$(".nav").forEach(x=>x.classList.remove("active"));$(".tab").forEach(x=>x.classList.remove("active"));document.querySelector('[data-tab="music"]').classList.add("active");$("#music").classList.add("active");};
-const aiCreateHour=$("#aiCreateHour"); if(aiCreateHour) aiCreateHour.onclick=generateAIMusicOnly;
+$("#aiCreateHour").onclick=async()=>{
+  if(!S.image||!S.music){$("#aiSelectionStatus").textContent="Selecciona primero una foto y una música.";return}
+  if(S.music.isFreesoundPreview){$("#aiSelectionStatus").textContent="La previa está lista, pero la mezcla completa todavía se está preparando. Espera a que termine para crear el vídeo.";return}
+  const btn=$("#aiCreateHour");btn.disabled=true;
+  try{
+    let musicForVideo=S.music;
+    if(!S.music.generatedFromSearch && !S.music.isFreesoundMix && !S.music.isFreesoundPreview){
+      $("#aiSelectionStatus").textContent="1/2 · Preparando 1 hora a partir de la previa musical…";
+      musicForVideo=await api("/api/generate-selected-long-music",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({music:S.music.url,durationHours:1,musicPrompt:($("#aiMusicPrompt")?.value||$("#prompt")?.value||"").trim()})});
+    }
+    const videoHours=Number(S.music?.durationHours||S.aiMixHours||1)===2?2:1;
+    $("#aiSelectionStatus").textContent="2/2 · Creando tu vídeo Full HD de "+videoHours+" hora"+(videoHours===1?"":"s")+" con la mezcla…";
+    const d=await api("/api/generate-video",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image:S.image.url,music:musicForVideo.url,durationHours:videoHours})});
+    $("#video").src=d.url;$("#download").href=d.url;$("#download").setAttribute("download",d.name||"relaxscape-video.mp4");$("#result").classList.remove("hidden");
+    $("#aiSelectionStatus").textContent="¡Vídeo terminado! Se ha utilizado la mezcla de "+videoHours+" hora"+(videoHours===1?"":"s")+" seleccionada.";
+    await load();
+  }catch(e){$("#aiSelectionStatus").textContent=e.message}
+  finally{btn.disabled=false}
+};
 $("#closeResult").onclick=()=>$("#result").classList.add("hidden");
 async function createRelaxMix(hours){
   const status=$("#mixStatus"), b=hours===1?$("#mix1h"):$("#mix2h");
