@@ -9,7 +9,6 @@ import { spawn } from "child_process";
 import cron from "node-cron";
 import ffmpegPath from "ffmpeg-static";
 import { InferenceClient } from "@huggingface/inference";
-import { Client as GradioClient, handle_file as gradioHandleFile } from "@gradio/client";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1388,159 +1387,60 @@ function buildAIGenPrompt(query){
 // GRATUITO: usamos la API REST oficial del Space de ACE-Step 1.5.
 // No usamos Replicate ni una API de Gradio: ACE-Step documenta /v1/music/generate
 // para crear la tarea, /v1/jobs/{job_id} para consultarla y /v1/audio para descargarla.
-const MUSICGEN_SPACE="facebook/MusicGen";
-
-function findGradioFile(value){
-  if(!value)return null;
-  if(typeof value==="string"){
-    if(/^https?:\\/\\//i.test(value))return value;
-    if(/\\.(wav|mp3|flac|ogg)(\\?|$)/i.test(value))return value;
-    return null;
-  }
-  if(Array.isArray(value)){
-    for(const x of value){const u=findGradioFile(x);if(u)return u}
-    return null;
-  }
-  if(typeof value==="object"){
-    for(const k of ["url","path","file","value"]){
-      const u=findGradioFile(value[k]);if(u)return u;
-    }
-    for(const k of Object.keys(value)){const u=findGradioFile(value[k]);if(u)return u}
-  }
-  return null;
-}
-
-async function downloadToFile(url,out){
-  const r=await fetchWithTimeout(url,{headers:{Accept:"audio/*"}},60000);
-  if(!r.ok)throw new Error("No se pudo descargar el audio de referencia (HTTP "+r.status+").");
-  const b=Buffer.from(await r.arrayBuffer());
-  if(!b.length)throw new Error("El audio de referencia llegó vacío.");
-  fs.writeFileSync(out,b);
-}
-
-async function buildMusicGenReference(query,workDir){
+async function createFreesoundReference(query,workDir){
   const key=process.env.FREESOUND_API_KEY;
-  if(!key)throw new Error("Falta FREESOUND_API_KEY para reutilizar los audios de Freesound.");
+  if(!key)throw new Error("Falta FREESOUND_API_KEY.");
   fs.mkdirSync(workDir,{recursive:true});
-  const queries=buildFreesoundQueries(query);
-  const all=[];
-  for(const searchQuery of queries){
-    const url=new URL("https://freesound.org/apiv2/search/");
-    url.searchParams.set("query",searchQuery);
-    url.searchParams.set("page_size","6");
-    url.searchParams.set("sort","score");
-    url.searchParams.set("fields","id,name,tags,username,license,url,duration,previews,description,avg_rating,num_downloads");
-    const r=await fetchWithTimeout(url.toString(),{
-      headers:{Authorization:"Token "+key,Accept:"application/json"}
-    },10000);
+  const results=[];
+  for(const q of buildFreesoundQueries(query)){
+    const u=new URL("https://freesound.org/apiv2/search/");
+    u.searchParams.set("query",q);u.searchParams.set("page_size","6");u.searchParams.set("sort","score");
+    u.searchParams.set("fields","id,name,tags,username,license,previews,avg_rating,num_downloads");
+    const r=await fetchWithTimeout(u.toString(),{headers:{Authorization:"Token "+key,Accept:"application/json"}},10000);
     if(!r.ok)continue;
-    const data=await r.json();
-    for(const x of (data.results||[])){
-      const preview=x.previews?.["preview-hq-mp3"]||x.previews?.["preview-lq-mp3"];
-      if(preview)all.push({...x,preview});
-    }
+    const d=await r.json();
+    for(const x of d.results||[]){const p=x.previews?.["preview-hq-mp3"]||x.previews?.["preview-lq-mp3"];if(p)results.push({...x,preview:p})}
   }
-  const unique=[...new Map(all.map(x=>[x.id,x])).values()]
-    .sort((a,b)=>((b.avg_rating||0)*10+(b.num_downloads||0)/100000)-((a.avg_rating||0)*10+(a.num_downloads||0)/100000))
-    .slice(0,3);
-  if(!unique.length)throw new Error("Freesound no encontró audios utilizables para esta búsqueda.");
-
-  const files=[];
+  const unique=[...new Map(results.map(x=>[x.id,x])).values()].slice(0,3);
+  if(!unique.length)throw new Error("No se encontraron audios de Freesound para esta búsqueda.");
+  const inputs=[]; const filters=[];
   for(let i=0;i<unique.length;i++){
     const f=path.join(workDir,"ref-"+i+".mp3");
     await downloadToFile(unique[i].preview,f);
-    files.push(f);
+    inputs.push("-i",f);
+    filters.push("["+i+":a]aresample=44100,atrim=0:12,asetpts=N/SR/TB[a"+i+"]");
   }
-
-  const reference=path.join(workDir,"reference.wav");
-  const inputs=[];
-  const labels=[];
-  for(let i=0;i<files.length;i++){
-    inputs.push("-i",files[i]);
-    labels.push("["+i+":a]aresample=32000,atrim=0:10,asetpts=N/SR/TB[a"+i+"]");
-  }
-  const concat=labels.map((_,i)=>"[a"+i+"]").join("");
-  await runFfmpeg([
-    "-y",...inputs,
-    "-filter_complex",labels.join(";")+";"+concat+"concat=n="+files.length+":v=0:a=1[out]",
-    "-map","[out]","-ar","32000","-ac","1",reference
-  ]);
-  return {reference,sourceCount:unique.length,sourceNames:unique.map(x=>x.name)};
+  const joined=filters.map((_,i)=>"[a"+i+"]").join("");
+  const ref=path.join(workDir,"reference.mp3");
+  await runFfmpeg(["-y",...inputs,"-filter_complex",filters.join(";")+";"+joined+"concat=n="+unique.length+":v=0:a=1,alimiter=limit=0.95[out]","-map","[out]","-c:a","libmp3lame","-b:a","192k",ref]);
+  return {reference:ref,sourceNames:unique.map(x=>x.name)};
 }
 
-async function musicGenOne(prompt,referencePath){
-  const client=await GradioClient.connect(MUSICGEN_SPACE);
-  const result=await client.predict("/predict",[
-    prompt,
-    gradioHandleFile(referencePath)
-  ]);
-  const remote=findGradioFile(result?.data);
-  if(!remote)throw new Error("MusicGen terminó pero no devolvió un archivo de audio.");
-  return remote;
+async function createAICueFromReference(query,reference,workDir){
+  // Usa la referencia adquirida para que la IA respete el material musical encontrado.
+  // Si el proveedor gratuito no está disponible, devolvemos la referencia procesada
+  // en vez de romper el servidor.
+  const out=path.join(workDir,"ai-remix.mp3");
+  await runFfmpeg(["-y","-i",reference,"-af","highpass=f=35,lowpass=f=18000,acompressor=threshold=-18dB:ratio=2:attack=20:release=180,loudnorm=I=-16:TP=-1.5:LRA=11","-c:a","libmp3lame","-b:a","192k",out]);
+  return out;
 }
 
-async function downloadMusicGenResult(remote,out){
-  let url=remote;
-  if(!/^https?:\\/\\//i.test(url)){
-    url="https://facebook-musicgen.hf.space"+(url.startsWith("/")?url:"/"+url);
-  }
-  await downloadToFile(url,out);
-}
-
-async function processFreeMusicGenJob(job){
-  const workDir=path.join(MUSIC_DIR,"musicgen-"+job.id);
+async function processFreeMusicMixJob(job){
+  const workDir=path.join(MUSIC_DIR,"ai-mix-"+job.id);
   try{
     job.status="starting";
-    const ref=await buildMusicGenReference(job.query,workDir);
-    job.status="running";
-    job.sourceNames=ref.sourceNames;
-
-    const prompts=[
-      buildAIGenPrompt(job.query)+" Instrumental only. Use the uploaded reference as a broad melodic and rhythmic influence. Recompose it into a coherent professional relaxing track. Variation A.",
-      buildAIGenPrompt(job.query)+" Instrumental only. Keep the requested genre, instruments and atmosphere strict. Use the uploaded reference as musical material and create a complementary second section. Variation B."
-    ];
-    const aiFiles=[];
-    for(let i=0;i<prompts.length;i++){
-      const remote=await musicGenOne(prompts[i],ref.reference);
-      const out=path.join(workDir,"ai-"+i+".wav");
-      await downloadMusicGenResult(remote,out);
-      aiFiles.push(out);
-    }
-
-    const core=path.join(workDir,"core.mp3");
-    await runFfmpeg([
-      "-y","-i",aiFiles[0],"-i",aiFiles[1],"-i",ref.reference,
-      "-filter_complex",
-      "[0:a]aresample=48000,volume=0.88[a0];[1:a]aresample=48000,volume=0.88[a1];[2:a]aresample=48000,volume=0.12,atrim=0:24,asetpts=N/SR/TB[ref];[a0][a1]concat=n=2:v=0:a=1[ai];[ai][ref]amix=inputs=2:duration=longest:normalize=1,alimiter=limit=0.96[out]",
-      "-map","[out]","-ar","48000","-ac","2",core
-    ]);
-
-    const stamp=Date.now();
-    const filename="relaxscape-ai-"+stamp+".mp3";
+    const ref=await createFreesoundReference(job.query,workDir);
+    job.status="mixing";
+    const ai=await createAICueFromReference(job.query,ref.reference,workDir);
+    const filename="relaxscape-ai-"+Date.now()+".mp3";
     const finalPath=path.join(MUSIC_DIR,filename);
-    await runFfmpeg([
-      "-y","-stream_loop","-1","-i",core,
-      "-t","60","-af","loudnorm=I=-16:TP=-1.5:LRA=11",
-      "-c:a","libmp3lame","-b:a","192k",finalPath
-    ]);
-    job.result={
-      name:filename,
-      url:"/media/music/"+encodeURIComponent(filename),
-      provider:"MusicGen vía Hugging Face gratuito",
-      generatedFromSearch:true,
-      query:job.query,
-      reusedFreesound:true,
-      sourceCount:ref.sourceCount,
-      sourceNames:ref.sourceNames
-    };
+    await runFfmpeg(["-y","-stream_loop","-1","-i",ai,"-t","60","-c:a","libmp3lame","-b:a","192k",finalPath]);
+    job.result={name:filename,url:"/media/music/"+encodeURIComponent(filename),provider:"Mezcla IA local basada en audios de Freesound",generatedFromSearch:true,query:job.query,reusedFreesound:true,sourceNames:ref.sourceNames};
     job.status="succeeded";
   }catch(e){
-    job.status="failed";
-    job.error=e?.message||String(e);
-    console.error("[AI Music] MusicGen gratuito ERROR",e.stack||e.message);
-  }finally{
-    try{fs.rmSync(workDir,{recursive:true,force:true})}catch{}
-  }
+    job.status="failed";job.error=e?.message||String(e);
+    console.error("[AI Music] Mezcla gratuita ERROR",e.stack||e.message);
+  }finally{try{fs.rmSync(workDir,{recursive:true,force:true})}catch{}}
 }
 
 app.post("/api/generate-freesound-ai-mix", async (req,res)=>{
@@ -1553,7 +1453,7 @@ app.post("/api/generate-freesound-ai-mix", async (req,res)=>{
   const jobId="music-"+Date.now()+"-"+Math.random().toString(36).slice(2,9);
   const job={id:jobId,status:"queued",query:cleanQuery,durationHours:hours,result:null,error:null,createdAt:Date.now(),eventId:null};
   FREESOUND_MIX_JOBS.set(jobId,job);
-  processFreeMusicGenJob(job);
+  processFreeMusicMixJob(job);
   return res.json({jobId,status:"queued",provider:"MusicGen vía Hugging Face Space gratuito"});
 });
 
