@@ -20,14 +20,14 @@
 </aside>
 <main>
 <section id="dashboard" class="tab active">
-  <div class="hero"><div><p class="eyebrow">CENTRO DE CONTROL</p><h1>Tu próximo vídeo,<br><em>sin complicaciones.</em></h1><p class="sub">Crea paisajes relajantes, genera música con IA y combina tus recursos en vídeos largos.</p></div><div class="hero-art"><div class="moon"></div><div class="mountains"></div></div></div>
-  <div class="stats"><div><small>VÍDEOS GENERADOS</small><b id="statVideos">0</b></div><div><small>PROGRAMACIÓN</small><b id="statSchedule">Diaria</b></div><div><small>DURACIÓN</small><b>1–2 h</b></div></div>
+  <div class="hero"><div><p class="eyebrow">CENTRO DE CONTROL</p><h1>Tu próximo vídeo,<br><em>sin complicaciones.</em></h1><p class="sub">Elige un paisaje de alta calidad, selecciona una música relajante y crea tu vídeo de 1 hora.</p></div><div class="hero-art"><div class="moon"></div><div class="mountains"></div></div></div>
+  <div class="stats"><div><small>VÍDEOS GENERADOS</small><b id="statVideos">0</b></div><div><small>PROGRAMACIÓN</small><b id="statSchedule">Diaria</b></div><div><small>DURACIÓN</small><b>1 h</b></div></div>
   <div class="builder">
-    <div class="builder-head"><div><span class="step">01</span><div><h2>Crear vídeo</h2><p>Configura paisaje, música y duración.</p></div></div><span class="badge">MP4 · 1080p</span></div>
+    <div class="builder-head"><div><span class="step">01</span><div><h2>Crear vídeo</h2><p>Elige paisaje + música y crea un vídeo de 1 hora.</p></div></div><span class="badge">MP4 · 1080p</span></div>
     <div class="builder-grid">
       <div class="field"><label>PAISAJE</label><div id="selectedLandscape" class="selectbox">Selecciona un paisaje <span>⌄</span></div><div id="landscapePicker" class="picker"></div></div>
       <div class="field"><label>MÚSICA</label><div id="selectedTrack" class="selectbox">Selecciona una pista <span>⌄</span></div><div id="musicPicker" class="picker"></div></div>
-      <div class="field"><label>DURACIÓN</label><div class="duration"><button class="dur active" data-hours="1">1 hora</button><button class="dur" data-hours="2">2 horas</button></div></div>
+      <div class="field"><label>DURACIÓN</label><div class="selectbox disabled">1 hora</div></div>
       <div class="field"><label>CALIDAD</label><div class="selectbox disabled">Full HD · 1920×1080</div></div>
     </div>
     <div class="builder-bottom"><div id="builderStatus">Selecciona tus recursos para comenzar.</div><button id="generate" class="primary">Generar vídeo <b>→</b></button></div>
@@ -35,15 +35,15 @@
 </section>
 
 <section id="ai" class="tab">
-  <div class="section-head"><div><p class="eyebrow">INTELIGENCIA ARTIFICIAL</p><h2>Crear contenido</h2></div><span class="badge">Vídeos gratis + Lyria 3.5</span></div>
+  <div class="section-head"><div><p class="eyebrow">INTELIGENCIA ARTIFICIAL</p><h2>Crear contenido</h2></div><span class="badge">Herramientas adicionales</span></div>
   <div class="ai-card">
     <label>DESCRIBE TU CONTENIDO</label>
     <textarea id="aiPrompt" class="text area" placeholder="Ej.: Un lago tranquilo entre montañas al amanecer, niebla suave sobre el agua, movimiento de cámara lento, ambiente cinematográfico y relajante."></textarea>
     <div class="ai-grid">
       <div><label>VÍDEO</label><select id="aiAspect"><option value="16:9">16:9 horizontal</option><option value="9:16">9:16 vertical</option></select></div>
-      <div><label>DURACIÓN</label><select id="aiDuration"><option value="1">1 hora</option><option value="2">2 horas</option></select></div>
+      <div><label>DURACIÓN</label><select id="aiDuration"><option value="1">1 hora</option></select></div>
     </div>
-    <p class="ai-note">RelaxScape selecciona fotos de alta calidad de Pexels, crea un slideshow relajante y lo reproduce en bucle durante 1 o 2 horas. «Vídeo + música» añade música instrumental con Lyria 3.5, que puede requerir una cuota de Gemini.</p>
+    <p class="ai-note">Esta sección es opcional. El creador principal usa una foto fija de alta calidad + una pista relajante para generar un MP4 real de 1 hora.</p>
     <div class="ai-actions">
       <button id="aiVideo" class="primary">🎬 Crear vídeo gratis</button>
       <button id="aiMusic" class="primary">🎵 Generar música IA</button>
@@ -53,11 +53,11 @@
   </div>
 </section>
 
-<section id="landscapes" class="tab"><div class="section-head"><div><p class="eyebrow">BIBLIOTECA VISUAL</p><h2>Paisajes</h2></div><div class="actions"><label class="button">＋ Subir imagen<input id="imageInput" type="file" accept="image/*" hidden></label><button id="aiImage" class="primary small">✨ Crear con IA</button></div></div><input id="prompt" class="text" placeholder="Ej.: lago alpino al amanecer, niebla suave, fotorealista, sin personas ni texto"><div id="imageGrid" class="gallery"></div></section>
+<section id="landscapes" class="tab"><div class="section-head"><div><p class="eyebrow">BIBLIOTECA VISUAL</p><h2>Elige tu paisaje</h2><p class="sub">Fotos Full HD de Pexels para crear vídeos relajantes.</p></div><div class="actions"><button id="loadPexels" class="primary small">↻ Buscar nuevos paisajes</button><label class="button">＋ Subir imagen<input id="imageInput" type="file" accept="image/*" hidden></label><button id="aiImage" class="primary small">✨ Crear con IA</button></div></div><input id="prompt" class="text" placeholder="Ej.: lago alpino al amanecer, bosque, océano, montaña…"><div id="imageGrid" class="gallery"></div></section>
 
-<section id="music" class="tab"><div class="section-head"><div><p class="eyebrow">BIBLIOTECA SONORA</p><h2>Música</h2></div><label class="button">＋ Subir música<input id="musicInput" type="file" accept="audio/*" hidden></label></div><div id="musicList" class="track-grid"></div></section>
+<section id="music" class="tab"><div class="section-head"><div><p class="eyebrow">BIBLIOTECA SONORA</p><h2>Música relajante</h2><p class="sub">Elige una pista para acompañar tu paisaje durante 1 hora.</p></div><label class="button">＋ Subir música<input id="musicInput" type="file" accept="audio/*" hidden></label></div><div id="musicList" class="track-grid"></div></section>
 
-<section id="schedule" class="tab"><div class="section-head"><div><p class="eyebrow">AUTOMATIZACIÓN</p><h2>Vídeo diario</h2></div></div><div class="schedule-card"><div class="schedule-icon">◷</div><div><h3>Generación automática diaria</h3><p>Cada día se puede crear un vídeo automáticamente usando el primer paisaje y la primera pista disponibles.</p></div><label class="switch"><input id="scheduleToggle" type="checkbox" checked><span></span></label></div><div class="schedule-options"><label>HORA<input id="scheduleHour" type="time" value="07:00"></label><label>DURACIÓN<select id="scheduleDuration"><option value="1">1 hora</option><option value="2">2 horas</option></select></label><button id="saveSchedule" class="primary">Guardar programación</button></div><p class="note">La hora se interpreta según la zona horaria del servidor donde esté desplegada la aplicación.</p></section>
+<section id="schedule" class="tab"><div class="section-head"><div><p class="eyebrow">AUTOMATIZACIÓN</p><h2>Vídeo diario</h2></div></div><div class="schedule-card"><div class="schedule-icon">◷</div><div><h3>Generación automática diaria</h3><p>Cada día se puede crear un vídeo automáticamente usando el primer paisaje y la primera pista disponibles.</p></div><label class="switch"><input id="scheduleToggle" type="checkbox" checked><span></span></label></div><div class="schedule-options"><label>HORA<input id="scheduleHour" type="time" value="07:00"></label><label>DURACIÓN<select id="scheduleDuration"><option value="1">1 hora</option></select></label><button id="saveSchedule" class="primary">Guardar programación</button></div><p class="note">La hora se interpreta según la zona horaria del servidor donde esté desplegada la aplicación.</p></section>
 
 <section id="library" class="tab"><div class="section-head"><div><p class="eyebrow">HISTORIAL</p><h2>Vídeos generados</h2></div></div><div id="videos" class="video-list"></div></section>
 
