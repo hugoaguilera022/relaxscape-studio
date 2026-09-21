@@ -47,7 +47,7 @@ function safe(name) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-const MUSIC_ENGINE_VERSION = "v22-multi-sound-request-lock";
+const MUSIC_ENGINE_VERSION = "v23-multi-timbre-no-omissions";
 
 const BUILTIN_MUSIC = [
   ["relax-piano.mp3","Piano nocturno","Sueño",261.63,329.63,392],
@@ -109,6 +109,12 @@ function makeCompositionWav(track, wavPath){
   const explicitPiano=/piano|pianistic|felt piano|teclas/.test(profile);
   const hasPrimaryInstrument=explicitPiano||guitar||flute||strings;
   const pianoMain=explicitPiano || !hasPrimaryInstrument;
+  const synth= /synth|sintetizador|electrónica|electronica/.test(profile);
+  const requestedCount=[explicitPiano,guitar,flute,strings,synth,water,natureFocus].filter(Boolean).length;
+  const multiRequested=requestedCount>1;
+  const leadModes=multiRequested
+    ? (variant===0 ? ["piano","flute","guitar","strings"] : variant===1 ? ["flute","guitar","strings","piano"] : variant===2 ? ["guitar","strings","piano","flute"] : ["strings","piano","flute","guitar"])
+    : [explicitPiano?"piano":guitar?"guitar":flute?"flute":strings?"strings":synth?"synth":"piano"];
   const bpmSet=flowing?[42,46,50,54]:dream?[38,40,43,46]:nature?[44,48,52,56]:[40,44,48,52];
   const bpm=bpmSet[variant], beat=60/bpm, bar=beat*4;
   const hz=m=>440*Math.pow(2,(m-69)/12);
@@ -296,35 +302,46 @@ function makeCompositionWav(track, wavPath){
     const bv=activeBass ? bass(activeBass.f,bt,activeBass.v) : 0;
     left+=bv; right+=bv;
 
-    if(pianoMain){
-      for(const ev of events){
-        const nt=t-ev.t;
-        if(nt>=0 && nt<3.8){
-          const v=piano(ev.f,nt,ev.v);
-          const ep=.06*Math.sin(2*Math.PI*(ev.t+t)/23);
-          left+=v*(1-ep); right+=v*(1+ep);
-        }
+    // Fallback local multi-timbre: cada sonido pedido tiene una capa audible propia.
+    // Nunca usamos "flute ? ... : guitar" porque eso hacía desaparecer el segundo instrumento.
+    const roleIndex=(variant+b)%leadModes.length;
+    const leadRole=leadModes[roleIndex];
+    for(const ev of eventsByBar[b]){
+      const nt=t-ev.t;
+      if(nt<0) continue;
+      const leadBoost=ev.v*(leadRole==="piano"?1.0:1.12);
+      if(pianoMain && explicitPiano){
+        const v=piano(ev.f,nt,leadRole==="piano"?leadBoost*.82:leadBoost*.20);
+        const ep=.06*Math.sin(2*Math.PI*(ev.t+t)/23);
+        left+=v*(1-ep); right+=v*(1+ep);
+      }
+      if(flute){
+        const v=fluteVoice(ev.f,nt,leadRole==="flute"?leadBoost*.72:leadBoost*.28);
+        left+=v*.92; right+=v*1.02;
+      }
+      if(guitar){
+        const v=guitarVoice(ev.f,nt,leadRole==="guitar"?leadBoost*.66:leadBoost*.22);
+        left+=v*.94; right+=v*1.03;
       }
     }
-    // Timbre adaptado a la búsqueda: instrumento y ambiente cambian con el prompt.
     if(strings){
-      for(const note of ch.notes.slice(0,3)){
-        const v=stringVoice(hz(note),chordT,.018); left+=v*.88; right+=v*1.02;
+      for(const note of ch.notes.slice(0,4)){
+        const v=stringVoice(hz(note),chordT,leadRole==="strings"?.030:.018);
+        left+=v*.88; right+=v*1.02;
+      }
+    }
+    if(synth){
+      for(const note of [ch.notes[0]-12,ch.notes[2],ch.notes[4]]){
+        const v=padVoice(hz(note),chordT,leadRole==="synth"?.030:.012);
+        left+=v*.90; right+=v*1.06;
       }
     }
     if(water || natureFocus){
-      const shimmer=.0025*Math.sin(2*Math.PI*(1100+70*Math.sin(t/7))*t);
-      left+=shimmer; right+=shimmer*.82;
-    }
-    if(flute || guitar){
-      const mainEvents=eventsByBar[b].filter(e=>e.v<.09).slice(0,2);
-      for(const ev of mainEvents){
-        const nt=t-ev.t;
-        if(nt>=0 && nt<2.9){
-          const vv=flute ? fluteVoice(ev.f,nt,.055) : guitarVoice(ev.f,nt,.050);
-          left+=vv*.94; right+=vv*1.04;
-        }
-      }
+      // Textura ambiental real, no solo un tono fijo.
+      const rate=water?0.33:0.21;
+      const shimmer=.0028*Math.sin(2*Math.PI*(760+180*Math.sin(t*rate))*t)
+        +.0012*Math.sin(2*Math.PI*(1320+90*Math.sin(t*.17))*t);
+      left+=shimmer; right+=shimmer*.78;
     }
 
     // Aire alto muy sutil, siempre basado en la 9ª del acorde.
@@ -586,12 +603,12 @@ async function generateLyriaMusicFile(prompt,index=1){
     "Create an original professional instrumental deep-relaxation ambient composition.",
     "MULTI-SOUND REQUIREMENT: if the user requested multiple instruments or textures, ALL of them must be audibly present in this option; never reduce the request to one sound.",
     "REQUESTED PALETTE: "+requestedPalette+".",
-    "PRIMARY TIMBRE FOR THIS OPTION: "+family+".",
+    requested.length ? "OPTION ROLE: distribute the requested palette across distinct lead, harmony, counterline and texture roles; do not collapse it to one timbre." : "PRIMARY TIMBRE FOR THIS OPTION: "+family+".",
     "USER REQUESTED SOUND: "+explicit+".",
     "Do not default to piano if piano was not requested. Do not omit any requested instrument or texture.",
     arrangements[n%arrangements.length]+".",
     structures[n%structures.length]+".",
-    "The four options must be audibly different: different lead instrument, register, articulation, harmonic texture and room character.",
+    "The four options must be audibly different: rotate which requested instrument is the lead in each option, change register and articulation, and change harmonic texture and room character. Every requested sound remains audible in every option.",
     "Musically developed rather than a static loop: memorable but understated motif, counter-phrase, voice leading, harmonic movement, cadential breathing points and subtle variation every 8-16 bars.",
     "Very slow 40-55 BPM feel, long phrases, natural dynamics, consonant extended harmony such as maj7, add9, sus2 and gentle minor colors.",
     "No drums, no percussion, no bass groove, no pop drop, no aggressive rhythm, no vocals, no lyrics, no sudden impacts.",
