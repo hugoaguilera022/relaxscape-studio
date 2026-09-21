@@ -342,27 +342,37 @@ function makeCompositionWav(track, wavPath){
   writeWav(wavPath,samples,sr,2);
 }
 async function ensureBuiltinMusic(tracks=BUILTIN_MUSIC){
-  const marker=path.join(MUSIC_DIR,".relaxscape-music-engine-v10");
-  if(!fs.existsSync(marker)){try{fs.writeFileSync(marker,MUSIC_ENGINE_VERSION)}catch{}}
-  const valid=t=>{const p=path.join(MUSIC_DIR,t.file);try{return fs.existsSync(p)&&fs.statSync(p).size>4096}catch{return false}};
+  const valid=t=>{
+    const p=path.join(MUSIC_DIR,t.file);
+    try{return fs.existsSync(p)&&fs.statSync(p).size>4096}catch{return false}
+  };
   const pending=tracks.filter(t=>!valid(t));
-  console.log("[Music v10] Pendientes:",pending.length);
-  for(const track of pending){
-    const out=path.join(MUSIC_DIR,track.file), wav=path.join(MUSIC_DIR,"."+track.file+".wav");
+  console.log("[Music v11] Pendientes:",pending.length);
+  if(!pending.length) return;
+
+  const generateOne=async track=>{
+    const out=path.join(MUSIC_DIR,track.file);
+    const wav=path.join(MUSIC_DIR,"."+track.file+".wav");
     try{
       fs.rmSync(out,{force:true});
-      console.log("[Music v10] Generando:",track.label);
+      console.log("[Music v11] Generando:",track.label,track.file);
       makeCompositionWav(track,wav);
       await runFfmpeg(["-y","-i",wav,"-t","24","-c:a","libmp3lame","-b:a","160k","-ar","44100",out]);
       if(!valid(track)) throw new Error("FFmpeg no creó un MP3 válido");
-      console.log("[Music v10] Lista:",track.file);
+      console.log("[Music v11] LISTA:",track.file,fs.statSync(out).size,"bytes");
+      return true;
     }catch(e){
       const msg=(e&&e.message)||String(e);
       aiMusicErrors.push(track.label+": "+msg);
-      console.error("[Music v10] ERROR",track.file,e.stack||e.message)
+      console.error("[Music v11] ERROR",track.file,e.stack||e.message);
+      return false;
+    }finally{
+      try{fs.rmSync(wav,{force:true})}catch{}
     }
-    finally{try{fs.rmSync(wav,{force:true})}catch{}}
-  }
+  };
+
+  const results=await Promise.all(pending.map(generateOne));
+  console.log("[Music v11] Terminadas:",results.filter(Boolean).length,"/",pending.length);
 }
 function listFiles(dir, base) {
   return fs.readdirSync(dir)
@@ -600,24 +610,27 @@ app.post("/api/ai-options", async (req, res) => {
     imageErrors.push("Se completaron los 4 paisajes con fondos locales porque Pexels no devolvió suficientes resultados.");
   }
 
-  // Las imágenes se entregan inmediatamente. La música se genera en segundo plano
-  // para que Render no bloquee la petición mientras crea las 4 previews.
+  // Las 4 previews musicales se crean antes de responder. Así nunca
+  // mostramos tarjetas de audio que todavía apuntan a archivos inexistentes.
   aiMusicTracks = aiTracksForBackground(musicPrompt);
   aiMusicErrors = [];
-  const music=getAIMusicOptions();
-  if(music.length<4 && !aiMusicPreparing){
-    aiMusicPreparing = true;
-    ensureBuiltinMusic(aiMusicTracks)
-      .catch(e=>{ aiMusicErrors.push(e.message||String(e)); console.error("[AI Music] preparación:",e.stack||e.message); })
-      .finally(()=>{ aiMusicPreparing=false; });
+  aiMusicPreparing = true;
+  try{
+    await ensureBuiltinMusic(aiMusicTracks);
+  }catch(e){
+    aiMusicErrors.push(e.message||String(e));
+    console.error("[AI Music] preparación:",e.stack||e.message);
+  }finally{
+    aiMusicPreparing = false;
   }
+  const music=getAIMusicOptions();
   res.json({
     images,
     music,
     musicReady:music.length>=4,
     musicPreparing:false,
     imageErrors,
-    musicErrors:music.length<4?["No se pudieron crear las 4 previews musicales."]:[],
+    musicErrors:aiMusicErrors.slice(),
     provider:"RelaxScape Free"
   });
 });
