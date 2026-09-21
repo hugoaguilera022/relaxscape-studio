@@ -56,6 +56,17 @@ async function generateAIImagesOnly(){
   }finally{S.aiLoading=false;renderAICreator()}
 }
 
+// Los botones de búsqueda IA están conectados directamente a sus motores independientes.
+// Antes estaban en el HTML pero no tenían listener, por eso al pulsarlos no ocurría nada.
+function bindAIButtons(){
+  const imageBtn=$("#aiSearchImage");
+  const loadBtn=$("#aiLoadPhotos");
+  const musicBtn=$("#aiSearchMusic");
+  if(imageBtn) imageBtn.onclick=generateAIImagesOnly;
+  if(loadBtn) loadBtn.onclick=generateAIImagesOnly;
+  if(musicBtn) musicBtn.onclick=generateAIMusicOnly;
+}
+
 async function generateAIMusicOnly(){
   const prompt=(($( "#aiMusicPrompt").value||"").trim()||"deep relaxation ambient music");
   S.aiLoading=true; S.aiMusic=[]; S.music=null;
