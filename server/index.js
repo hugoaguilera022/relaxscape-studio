@@ -1399,7 +1399,8 @@ async function aceStepHFGenerate(query, durationSeconds){
     audio_format:"mp3",
     batch_size:1,
     inference_steps:8,
-    guidance_scale:7,
+    guidance_scale:1,
+    shift:3,
     seed:-1
   };
   const r=await fetchWithTimeout(
@@ -1413,7 +1414,7 @@ async function aceStepHFGenerate(query, durationSeconds){
   );
   const text=await r.text();
   let data={}; try{data=JSON.parse(text)}catch{}
-  if(!r.ok) throw new Error(data?.detail||data?.error||text.slice(0,700)||("ACE-Step HTTP "+r.status));
+  if(!r.ok){ const detail=data?.detail??data?.error??data?.message??text.slice(0,700); const pretty=typeof detail==="string"?detail:JSON.stringify(detail); throw new Error(pretty||("ACE-Step HTTP "+r.status)); }
   if(!data.job_id) throw new Error("ACE-Step no devolvió un job_id.");
   return data.job_id;
 }
