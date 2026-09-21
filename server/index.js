@@ -47,7 +47,7 @@ function safe(name) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-const MUSIC_ENGINE_VERSION = "v12-strict-prompt-instrument-mapping";
+const MUSIC_ENGINE_VERSION = "v13-relaxation-genre-lock";
 
 const BUILTIN_MUSIC = [
   ["relax-piano.mp3","Piano nocturno","Sueño",261.63,329.63,392],
@@ -92,7 +92,7 @@ function makeCompositionWav(track, wavPath){
   // entrega a FFmpeg a 44.1 kHz para mantener calidad sin bloquear Render.
   const sr=8000, dur=5, n=sr*dur, samples=new Float32Array(n*2);
   const profile=String(track.musicProfile||"").toLowerCase();
-  const ultraCalm=/relax|calm|sleep|meditat|peace|soft|ambient|piano|nature|spa|healing|stress|anxiety/.test(profile);
+  const ultraCalm=/relax|relaj|calm|calma|tranquil|peace|soft|ambient|piano|nature|spa|healing|bienestar|stress|estrés|ansiedad|anxiety|meditat|sleep|suave/.test(profile);
   const darkCalm=/deep|night|dream|sleep/.test(profile);
   const seed=Math.abs(Math.floor(track.f1*100 + track.f2*10 + track.f3 + (track.variant||0)*137)) % 1000;
   const variant=Number(track.variant||0)%4;
@@ -354,7 +354,7 @@ async function ensureBuiltinMusic(tracks=BUILTIN_MUSIC){
     try{return fs.existsSync(p)&&fs.statSync(p).size>4096}catch{return false}
   };
   const pending=tracks.filter(t=>!valid(t));
-  console.log("[Music v11] Pendientes:",pending.length);
+  console.log("[Music v13] Pendientes:",pending.length);
   if(!pending.length) return;
 
   const generateOne=async track=>{
@@ -658,6 +658,7 @@ function musicIntentProfile(prompt=""){
   if(has("agua","water","océano","oceano","mar","olas","waves","río","rio","lluvia","rain","cascada","waterfall")) parts.push("subtle natural water ambience");
   if(has("bosque","forest","montaña","montana","naturaleza","nature","pájaros","pajaros","birds","jardín","jardin")) parts.push("organic forest nature ambience");
   if(has("spa","meditación","meditacion","zen","yoga","respiración","respiracion")) parts.push("spa meditation atmosphere");
+  if(has("relajante","relajación","relajacion","relax","calma","calmado","tranquilo","tranquila","bienestar","stress","estrés","ansiedad","anxiety")) parts.push("deep relaxation genre, very slow tempo, soft sustained harmony, warm intimate ambience, spacious reverb, no drums, no percussion, no rhythmic pulse, no upbeat elements");
   if(has("sueño","sueno","dormir","sleep","noche","night","luna","moon","estrellas","stars")) parts.push("deep sleep nocturnal atmosphere");
   if(has("cinemático","cinematic","película","pelicula","film","emocional","emotional")) parts.push("cinematic evolving pads");
   if(has("lofi","lo-fi","chill","chillout")) parts.push("soft lo-fi texture");
@@ -666,7 +667,8 @@ function musicIntentProfile(prompt=""){
   if(has("alegre","luminoso","bright","sunrise","amanecer")) parts.push("warm luminous harmony");
   const noPerc=has("sin batería","sin bateria","sin percusión","sin percusion","no drums","no percussion");
   if(noPerc) parts.push("no drums, no percussion");
-  if(!parts.length) parts.push("felt piano, warm evolving pads, spacious ambient texture");
+  if(!parts.length) parts.push("deep relaxation genre, very slow tempo, soft sustained harmony, warm ambient pads, spacious reverb, no drums, no percussion, no rhythmic pulse");
+  if(!parts.some(x=>/relaxation genre|spa meditation|deep sleep|ambient texture/.test(x)) && has("música","musica","music")) parts.push("relaxing ambient foundation, very slow and gentle, no drums, no rhythmic pulse");
   return parts.join(", ");
 }
 
@@ -685,7 +687,7 @@ function aiTracksForBackground(prompt=""){
     const b=BUILTIN_MUSIC[i];
     const shift=((seedBase+i*7)%7)-3;
     return {...b,
-      file:"ai-prompt-"+hashText(p)+"-v12-"+(i+1)+".mp3",
+      file:"ai-prompt-"+hashText(p)+"-v13-"+(i+1)+".mp3",
       label:"IA · "+(i+1),
       variant:i,
       f1:f[0]*Math.pow(2,shift/12),f2:f[1]*Math.pow(2,shift/12),f3:f[2]*Math.pow(2,shift/12),
