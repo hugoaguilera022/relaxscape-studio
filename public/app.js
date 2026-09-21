@@ -34,22 +34,47 @@ async function ensureAIOptions(){
   if(S.aiReady||S.aiLoading)return;
   S.aiLoading=true;
   const status=$("#aiSelectionStatus"),ig=$("#aiImageGrid"),mg=$("#aiMusicList");
-  if(status)status.textContent="IA gratuita preparando paisajes y música ambiental…";
-  if(ig)ig.innerHTML='<div class="empty">✨ Generando paisajes gratuitos…</div>';
-  if(mg)mg.innerHTML='<div class="empty">♫ Generando música ambiental…</div>';
+  if(status)status.textContent="Preparando 4 paisajes y 4 músicas relajantes…";
+  if(ig)ig.innerHTML='<div class="empty">✨ Buscando 4 paisajes…</div>';
+  if(mg)mg.innerHTML='<div class="empty">♫ Preparando 4 músicas…</div>';
   try{
     const d=await api("/api/ai-options",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({theme:($("#prompt")?.value||"relaxing nature").trim()})});
-    S.aiImages=d.images||[];S.aiMusic=d.music||[];S.aiReady=!!(S.aiImages.length&&S.aiMusic.length);
+    S.aiImages=d.images||[]; S.aiMusic=d.music||[];
     if(S.aiImages[0])S.image=S.aiImages[0];
     if(S.aiMusic[0])S.music=S.aiMusic[0];
     renderAICreator();
-    const problems=[...(d.imageErrors||[]).map(x=>"Imagen: "+x),...(d.musicErrors||[]).map(x=>"Música: "+x)];
-    if(status&&problems.length)status.textContent="Se generaron "+S.aiImages.length+" imágenes y "+S.aiMusic.length+" músicas. "+problems[0];
+    if(S.aiImages.length && S.aiMusic.length>=4){
+      S.aiReady=true;
+      if(status)status.textContent="✓ 4 paisajes y 4 músicas listas.";
+    }else{
+      if(status)status.textContent="✓ Paisajes listos. Generando las 4 músicas…";
+      await waitForAIMusic();
+    }
   }catch(e){
-    if(status)status.textContent=e.message;
-    if(ig)ig.innerHTML='<div class="empty">No se pudieron generar las imágenes IA.<br><small>'+e.message+'</small></div>';
-    if(mg)mg.innerHTML='<div class="empty">No se pudo generar la música IA.<br><small>'+e.message+'</small></div>';
-  }finally{S.aiLoading=false}
+    if(status)status.textContent="Error: "+e.message;
+    if(ig)ig.innerHTML='<div class="empty">No se pudieron cargar los paisajes.<br><small>'+e.message+'</small></div>';
+    if(mg)mg.innerHTML='<div class="empty">No se pudo preparar la música.<br><small>'+e.message+'</small></div>';
+  }finally{S.aiLoading=false;renderAICreator()}
+}
+async function waitForAIMusic(){
+  for(let attempt=0;attempt<24;attempt++){
+    await new Promise(r=>setTimeout(r,2500));
+    try{
+      const d=await api("/api/ai-options-status");
+      if(d.music?.length){
+        S.aiMusic=d.music;
+        if(!S.music)S.music=S.aiMusic[0];
+        renderAICreator();
+      }
+      if(d.musicReady){
+        S.aiReady=!!(S.aiImages.length&&S.aiMusic.length>=4);
+        if($("#aiSelectionStatus"))$("#aiSelectionStatus").textContent="✓ 4 paisajes y 4 músicas listas.";
+        return;
+      }
+      if($("#aiSelectionStatus"))$("#aiSelectionStatus").textContent="✓ Paisajes listos · generando música "+Math.min(4,attempt+1)+"/4…";
+    }catch(e){}
+  }
+  if($("#aiSelectionStatus"))$("#aiSelectionStatus").textContent="Las fotos están listas; la música todavía está preparándose. Espera unos segundos y pulsa Generar opciones IA.";
 }
 function renderAICreator(){
   const ig=$("#aiImageGrid"),mg=$("#aiMusicList");
