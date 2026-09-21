@@ -591,18 +591,16 @@ app.post("/api/ai-options", async (req, res) => {
     imageErrors.push("Se completaron los 4 paisajes con fondos locales porque Pexels no devolvió suficientes resultados.");
   }
 
-  // Generamos las 4 previews aquí antes de responder. Así las tarjetas nunca
-  // apuntan a archivos inexistentes y el audio se puede reproducir inmediatamente.
+  // Las imágenes se entregan inmediatamente. La música se genera en segundo plano
+  // para que Render no bloquee la petición mientras crea las 4 previews.
   aiMusicTracks = aiTracksForBackground(musicPrompt);
-  aiMusicPreparing = true;
-  try {
-    await ensureBuiltinMusic(aiMusicTracks);
-  } catch(e) {
-    console.error("[AI Music] preparación:",e.message);
-  } finally {
-    aiMusicPreparing = false;
-  }
   const music=getAIMusicOptions();
+  if(music.length<4 && !aiMusicPreparing){
+    aiMusicPreparing = true;
+    ensureBuiltinMusic(aiMusicTracks)
+      .catch(e=>console.error("[AI Music] preparación:",e.message))
+      .finally(()=>{ aiMusicPreparing=false; });
+  }
   res.json({
     images,
     music,
