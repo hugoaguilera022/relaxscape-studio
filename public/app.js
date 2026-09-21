@@ -1,6 +1,6 @@
 const S={images:[],music:[],videos:[],image:null,music:null,hours:1,schedule:true};
 const $=s=>document.querySelector(s), $$=s=>document.querySelectorAll(s);
-async function api(url,opt){const r=await fetch(url,opt);let d={};try{d=await r.json()}catch{};if(!r.ok)throw Error(d.error||"Error");return d}
+async function api(url,opt){const r=await fetch(url,opt);let d={};let raw="";try{raw=await r.text();d=raw?JSON.parse(raw):{}}catch{};if(!r.ok)throw Error(d.error||`Error ${r.status}${raw?`: ${raw.slice(0,180)}`:""}`);return d}
 async function load(){try{const d=await api("/api/library");S.images=d.images;S.music=d.music;S.videos=d.videos;render();}catch(e){$("#builderStatus").textContent=e.message;}}
 function render(){renderImages();renderMusic();renderVideos();$("#statVideos").textContent=S.videos.length;update();picker();}
 function renderImages(){const el=$("#imageGrid");el.innerHTML=S.images.length?S.images.map(x=>`<div class="media ${S.image?.url===x.url?"selected":""}" data-url="${x.url}" data-name="${x.name}"><img src="${x.url}"></div>`).join(""):'<div class="empty">No hay paisajes. Sube uno o créalo con IA.</div>';$$(".media").forEach(e=>e.onclick=()=>{S.image={url:e.dataset.url,name:e.dataset.name};render()})}
@@ -26,7 +26,7 @@ async function generateAI(type){
   let v=null,m=null;
   try{
     if(type==="video"||type==="both"){
-      status.textContent="Buscando un vídeo relajante gratuito…";
+      status.textContent="Buscando fotos de alta calidad y creando el slideshow…";
       v=await api("/api/generate-ai-video",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt,aspectRatio:$("#aiAspect").value,durationHours})});
       $("#video").src=v.url;$("#video").loop=true;$("#download").href=v.url;$("#result").classList.remove("hidden");
     }
