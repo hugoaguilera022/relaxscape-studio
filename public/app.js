@@ -38,7 +38,7 @@ async function ensureAIOptions(){
   if(ig)ig.innerHTML='<div class="empty">✨ Buscando 4 paisajes…</div>';
   if(mg)mg.innerHTML='<div class="empty">♫ Preparando 4 músicas…</div>';
   try{
-    const d=await api("/api/ai-options",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({theme:($("#aiImagePrompt")?.value||$("#prompt")?.value||"peaceful lake, misty mountains, soft dawn light").trim(),musicPrompt:($("#aiMusicPrompt")?.value||"very slow peaceful ambient piano, warm soft pads, gentle evolving harmony, deep calm atmosphere, no drums, no rhythmic pulse, spacious reverb").trim()})});
+    const d=await api("/api/ai-options",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({theme:($("#aiImagePrompt")?.value||$("#prompt")?.value||"peaceful lake, misty mountains, soft dawn light").trim(),musicPrompt:($("#aiMusicPrompt")?.value||"deep professional relaxing ambient music, evolving melody, layered acoustic and electronic textures, wide stereo space, gentle harmonic movement, no vocals, no drums").trim()})});
     S.aiImages=d.images||[]; S.aiMusic=d.music||[];
     if(S.aiImages[0])S.image=S.aiImages[0];
     if(S.aiMusic[0])S.music=S.aiMusic[0];
