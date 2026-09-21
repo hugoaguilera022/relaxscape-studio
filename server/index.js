@@ -95,207 +95,182 @@ function writeWav(file, samples, sampleRate=44100, channels=2){
 }
 
 function makeCompositionWav(track, wavPath){
-  // Motor local V26: cuatro motores tímbricos realmente distintos.
-  // Cada variante cambia síntesis, envolvente, espectro, registro, ritmo y armonía.
+  // Motor local V27: interpreta la búsqueda del usuario antes de elegir timbre,
+  // escala, tempo, registro y textura. Las 4 variantes siguen siendo diferentes,
+  // pero ahora pertenecen al mismo universo sonoro pedido.
   const sr=12000, dur=18, n=sr*dur, samples=new Float32Array(n*2);
   const variant=((Number(track.variant||1)-1)%4+4)%4;
+  const brief=String(track.userMusicBrief||track.musicProfile||track.label||"relaxing ambient music").toLowerCase();
   const hz=m=>440*Math.pow(2,(m-69)/12);
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
-  const baseMidi=Math.round(69+12*Math.log2(Number(track.f1||220)/440));
+  const has=(...words)=>words.some(w=>brief.includes(w));
 
-  const palettes=[
-    {scale:[0,2,4,7,9], roots:[0,5,3,4], bpm:44},       // piano / acoustic
-    {scale:[0,2,3,5,7,9,10], roots:[0,3,6,5], bpm:38},  // strings / minor
-    {scale:[0,2,4,6,7,9,11], roots:[0,5,2,4], bpm:50},   // analog / lydian
-    {scale:[0,2,3,7,9], roots:[0,3,5,4], bpm:42}        // bamboo / pentatonic
-  ];
-  const pal=palettes[variant], beat=60/pal.bpm, bar=beat*4;
+  const semantic={
+    sleep:has("sleep","sueño","dormir","deep sleep","night","noche"),
+    meditation:has("meditation","meditación","meditacion","zen","mindfulness","yoga","breathing","respiración"),
+    nature:has("nature","naturaleza","forest","bosque","mountain","montaña","lake","lago","river","río","waterfall","cascada","beach","playa","ocean","océano","sea","mar"),
+    rain:has("rain","lluvia","storm","tormenta","rainy"),
+    ocean:has("ocean","océano","sea","mar","waves","olas"),
+    forest:has("forest","bosque","woodland","misty"),
+    mountain:has("mountain","montaña","alpine","mountains"),
+    piano:has("piano","felt piano"),
+    guitar:has("guitar","guitarra","acoustic","nylon"),
+    strings:has("strings","cello","violin","viola","orchestral","cinematic","cuerdas"),
+    flute:has("flute","flauta","bamboo","bambú","woodwind"),
+    synth:has("synth","synthesizer","electronic","electrónico","analog","ambient electronic"),
+    warm:has("warm","cálido","calido","cozy","acogedor"),
+    dark:has("dark","deep","oscuro","profundo"),
+    bright:has("bright","luminoso","sunrise","amanecer"),
+    cinematic:has("cinematic","cinemático","cinematica","film","orchestral"),
+    focus:has("focus","study","estudio","concentration","concentración"),
+    spa:has("spa","wellness","bienestar","relax"),
+    world:has("world","oriental","oriental","indian","japanese","zen")
+  };
+
+  let root=semantic.dark?45:semantic.bright?62:semantic.ocean?57:semantic.forest?52:semantic.mountain?50:semantic.piano?57:57;
+  if(semantic.sleep||semantic.meditation) root-=5;
+  const scale=semantic.dark?[0,2,3,5,7,8,10]
+    :semantic.world||semantic.flute?[0,2,3,7,9]
+    :semantic.cinematic||semantic.strings?[0,2,3,5,7,9,10]
+    :semantic.bright?[0,2,4,6,7,9,11]
+    :[0,2,4,7,9];
+  let bpm=semantic.sleep?34:semantic.meditation?38:semantic.focus?48:semantic.cinematic?42:semantic.ocean?40:44;
+  if(semantic.synth) bpm+=4;
+  const beat=60/bpm, bar=beat*4;
   const seed=Math.abs(Math.floor((Number(track.f1)||220)*7+(Number(track.f2)||330)*3+(Number(track.f3)||392)+variant*997))%997;
+  const scaleNote=(m,d,oct=0)=>m+scale[((d%scale.length)+scale.length)%scale.length]+12*oct;
 
-  const note=(root,degree,oct=0)=>{
-    const idx=((degree%pal.scale.length)+pal.scale.length)%pal.scale.length;
-    return root+pal.scale[idx]+12*oct;
-  };
-  const roots=pal.roots.map((d)=>baseMidi+d);
-  const chords=roots.map((r,i)=>[
-    r+pal.scale[0], r+pal.scale[2%pal.scale.length],
-    r+pal.scale[4%pal.scale.length], r+pal.scale[1%pal.scale.length]+12
-  ]);
+  // Cuatro arreglos diferentes dentro del mismo briefing:
+  // 0 piano/acústico, 1 cuerdas/cinemático, 2 electrónico/ambient, 3 orgánico/world.
+  const preferred=[
+    semantic.piano||semantic.guitar ? "acoustic" : semantic.strings||semantic.cinematic ? "strings" : semantic.synth ? "synth" : "acoustic",
+    semantic.strings||semantic.cinematic ? "strings" : semantic.piano ? "piano" : semantic.synth ? "synth" : "strings",
+    semantic.synth||semantic.ocean||semantic.rain ? "synth" : semantic.piano ? "piano" : "synth",
+    semantic.flute||semantic.world||semantic.nature ? "organic" : semantic.guitar ? "acoustic" : "organic"
+  ];
+  const primary=preferred[variant];
 
-  // Distinct instrument models. No shared pad/piano fallback.
-  const feltPiano=(f,t,v=1)=>{
-    if(t<0||t>3.8)return 0;
-    const a=Math.min(1,t/.018), e=a*Math.exp(-1.45*t)*Math.exp(-Math.max(0,t-2.7)*3.8);
-    const inharm=.0009*f*f/10000;
-    return v*e*(.68*Math.sin(2*Math.PI*f*t)+.20*Math.sin(2*Math.PI*(2*f+inharm)*t)+.08*Math.sin(2*Math.PI*(3*f+inharm*1.8)*t)+.035*Math.sin(2*Math.PI*4*f*t));
+  const piano=(f,t,v=1)=>{
+    if(t<0||t>4)return 0;
+    const e=Math.min(1,t/.018)*Math.exp(-1.35*t)*Math.exp(-Math.max(0,t-2.6)*3);
+    return v*e*(.70*Math.sin(2*Math.PI*f*t)+.19*Math.sin(4*Math.PI*f*t)+.075*Math.sin(6*Math.PI*f*t)+.025*Math.sin(8*Math.PI*f*t));
   };
-  const nylonPluck=(f,t,v=1)=>{
-    if(t<0||t>2.6)return 0;
-    const e=Math.min(1,t/.006)*Math.exp(-2.35*t);
-    return v*e*(.62*Math.sin(2*Math.PI*f*t)+.24*Math.sin(2*Math.PI*2*f*t)+.10*Math.sin(2*Math.PI*3*f*t)+.035*Math.sin(2*Math.PI*5*f*t));
+  const pluck=(f,t,v=1)=>{
+    if(t<0||t>3)return 0;
+    const e=Math.min(1,t/.006)*Math.exp(-2.1*t);
+    return v*e*(.62*Math.sin(2*Math.PI*f*t)+.23*Math.sin(4*Math.PI*f*t)+.10*Math.sin(6*Math.PI*f*t)+.035*Math.sin(10*Math.PI*f*t));
   };
   const cello=(f,t,v=1)=>{
     if(t<0)return 0;
-    const e=(1-Math.exp(-t/.7))*Math.exp(-t/8);
-    const vib=1+.0035*Math.sin(2*Math.PI*5.2*t);
-    return v*e*(.58*Math.sin(2*Math.PI*f*vib*t)+.27*Math.sin(2*Math.PI*2*f*t)+.10*Math.sin(2*Math.PI*3*f*t));
+    const e=(1-Math.exp(-t/.75))*Math.exp(-t/8);
+    const vib=1+.004*Math.sin(2*Math.PI*5.1*t);
+    return v*e*(.58*Math.sin(2*Math.PI*f*vib*t)+.27*Math.sin(4*Math.PI*f*t)+.10*Math.sin(6*Math.PI*f*t));
   };
-  const bowString=(f,t,v=1)=>{
+  const strings=(f,t,v=1)=>{
     if(t<0)return 0;
-    const e=(1-Math.exp(-t/1.9))*Math.exp(-t/12);
-    const vib=1+.006*Math.sin(2*Math.PI*(4.7+f/900)*t);
-    return v*e*(.34*Math.sin(2*Math.PI*f*vib*t)+.42*Math.sin(2*Math.PI*2*f*t)+.18*Math.sin(2*Math.PI*3*f*t)+.07*Math.sin(2*Math.PI*4*f*t));
+    const e=(1-Math.exp(-t/1.8))*Math.exp(-t/12);
+    const vib=1+.006*Math.sin(2*Math.PI*(4.5+f/1000)*t);
+    return v*e*(.34*Math.sin(2*Math.PI*f*vib*t)+.42*Math.sin(4*Math.PI*f*t)+.18*Math.sin(6*Math.PI*f*t)+.06*Math.sin(8*Math.PI*f*t));
   };
-  const analogSaw=(f,t,v=1,cut=1)=>{
+  const synth=(f,t,v=1)=>{
     if(t<0)return 0;
-    const e=(1-Math.exp(-t/1.4))*Math.exp(-t/16);
-    const lfo=.5+.5*Math.sin(2*Math.PI*.085*t);
-    const det=.006*lfo;
-    const s=(2*((f*t)%1)-1)*.42 + (2*(((f*(1-det))*t)%1)-1)*.24 + (2*(((f*(1+det))*t)%1)-1)*.20;
-    const sub=.16*Math.sin(2*Math.PI*(f/2)*t);
-    const air=.07*Math.sin(2*Math.PI*f*2.01*t);
-    return v*e*(s*cut+sub+air);
+    const e=(1-Math.exp(-t/1.3))*Math.exp(-t/15);
+    const lfo=.5+.5*Math.sin(2*Math.PI*.09*t);
+    const det=.005*lfo;
+    const saw=x=>2*(x%1)-1;
+    return v*e*(.38*saw(f*t)+.23*saw(f*(1-det)*t)+.18*saw(f*(1+det)*t)+.15*Math.sin(2*Math.PI*f/2*t)+.06*Math.sin(4*Math.PI*f*t));
   };
   const glass=(f,t,v=1)=>{
     if(t<0)return 0;
-    const e=Math.min(1,t/.004)*Math.exp(-t/3.2);
+    const e=Math.min(1,t/.005)*Math.exp(-t/3.4);
     return v*e*(.55*Math.sin(2*Math.PI*f*t)+.25*Math.sin(2*Math.PI*2.01*f*t)+.12*Math.sin(2*Math.PI*3.97*f*t));
   };
-  const bamboo=(f,t,v=1)=>{
+  const flute=(f,t,v=1)=>{
     if(t<0||t>5)return 0;
-    const e=Math.min(1,t/.16)*Math.exp(-t/3.9);
-    const breath=(Math.sin(2*Math.PI*19*t)+.5*Math.sin(2*Math.PI*31*t))*0.018;
-    const vibr=1+.004*Math.sin(2*Math.PI*5.1*t);
-    return v*e*(.78*Math.sin(2*Math.PI*f*vibr*t)+.13*Math.sin(2*Math.PI*2*f*t)+.045*Math.sin(2*Math.PI*3*f*t)+breath);
+    const e=Math.min(1,t/.15)*Math.exp(-t/3.8);
+    const breath=(Math.sin(2*Math.PI*19*t)+.5*Math.sin(2*Math.PI*31*t))*.018;
+    return v*e*(.78*Math.sin(2*Math.PI*f*(1+.004*Math.sin(2*Math.PI*5*t))*t)+.13*Math.sin(4*Math.PI*f*t)+.045*Math.sin(6*Math.PI*f*t)+breath);
   };
-  const wind=(t,v=1)=>{
-    const x=.5+.5*Math.sin(2*Math.PI*.17*t+Math.sin(t*.31));
-    const y=.5+.5*Math.sin(2*Math.PI*.071*t);
-    return v*(.0035*x*Math.sin(2*Math.PI*(700+280*y)*t)+.0018*Math.sin(2*Math.PI*(1500+220*x)*t));
+  const rainNoise=(t,v=1)=>{
+    const a=Math.sin(2*Math.PI*91*t)+.5*Math.sin(2*Math.PI*137*t)+.25*Math.sin(2*Math.PI*211*t);
+    return v*.003*a;
+  };
+  const oceanTexture=(t,v=1)=>{
+    const swell=.5+.5*Math.sin(2*Math.PI*.075*t);
+    return v*.006*swell*(Math.sin(2*Math.PI*180*t)+.35*Math.sin(2*Math.PI*320*t));
+  };
+  const forestTexture=(t,v=1)=>{
+    const breeze=.5+.5*Math.sin(2*Math.PI*.13*t+Math.sin(t*.31));
+    return v*.0025*breeze*(Math.sin(2*Math.PI*650*t)+.4*Math.sin(2*Math.PI*1200*t));
   };
 
   const events=[];
-  if(variant===0){
-    // Felt piano: sparse arpeggios + nylon answer + cello bass.
-    for(let b=0;b<4;b++){
-      const c=chords[b];
-      for(let j=0;j<5;j++){
-        const idx=(j+b+seed)%4;
-        events.push({t:b*bar+j*(bar/5)+.12,f:hz(c[idx]+12),v:j===0?.19:.135,role:"piano"});
-      }
-      events.push({t:b*bar+beat*2.5,f:hz(c[1]+19),v:.075,role:"guitar"});
-      events.push({t:b*bar,f:hz(c[0]-12),v:.075,role:"cello"});
-    }
-  } else if(variant===1){
-    // String ensemble: sustained bowing, no plucked/piano attack.
-    for(let b=0;b<4;b++){
-      const c=chords[b];
-      for(let k=0;k<4;k++) events.push({t:b*bar,f:hz(c[k]),v:k===0?.065:.048,role:"strings"});
-      events.push({t:b*bar+beat*2,f:hz(c[2]+12),v:.052,role:"strings"});
-    }
-  } else if(variant===2){
-    // Analog ambient: slow saw pads + glass harmonics + sub movement.
-    for(let b=0;b<4;b++){
-      const c=chords[b];
-      events.push({t:b*bar,f:hz(c[0]-12),v:.045,role:"sub"});
-      events.push({t:b*bar,f:hz(c[1]+12),v:.050,role:"synth"});
-      events.push({t:b*bar+beat*2,f:hz(c[3]+12),v:.043,role:"synth"});
-      events.push({t:b*bar+beat*3.25,f:hz(c[2]+24),v:.045,role:"glass"});
-    }
-  } else {
-    // Bamboo/world ambient: breathy flute phrases + nylon plucks + wind.
-    const pent=[0,1,2,4,3,2,1,0];
-    for(let b=0;b<4;b++){
-      const c=chords[b];
+  const rootMidi=root;
+  for(let b=0;b<4;b++){
+    const r=rootMidi + [0,5,3,4][b%4];
+    if(primary==="strings"){
+      for(let k=0;k<4;k++) events.push({t:b*bar,f:hz(scaleNote(r,k)),v:k===0?.075:.050,role:"strings"});
+      events.push({t:b*bar+bar*.52,f:hz(scaleNote(r,2,1)),v:.045,role:"strings"});
+    } else if(primary==="synth"){
+      events.push({t:b*bar,f:hz(scaleNote(r,0,-1)),v:.045,role:"sub"});
+      events.push({t:b*bar,f:hz(scaleNote(r,1)),v:.055,role:"synth"});
+      events.push({t:b*bar+bar*.5,f:hz(scaleNote(r,3,1)),v:.045,role:"synth"});
+      events.push({t:b*bar+bar*.78,f:hz(scaleNote(r,4,1)),v:.038,role:"glass"});
+    } else if(primary==="organic"){
+      const degrees=[0,1,2,4,3,2,1,0];
       for(let j=0;j<8;j++){
-        const m=c[0]+12+pal.scale[pent[(j+b+seed)%pent.length]%pal.scale.length];
         if(j===6) continue;
-        events.push({t:b*bar+j*(beat/2)+.08,f:hz(m),v:j===0?.095:.070,role:"bamboo"});
+        events.push({t:b*bar+j*(beat/2)+.08,f:hz(scaleNote(r,degrees[(j+b+seed)%degrees.length],1)),v:j===0?.09:.065,role:semantic.flute||semantic.world?"flute":"pluck"});
       }
-      events.push({t:b*bar+beat*1.5,f:hz(c[1]+12),v:.060,role:"guitar"});
-      events.push({t:b*bar+beat*3.5,f:hz(c[2]+12),v:.050,role:"guitar"});
+      events.push({t:b*bar+bar*.38,f:hz(scaleNote(r,2,1)),v:.045,role:"pluck"});
+    } else {
+      for(let j=0;j<5;j++){
+        events.push({t:b*bar+j*(bar/5)+.10,f:hz(scaleNote(r,(j+b+seed)%5,1)),v:j===0?.18:.12,role:"piano"});
+      }
+      events.push({t:b*bar+bar*.62,f:hz(scaleNote(r,2,2)),v:.065,role:"pluck"});
+      events.push({t:b*bar,f:hz(scaleNote(r,0,-1)),v:.065,role:"cello"});
     }
   }
 
   for(let i=0;i<n;i++){
-    const t=i/sr;
+    const t=i/sr, b=Math.min(3,Math.floor(t/bar)), pan=.24*Math.sin(2*Math.PI*t/(primary==="synth"?10:17));
     let l=0,r=0;
-    const b=Math.min(3,Math.floor(t/bar));
-    const c=chords[b];
-    const pan=.22*Math.sin(2*Math.PI*t/(variant===2?11:17));
-
-    if(variant===0){
-      for(const e of events){
-        const nt=t-e.t; if(nt<0)continue;
-        let x=0;
-        if(e.role==="piano") x=feltPiano(e.f,nt,e.v);
-        else if(e.role==="guitar") x=nylonPluck(e.f,nt,e.v);
-        else x=cello(e.f,nt,e.v);
-        l+=x*(1-pan); r+=x*(1+pan);
-      }
-      // Warm room tail, unlike the other variants.
-      const room=.006*Math.sin(2*Math.PI*92*t)*Math.exp(-t/20);
-      l+=room; r+=room*.8;
-    } else if(variant===1){
-      for(const e of events){
-        const nt=t-e.t; if(nt<0)continue;
-        const x=bowString(e.f,nt,e.v);
-        l+=x*(1-pan*.55); r+=x*(1+pan*.55);
-      }
-      // Independent low cello layer for orchestral body.
-      const bassNote=hz(c[0]-24);
-      const x=cello(bassNote,t-(b*bar),.055);
-      l+=x*.9; r+=x*1.02;
-    } else if(variant===2){
-      for(const e of events){
-        const nt=t-e.t; if(nt<0)continue;
-        let x=0;
-        if(e.role==="synth") x=analogSaw(e.f,nt,e.v,.72);
-        else if(e.role==="glass") x=glass(e.f,nt,e.v);
-        else x=.35*Math.sin(2*Math.PI*e.f*nt)*Math.exp(-nt/4)*e.v;
-        l+=x*(1-pan); r+=x*(1+pan);
-      }
-      // Stereo LFO/sub architecture unique to electronic variant.
-      const sub=.025*Math.sin(2*Math.PI*hz(c[0]-24)*t)*(0.65+.35*Math.sin(2*Math.PI*.11*t));
-      l+=sub*(1+pan); r+=sub*(1-pan);
-    } else {
-      for(const e of events){
-        const nt=t-e.t; if(nt<0)continue;
-        const x=e.role==="bamboo"?bamboo(e.f,nt,e.v):nylonPluck(e.f,nt,e.v);
-        l+=x*(1-pan); r+=x*(1+pan);
-      }
-      const w=wind(t,.9);
-      l+=w*(1+pan*.4); r+=w*(1-pan*.4);
+    for(const e of events){
+      const nt=t-e.t; if(nt<0) continue;
+      let x=0;
+      if(e.role==="piano") x=piano(e.f,nt,e.v);
+      else if(e.role==="pluck") x=pluck(e.f,nt,e.v);
+      else if(e.role==="cello") x=cello(e.f,nt,e.v);
+      else if(e.role==="strings") x=strings(e.f,nt,e.v);
+      else if(e.role==="synth") x=synth(e.f,nt,e.v);
+      else if(e.role==="glass") x=glass(e.f,nt,e.v);
+      else if(e.role==="flute") x=flute(e.f,nt,e.v);
+      else x=.30*Math.sin(2*Math.PI*e.f*nt)*Math.exp(-nt/4)*e.v;
+      l+=x*(1-pan); r+=x*(1+pan);
     }
 
-    // Cada variante tiene una textura de fondo diferente; no se comparte un pad.
-    if(variant===0){
-      const air=.004*Math.sin(2*Math.PI*(c[3]+24)*t)*Math.exp(-((t%bar)/bar)*1.5);
-      l+=air; r+=air*.7;
-    } else if(variant===1){
-      const hall=.0035*Math.sin(2*Math.PI*430*t+Math.sin(t*.13))*Math.sin(Math.PI*Math.min(1,(t%bar)/bar));
-      l+=hall; r+=hall*.86;
-    } else if(variant===2){
-      const shimmer=.004*Math.sin(2*Math.PI*(1100+260*Math.sin(t*.17))*t);
-      l+=shimmer*(.7+.3*Math.sin(t*.23)); r+=shimmer*(.9-.2*Math.sin(t*.19));
-    } else {
-      const air=wind(t,.55); l+=air*.55; r+=air*.75;
-    }
+    // El entorno también responde a la búsqueda.
+    if(semantic.rain) { const x=rainNoise(t,.9); l+=x*(1+pan); r+=x*(1-pan); }
+    if(semantic.ocean) { const x=oceanTexture(t,.8); l+=x*(1+pan*.4); r+=x*(1-pan*.4); }
+    if(semantic.forest||semantic.nature) { const x=forestTexture(t,.65); l+=x*(1-pan*.3); r+=x*(1+pan*.3); }
 
-    const fadeIn=Math.min(1,t/1.8), fadeOut=Math.min(1,(dur-t)/2.5);
-    const master=fadeIn*fadeOut;
-    l=Math.tanh(l*1.35)*master;
-    r=Math.tanh(r*1.35)*master;
-    samples[i*2]=clamp(l,-.78,.78);
-    samples[i*2+1]=clamp(r,-.78,.78);
+    // Variaciones de mezcla según el briefing.
+    if(semantic.sleep||semantic.meditation){ l*=.82; r*=.82; }
+    if(semantic.warm) { const warmth=.003*Math.sin(2*Math.PI*110*t); l+=warmth; r+=warmth*.9; }
+    if(semantic.dark) { const low=.008*Math.sin(2*Math.PI*55*t); l+=low; r+=low; }
+    if(semantic.bright) { const hi=.0025*Math.sin(2*Math.PI*1800*t); l+=hi; r+=hi*.8; }
+
+    const fadeIn=Math.min(1,t/1.8), fadeOut=Math.min(1,(dur-t)/2.5), master=fadeIn*fadeOut;
+    l=Math.tanh(l*1.42)*master; r=Math.tanh(r*1.42)*master;
+    samples[i*2]=clamp(l,-.78,.78); samples[i*2+1]=clamp(r,-.78,.78);
   }
-
   let peak=0;
   for(const x of samples) peak=Math.max(peak,Math.abs(x));
-  const gain=peak>.001?Math.min(1.6,.82/peak):1;
+  const gain=peak>.001?Math.min(1.55,.82/peak):1;
   for(let i=0;i<samples.length;i++) samples[i]*=gain;
   writeWav(wavPath,samples,sr,2);
 }
+
 async function ensureBuiltinMusic(tracks=BUILTIN_MUSIC){
   const valid=t=>{
     const p=path.join(MUSIC_DIR,t.file);
