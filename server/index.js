@@ -1396,6 +1396,136 @@ app.post("/api/import-external-music", async (req,res)=>{
   }
 });
 
+
+// -------------------- FREESOUND AI MIX --------------------
+// This endpoint is intentionally built on the already-stable local music engine.
+// It keeps Freesound search/import intact and does NOT touch the image pipeline.
+// The frontend uses a small async job because composition/rendering can take time.
+const freesoundAiJobs = new Map();
+
+function createFreesoundAiJob(query){
+  const jobId="fsai-"+Date.now()+"-"+Math.random().toString(36).slice(2,8);
+  freesoundAiJobs.set(jobId,{status:"running",progress:0,result:null,error:null});
+  (async()=>{
+    const job=freesoundAiJobs.get(jobId);
+    try{
+      const input=String(query||"").trim().slice(0,500);
+      if(!input) throw new Error("Escribe primero el género, estilo o descripción musical.");
+
+      // Use Freesound as the musical reference layer: names/tags from the current
+      // search are fed into the composition brief, while the actual rendering
+      // remains local and free so no paid API is required.
+      let referenceText="";
+      try{
+        const key=process.env.FREESOUND_API_KEY;
+        if(key){
+          const queries=buildFreesoundQueries(input);
+          const refs=[];
+          for(const q of queries.slice(0,2)){
+            const u=new URL("https://freesound.org/apiv2/search/");
+            u.searchParams.set("query",q);
+            u.searchParams.set("page_size","4");
+            u.searchParams.set("sort","score");
+            u.searchParams.set("fields","id,name,tags,description");
+            const rr=await fetchWithTimeout(u.toString(),{headers:{Authorization:"Token "+key,Accept:"application/json"}},10000);
+            const dd=await rr.json().catch(()=>({}));
+            if(rr.ok){
+              for(const x of (dd.results||[])){
+                refs.push((x.name||"")+(Array.isArray(x.tags)&&x.tags.length?" ["+x.tags.slice(0,6).join(", ")+"]":""));
+              }
+            }
+          }
+          referenceText=[...new Set(refs)].slice(0,8).join("; ");
+        }
+      }catch(refErr){
+        console.warn("[Freesound AI Mix] reference search skipped:",refErr.message);
+      }
+
+      const brief=referenceText
+        ? input+" | Freesound references: "+referenceText
+        : input;
+
+      const work=path.join(MUSIC_DIR,"fs-ai-"+jobId);
+      fs.mkdirSync(work,{recursive:true});
+      try{
+        const segments=[];
+        // Eight independent sections give the result development instead of a
+        // single short loop. Each section keeps the same search identity but
+        // changes the musical seed/variation.
+        for(let i=0;i<8;i++){
+          job.progress=Math.round((i/8)*85);
+          const file="segment-"+i+".mp3";
+          const out=path.join(work,file);
+          await generateAIMusicFile({
+            originalMusicPrompt:brief,
+            userSearch:input,
+            musicProfile:buildAIMusicPrompt(input,(i%4)+1),
+            label:"Freesound AI Mix "+(i+1),
+            file,
+            variant:(i%4)+1,
+            generationSeed:Date.now()+i*7919,
+            forceRegenerate:true
+          },out,180000);
+          segments.push(out);
+          job.progress=Math.round(((i+1)/8)*85);
+        }
+
+        const listFile=path.join(work,"concat.txt");
+        fs.writeFileSync(listFile,segments.map(f=>"file '"+f.replace(/'/g,"'\\''")+"'").join("\n"));
+        const base=path.join(work,"base.mp3");
+        await runFfmpeg(["-y","-f","concat","-safe","0","-i",listFile,"-c:a","libmp3lame","-b:a","192k","-ar","48000",base]);
+
+        const stamp=Date.now();
+        const finalName="freesound-ai-mix-"+stamp+".mp3";
+        const finalPath=path.join(MUSIC_DIR,finalName);
+        await runFfmpeg(["-y","-stream_loop","-1","-i",base,"-t","3600","-c:a","copy",finalPath]);
+
+        job.progress=100;
+        job.status="succeeded";
+        job.result={
+          name:finalName,
+          url:"/media/music/"+encodeURIComponent(finalName),
+          label:"Música IA · "+input,
+          provider:"RelaxScape Free AI Music Engine + Freesound references",
+          generatedFromSearch:true,
+          source:"Freesound",
+          query:input,
+          durationHours:1
+        };
+      }finally{
+        fs.rmSync(work,{recursive:true,force:true});
+      }
+    }catch(e){
+      job.status="failed";
+      job.error=e?.message||String(e);
+      console.error("[Freesound AI Mix] ERROR",e?.stack||e?.message||e);
+    }
+    // Keep completed jobs around briefly so the polling request can retrieve them.
+    setTimeout(()=>freesoundAiJobs.delete(jobId),10*60*1000);
+  })();
+  return jobId;
+}
+
+app.post("/api/generate-freesound-ai-mix", (req,res)=>{
+  try{
+    const query=String(req.body?.query||"").trim();
+    if(!query) return res.status(400).json({error:"Escribe primero el género, estilo o descripción musical."});
+    const jobId=createFreesoundAiJob(query);
+    res.json({jobId});
+  }catch(e){
+    res.status(500).json({error:"No se pudo iniciar la generación musical: "+e.message});
+  }
+});
+
+app.get("/api/generate-freesound-ai-mix-status", (req,res)=>{
+  const jobId=String(req.query.jobId||"");
+  const job=freesoundAiJobs.get(jobId);
+  if(!job) return res.status(404).json({error:"No se encontró la generación musical solicitada."});
+  if(job.status==="succeeded") return res.json({status:"succeeded",progress:100,result:job.result});
+  if(job.status==="failed") return res.status(500).json({status:"failed",error:job.error});
+  res.json({status:"running",progress:job.progress||0});
+});
+
 app.post("/api/generate-ai-music", async (req, res) => {
   const key = process.env.GEMINI_API_KEY;
   if (!key) return res.status(400).json({ error: "Añade GEMINI_API_KEY en Render para activar Lyria." });
