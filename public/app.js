@@ -68,33 +68,29 @@ function bindAIButtons(){
 }
 
 async function generateAIMusicOnly(){
-  const prompt=(($( "#aiMusicPrompt").value||"").trim()||"piano relaxing ambient");
+  const prompt=(($("#aiMusicPrompt").value||"").trim()||"piano relaxing ambient");
   S.aiLoading=true; S.aiMusic=[]; S.externalMusic=[]; S.selectedExternalMusic=[]; S.music=null;
-  const status=$( "#aiSelectionStatus"), mg=$( "#aiMusicList");
-  if(status)status.textContent="🔎 Buscando audios reales en Freesound según tu búsqueda…";
-  if(mg)mg.innerHTML='<div class="empty">🔎 Buscando grabaciones reales de los instrumentos y ambientes solicitados…</div>';
+  const status=$("#aiSelectionStatus"), mg=$("#aiMusicList");
+  if(status)status.textContent="🎵 Creando 3 propuestas musicales de 1 minuto…";
+  if(mg)mg.innerHTML='<div class="empty">🎵 Generando 3 propuestas diferentes según tu búsqueda…</div>';
   try{
-    const started=await api("/api/external-music-search",{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({q:prompt})
-    });
+    const started=await api("/api/music-preview-options",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({musicPrompt:prompt})});
     let d=null;
-    for(let i=0;i<30;i++){
+    for(let i=0;i<120;i++){
       await new Promise(r=>setTimeout(r,700));
-      d=await api("/api/external-music-search-status?jobId="+encodeURIComponent(started.jobId));
+      d=await api("/api/music-preview-options-status?jobId="+encodeURIComponent(started.jobId));
+      if(status)status.textContent="🎵 Generando propuestas… "+(d.progress||0)+"%";
       if(d.status==="succeeded")break;
-      if(d.status==="failed")throw Error(d.error||"Freesound no respondió correctamente.");
-      if(status)status.textContent="🔎 Buscando en Freesound…";
+      if(d.status==="failed")throw Error(d.error||"No se pudieron crear las propuestas.");
     }
-    if(!d||d.status!=="succeeded")throw Error("La búsqueda de Freesound está tardando demasiado.");
-    S.externalMusic=d.results||[];
-    if(!S.externalMusic.length)throw Error("No se encontraron audios que coincidan con la búsqueda.");
-    if(status)status.textContent="✓ "+S.externalMusic.length+" previas reales encontradas. Escucha y elige una.";
+    if(!d||d.status!=="succeeded")throw Error("La generación está tardando demasiado.");
+    S.aiMusic=d.results||[];
+    if(!S.aiMusic.length)throw Error("No se generaron propuestas musicales.");
+    if(status)status.textContent="✓ 3 propuestas listas. Escucha las versiones de 1 minuto y elige una.";
     renderAICreator();
   }catch(e){
-    if(status)status.textContent="Error de búsqueda: "+e.message;
-    if(mg)mg.innerHTML='<div class="empty">No se pudo buscar audio externo.<br><small>'+e.message+"</small></div>";
+    if(status)status.textContent="Error de generación: "+e.message;
+    if(mg)mg.innerHTML='<div class="empty">No se pudieron generar las propuestas.<br><small>'+e.message+"</small></div>";
   }finally{S.aiLoading=false;renderAICreator()}
 }
 
