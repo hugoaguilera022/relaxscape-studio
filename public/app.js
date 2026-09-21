@@ -33,21 +33,26 @@ function render(){renderImages();renderMusic();renderVideos();renderAICreator();
 async function ensureAIOptions(){ return; }
 
 async function generateAIImagesOnly(){
-  const prompt=(($( "#aiImagePrompt").value||"").trim()||"peaceful nature landscape");
+  const prompt=(($("#aiImagePrompt").value||"").trim()||"peaceful nature landscape");
   S.aiLoading=true; S.aiImages=[]; S.image=null;
-  const status=$( "#aiSelectionStatus"), ig=$( "#aiImageGrid");
-  if(status)status.textContent="Buscando paisajes relacionados…";
-  if(ig)ig.innerHTML='<div class="empty">🌄 Buscando paisajes en Pexels…</div>';
+  const status=$("#aiSelectionStatus"), ig=$("#aiImageGrid");
+  if(status)status.textContent="🤖 Generando paisajes con IA… esto puede tardar unos segundos.";
+  if(ig)ig.innerHTML='<div class="empty">🤖 FLUX está creando tus paisajes a partir de la búsqueda…</div>';
   try{
-    const d=await api("/api/ai-images",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({theme:prompt})});
+    const controller=new AbortController();
+    const timer=setTimeout(()=>controller.abort(),125000);
+    let d;
+    try{
+      d=await api("/api/ai-images",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({theme:prompt}),signal:controller.signal});
+    }finally{clearTimeout(timer)}
     S.aiImages=d.images||[];
     if(S.aiImages[0])S.image=S.aiImages[0];
     renderAICreator();
-    if(status)status.textContent="✓ Paisajes encontrados. Ahora puedes elegir uno.";
+    if(status)status.textContent="✓ "+S.aiImages.length+" paisaje(s) IA generado(s). Elige uno.";
   }catch(e){
-    const detail=(e&&e.message)?e.message:"Error desconocido";
-    if(status)status.textContent="Error de búsqueda: "+detail;
-    if(ig)ig.innerHTML='<div class="empty">No se pudieron cargar los paisajes.<br><small>'+detail+'</small><br><small>Añade PEXELS_API_KEY en Render.</small></div>';
+    const detail=(e&&e.name==="AbortError")?"La generación IA tardó demasiado.":((e&&e.message)?e.message:"Error desconocido");
+    if(status)status.textContent="❌ "+detail;
+    if(ig)ig.innerHTML='<div class="empty">No se pudo generar el paisaje IA.<br><small>'+detail+'</small><br><small>Si aparece “HF_TOKEN” o “credits”, revisa la clave de Hugging Face en Render.</small></div>';
   }finally{S.aiLoading=false;renderAICreator()}
 }
 
