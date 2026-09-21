@@ -89,7 +89,7 @@ function writeWav(file, samples, sampleRate=44100, channels=2){
 function makeCompositionWav(track, wavPath){
   // Motor armónico v2: afinación temperada, acordes con 7ª/9ª, voice-leading
   // suave y síntesis multicapa para acercarse a un piano/ambient profesional.
-  const sr=44100, dur=30, n=sr*dur, samples=new Float32Array(n*2);
+  const sr=44100, dur=12, n=sr*dur, samples=new Float32Array(n*2);
   const seed=Math.abs(Math.floor(track.f1*100 + track.f2*10 + track.f3)) % 1000;
   const bpm=[46,48,50,52][seed%4], beat=60/bpm, bar=beat*4;
   const midiFromHz=f=>69+12*Math.log2(f/440);
@@ -236,7 +236,7 @@ async function ensureBuiltinMusic(tracks=BUILTIN_MUSIC){
       console.log("[Music v6] Generando:",track.label);
       makeCompositionWav(track,wav);
       await runFfmpeg([
-        "-y","-stream_loop","-1","-i",wav,"-t","180",
+        "-y","-stream_loop","-1","-i",wav,"-t","30",
         "-c:a","libmp3lame","-b:a","160k","-ar","44100",out
       ]);
     }catch(e){console.error("No se pudo crear composición:",track.file,e.message)}
@@ -430,8 +430,8 @@ app.post("/api/ai-options", async (req, res) => {
       // cuando el usuario pulse "Crear vídeo".
       const r = await fetchWithTimeout(
         "https://api.pexels.com/v1/search?query=" + encodeURIComponent(theme + " peaceful nature") +
-        "&per_page=20&orientation=landscape&size=large&locale=en-US",
-        { headers: { Authorization: key } }, 3000
+        "&per_page=30&orientation=landscape&size=large&locale=en-US",
+        { headers: { Authorization: key } }, 8000
       );
       if (!r.ok) throw new Error("Pexels HTTP " + r.status);
       const data = await r.json();
@@ -466,7 +466,7 @@ app.post("/api/ai-options", async (req, res) => {
     images.push(makeFallbackLandscape(filename, theme));
   }
 
-  // Preparamos solo las 4 pistas que necesita el creador IA.
+  // Preparamos exactamente las 4 pistas que necesita el creador IA.
   // No generamos toda la biblioteca: así la primera carga sigue siendo razonablemente rápida.
   const aiTracks = [
     BUILTIN_MUSIC.find(t => t.file === "relax-piano.mp3"),
