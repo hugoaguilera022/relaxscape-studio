@@ -108,12 +108,18 @@ async function downloadExternalMusic(x){
   if(status)status.textContent="Preparando la descarga de la previa…";
   try{
     const local=await importExternalMusic(x);
+    const r=await fetch(local.url,{cache:"no-store"});
+    if(!r.ok)throw new Error("No se pudo recuperar el archivo descargado.");
+    const blob=await r.blob();
+    const href=URL.createObjectURL(blob);
     const a=document.createElement("a");
-    a.href=local.url;
+    a.href=href;
     a.download=local.name||("freesound-"+x.id+".mp3");
+    a.style.display="none";
     document.body.appendChild(a);
     a.click();
     a.remove();
+    setTimeout(()=>URL.revokeObjectURL(href),3000);
     if(status)status.textContent="✓ Previa descargada.";
   }catch(e){
     if(status)status.textContent="No se pudo descargar la previa: "+e.message;
@@ -174,7 +180,8 @@ function renderAICreator(){
   if(mg){
     if(S.externalMusic.length){
       mg.innerHTML='<div class="ai-mix-action"><button type="button" id="createFreesoundMix" class="primary">🎼 Crear mezcla musical con IA</button><small>Combina los resultados de esta búsqueda en una sola pista coherente.</small></div>'+S.externalMusic.map((x,i)=>'<div class="ai-track '+(S.music?.externalId===x.id?"selected":"")+'" data-external-id="'+x.id+'"><div><b>♫ '+escapeHtml(x.name)+'</b><small>Freesound · '+escapeHtml(x.username||"")+' · '+escapeHtml(x.license||"")+' · '+formatDuration(x.duration)+'</small></div><div class="ai-track-actions"><audio controls preload="metadata" src="'+x.preview+'"></audio><button type="button" class="preview-download" data-download-external="'+x.id+'">↓ Descargar previa</button><a class="preview-download" href="'+x.sourceUrl+'" target="_blank" rel="noopener">↗ Ver fuente</a></div></div>').join("");
-      $("#createFreesoundMix").onclick=createFreesoundAIMix;
+      const mixButton=$("#createFreesoundMix");
+      if(mixButton) mixButton.addEventListener("click",createFreesoundAIMix,{once:true});
       $("#aiMusicList .ai-track").forEach(e=>e.onclick=ev=>{
         if(ev.target.tagName==="AUDIO" || ev.target.tagName==="A" || ev.target.closest("[data-download-external]"))return;
         const x=S.externalMusic.find(v=>String(v.id)===String(e.dataset.externalId));
