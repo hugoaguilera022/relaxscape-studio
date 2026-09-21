@@ -125,15 +125,15 @@ async function ensureBuiltinMusic(tracks=BUILTIN_MUSIC){
     for(const t of BUILTIN_MUSIC){try{fs.rmSync(path.join(MUSIC_DIR,t.file),{force:true})}catch{}}
     try{fs.writeFileSync(marker,MUSIC_ENGINE_VERSION)}catch{}
   }
-  const jobs=tracks.filter(t=>!fs.existsSync(path.join(MUSIC_DIR,t.file))).map(async track=>{
+  for(const track of tracks.filter(t=>!fs.existsSync(path.join(MUSIC_DIR,t.file)))){
     const out=path.join(MUSIC_DIR,track.file), wav=path.join(MUSIC_DIR,"."+track.file+".wav");
     try{
+      console.log("[Music v6] Generando:",track.label);
       makeCompositionWav(track,wav);
       await runFfmpeg(["-y","-i",wav,"-c:a","libmp3lame","-b:a","160k","-ar","44100",out]);
     }catch(e){console.error("No se pudo crear composición:",track.file,e.message)}
     finally{try{fs.rmSync(wav,{force:true})}catch{}}
-  });
-  await Promise.all(jobs);
+  }
 }
 function listFiles(dir, base) {
   return fs.readdirSync(dir)
