@@ -318,7 +318,8 @@ function makeCompositionWav(track, wavPath){
           left+=vv*.94; right+=vv*1.04;
         }
       }
-    }\n
+    }
+
     // Aire alto muy sutil, siempre basado en la 9ª del acorde.
     const air=padVoice(hz(ch.notes[4]+12),chordT,ultraCalm ? .009 : (variant===2?.012:.006));
     left+=air*.88; right+=air*1.05;
