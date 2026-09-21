@@ -159,9 +159,25 @@ async function createSelectedFreesoundMix(){
         durationHours:S.aiMixHours
       })
     });
-    S.music=d;
-    if(status)status.textContent="✓ Mezcla de "+S.aiMixHours+" hora"+(S.aiMixHours===1?"":"s")+" creada. Puedes escuchar la previa completa antes de crear el vídeo.";
-    renderAICreator();update();picker();
+    if(status)status.textContent="🎚️ Creando la mezcla real y preparando una previa de 90 segundos…";
+    let job=null;
+    for(let n=0;n<240;n++){
+      job=await api("/api/mix-selected-freesound-status?jobId="+encodeURIComponent(d.jobId));
+      if(job.preview && !S.music){
+        S.music={url:job.preview.url,name:job.preview.name,isFreesoundPreview:true,durationHours:S.aiMixHours};
+        renderAICreator();update();picker();
+        if(status)status.textContent="✓ Previa real de la mezcla lista. La mezcla de "+S.aiMixHours+" hora"+(S.aiMixHours===1?"":"s")+" sigue preparándose en segundo plano.";
+      }
+      if(job.status==="succeeded"){
+        S.music=job.result;
+        if(status)status.textContent="✓ Mezcla completa de "+S.aiMixHours+" hora"+(S.aiMixHours===1?"":"s")+" lista. Ya puedes escucharla y usarla en el vídeo.";
+        renderAICreator();update();picker();
+        break;
+      }
+      if(job.status==="failed")throw Error(job.error||"No se pudo crear la mezcla.");
+      await new Promise(r=>setTimeout(r,3000));
+    }
+    if(!job || job.status!=="succeeded")throw Error("La creación de la mezcla está tardando demasiado. La previa puede seguir escuchándose mientras termina.");
   }catch(e){
     if(status)status.textContent="No se pudo crear la mezcla: "+e.message;
   }finally{
@@ -275,7 +291,7 @@ $("#aiCreateHour").onclick=async()=>{
   const btn=$("#aiCreateHour");btn.disabled=true;
   try{
     let musicForVideo=S.music;
-    if(!S.music.generatedFromSearch && !S.music.isFreesoundMix){
+    if(!S.music.generatedFromSearch && !S.music.isFreesoundMix && !S.music.isFreesoundPreview){
       $("#aiSelectionStatus").textContent="1/2 · Preparando 1 hora a partir de la previa musical…";
       musicForVideo=await api("/api/generate-selected-long-music",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({music:S.music.url,durationHours:1,musicPrompt:($("#aiMusicPrompt")?.value||$("#prompt")?.value||"").trim()})});
     }
