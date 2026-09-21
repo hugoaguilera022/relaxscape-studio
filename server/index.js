@@ -95,7 +95,7 @@ function writeWav(file, samples, sampleRate=44100, channels=2){
 }
 
 function makeCompositionWav(track, wavPath){
-  // Motor local V27: interpreta la búsqueda del usuario antes de elegir timbre,
+  // Motor local V28: interpreta la búsqueda del usuario antes de elegir timbre,
   // escala, tempo, registro y textura. Las 4 variantes siguen siendo diferentes,
   // pero ahora pertenecen al mismo universo sonoro pedido.
   const sr=12000, dur=18, n=sr*dur, samples=new Float32Array(n*2);
@@ -292,7 +292,7 @@ async function ensureBuiltinMusic(tracks=BUILTIN_MUSIC){
       try {
           // Fallback gratuito local: nunca dejamos Crear IA sin música.
           // Cada opción recibe una identidad instrumental y armónica diferente.
-          const userBrief = "professional deep-relaxation ambient music for peace and calm";
+          const userBrief = String(track.userMusicBrief || "professional deep-relaxation ambient music for peace and calm");
           const fallbackProfiles = [
             "USER BRIEF: "+userBrief+". Preserve its genre, mood, instruments, environment and tempo. Local timbral engine: felt piano with nylon guitar and cello colors. Do not turn the request into a generic relaxation preset.",
             "USER BRIEF: "+userBrief+". Preserve its genre, mood, instruments, environment and tempo. Local timbral engine: bowed strings and cello dominate, with sustained orchestral phrasing. Do not turn the request into a generic relaxation preset.",
@@ -569,7 +569,7 @@ const SONIC_PALETTES = [
 ];
 
 function aiTracksForBackground(prompt="", generationId=0){
-  const p="professional deep-relaxation ambient music for peace, stress relief and sleep: soft felt piano or warm keyboards, gentle sustained strings, airy pads, very slow expressive melody, warm consonant chords, spacious natural reverb, subtle evolving texture, no drums, no percussion, no aggressive bass, no bright pop elements, no tension, no abrupt changes";
+  const requestedDetails=musicIntentProfile(prompt);\n  const p="professional deep-relaxation ambient music for peace, calm and stress relief. Keep the overall genre peaceful, slow and non-aggressive, but adapt the composition to the user search: "+requestedDetails+". Use the requested instruments, environment, mood and atmosphere when compatible. No drums, no percussion, no aggressive bass, no abrupt changes unless the user explicitly requests them.";
   const seed=Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8);
   const sessionNonce="session-"+generationId+"-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,10);
   const paletteOrder=[...SONIC_PALETTES].sort(()=>Math.random()-0.5).slice(0,4);
