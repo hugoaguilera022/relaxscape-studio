@@ -318,25 +318,25 @@ app.post("/api/ai-options", async (req, res) => {
       imageErrors.push("Falta PEXELS_API_KEY en Render.");
     }
 
-    // Respondemos con pistas ya disponibles inmediatamente. Si no hay ninguna,
-    // creamos solo 2 en segundo plano y devolvemos un mensaje para reintentar.
+    // La música debe estar lista en la misma petición: antes se generaba en
+    // segundo plano y el frontend recibía imágenes pero cero pistas.
     const existingMusic = BUILTIN_MUSIC.filter(t => fs.existsSync(path.join(MUSIC_DIR, t.file)));
-    const musicTracks = existingMusic.length
-      ? [...existingMusic].sort(() => Math.random() - 0.5).slice(0, 4)
-      : BUILTIN_MUSIC.slice(0, 2);
-    if (!existingMusic.length) {
-      setImmediate(() => ensureBuiltinMusic(musicTracks)
-        .catch(e => console.error("Error preparando música IA gratuita:", e.message)));
+    const musicTracks = [...(existingMusic.length ? existingMusic : BUILTIN_MUSIC)]
+      .sort(() => Math.random() - 0.5).slice(0, 4);
+    try {
+      await ensureBuiltinMusic(musicTracks);
+    } catch (e) {
+      musicErrors.push("Error generando música: " + e.message);
     }
     for (const track of musicTracks) {
       if (!fs.existsSync(path.join(MUSIC_DIR, track.file))) continue;
       music.push({
         name: track.file,
         url: "/media/music/" + encodeURIComponent(track.file),
-        ai: false,
-        provider: "RelaxScape",
+        ai: true,
+        provider: "RelaxScape Ambient Engine",
         generated: true,
-        fallback: true,
+        fallback: false,
         label: track.label,
         category: track.category
       });
@@ -722,7 +722,7 @@ app.get("*splat", (_, res) => res.sendFile(path.join(PUBLIC, "index.html")));
 const port = Number(process.env.PORT || 3000);
 app.listen(port, () => {
   console.log(`RelaxScape activo en http://localhost:${port}`);
-  ensureBuiltinMusic()
-    .then(() => console.log("Biblioteca musical integrada lista."))
-    .catch(e => console.error("Error preparando la música integrada:", e.message));
+  setImmediate(() => ensureBuiltinMusic(BUILTIN_MUSIC.slice(0, 6))
+    .then(() => console.log("Biblioteca musical inicial lista."))
+    .catch(e => console.error("Error preparando la música inicial:", e.message)));
 });
