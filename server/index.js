@@ -103,12 +103,19 @@ function listFiles(dir, base) {
     .map(f => ({ name: f, url: `${base}/${encodeURIComponent(f)}` }));
 }
 
-app.get("/api/library", (_, res) => {
-  res.json({
-    images: listFiles(IMAGE_DIR, "/media/images"),
-    music: listFiles(MUSIC_DIR, "/media/music"),
-    videos: listFiles(VIDEO_DIR, "/media/videos").reverse()
-  });
+app.get("/api/library", async (_, res) => {
+  try {
+    // La biblioteca debe estar lista antes de pintar la interfaz.
+    // Esto evita que la web aparezca vacía justo después de un reinicio de Render.
+    await ensureBuiltinMusic();
+    res.json({
+      images: listFiles(IMAGE_DIR, "/media/images"),
+      music: listFiles(MUSIC_DIR, "/media/music"),
+      videos: listFiles(VIDEO_DIR, "/media/videos").reverse()
+    });
+  } catch (e) {
+    res.status(500).json({ error: "No se pudo preparar la biblioteca: " + e.message });
+  }
 });
 
 app.post("/api/upload/image", imageUpload.single("image"), (req, res) => {
