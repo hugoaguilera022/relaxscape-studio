@@ -195,6 +195,9 @@ function makeCompositionWav(track, wavPath){
   const degree=(d,o=0)=>root+scale[((d%scale.length)+scale.length)%scale.length]+12*o;
 
   const explicitLead=semantic.piano?"piano":semantic.guitar?"guitar":semantic.flute?"flute":semantic.strings?"strings":semantic.synth?"synth":semantic.harp?"harp":semantic.kalimba?"kalimba":null;
+  // Si el usuario pide un instrumento concreto, ese instrumento NO se sustituye
+  // por un pad/synth genérico: también lleva la armonía principal.
+
   const lead=explicitLead || (semantic.flamenco?"guitar":semantic.forest?"flute":semantic.cinematic?"strings":semantic.night||semantic.sleep?"piano":semantic.ocean||semantic.river?"piano":"piano");
 
   // Timbres dedicados: el instrumento pedido es claramente protagonista.
@@ -263,9 +266,10 @@ function makeCompositionWav(track, wavPath){
       events.push({t:b*bar+bar*.45,f:hz(chord[1]),v:.075,role:"piano"});
       events.push({t:b*bar+bar*.72,f:hz(chord[2]),v:.06,role:"piano"});
     }else{
-      events.push({t:b*bar,f:hz(chord[0]-12),v:.045,role:"pad"});
-      events.push({t:b*bar,f:hz(chord[1]),v:.028,role:"pad"});
-      events.push({t:b*bar,f:hz(chord[2]),v:.022,role:"pad"});
+      const harmonyRole=lead==="guitar"?"guitar":lead==="strings"?"strings":lead==="flute"?"flute":lead==="synth"?"synth":lead==="harp"?"harp":lead==="kalimba"?"kalimba":"pad";
+      events.push({t:b*bar,f:hz(chord[0]-12),v:.045,role:harmonyRole});
+      events.push({t:b*bar,f:hz(chord[1]),v:.028,role:harmonyRole});
+      events.push({t:b*bar,f:hz(chord[2]),v:.022,role:harmonyRole});
     }
 
     const density=semantic.energetic?7:(semantic.flamenco||semantic.jazz?6:4);
