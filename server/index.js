@@ -123,50 +123,133 @@ app.post("/api/generate-video", async (req, res) => {
   } catch (e) { res.status(500).json({ error: "No se pudo generar el vídeo: " + e.message }); }
 });
 
-async function generatePexelsVideo(prompt, aspectRatio, key) {
+async function generatePexelsVideo(prompt, aspectRatio, key, durationHours = 1) {
   const query = String(prompt || "peaceful nature landscape")
     .replace(/[^a-zA-Z0-9áéíóúüñÁÉÍÓÚÜÑ ,.-]/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 120) || "peaceful nature landscape";
 
+  const hours = Number(durationHours);
+  if (![1, 2].includes(hours)) throw new Error("La duración debe ser de 1 o 2 horas.");
+
+  // Pedimos muchos resultados en una sola llamada para aprovechar mejor la cuota de Pexels.
   const search = await fetch(
-    `https://api.pexels.com/v1/videos/search?query=${encodeURIComponent(query)}&per_page=15&orientation=${aspectRatio === "9:16" ? "portrait" : "landscape"}`,
+    `https://api.pexels.com/v1/videos/search?query=${encodeURIComponent(query)}&per_page=80&orientation=${aspectRatio === "9:16" ? "portrait" : "landscape"}&size=medium`,
     { headers: { Authorization: key } }
   );
   const data = await search.json();
   if (!search.ok) throw new Error(data.error || "No se pudieron buscar vídeos gratuitos en Pexels.");
 
-  const videos = (data.videos || []).filter(v => v.video_files?.length);
-  if (!videos.length) throw new Error("No encontramos un vídeo gratuito que encaje con tu descripción. Prueba con otra descripción.");
+  const videos = (data.videos || [])
+    .filter(v => v.video_files?.length && Number(v.duration || 0) >= 5)
+    .sort((a, b) => Number(b.duration || 0) - Number(a.duration || 0));
 
-  const chosen = videos[Math.floor(Math.random() * videos.length)];
-  const files = [...chosen.video_files].sort((a, b) => {
-    const score = file => {
-      const portraitBonus = aspectRatio === "9:16" ? (file.height > file.width ? 2 : 0) : (file.width >= file.height ? 2 : 0);
-      const sizeScore = Math.min((file.width || 0) / 1920, 1);
-      return portraitBonus + sizeScore;
-    };
-    return score(b) - score(a);
+  if (!videos.length) {
+    throw new Error("No encontramos suficientes vídeos gratuitos para esta descripción. Prueba con otra descripción.");
+  }
+
+  // Descargamos varios clips diferentes. El vídeo final reutilizará esta secuencia
+  // hasta completar 1 o 2 horas.
+  const selected = videos.slice(0, Math.min(8, videos.length));
+  const downloaded = [];
+
+  for (let i = 0; i < selected.length; i++) {
+    const video = selected[i];
+    const files = [...video.video_files].sort((a, b) => {
+      const score = file => {
+        const portraitBonus = aspectRatio === "9:16"
+          ? (file.height > file.width ? 3 : 0)
+          : (file.width >= file.height ? 3 : 0);
+        const mediumBonus = Math.abs((file.width || 0) - 1920) < 600 ? 1 : 0;
+        return portraitBonus + mediumBonus + Math.min((file.width || 0) / 1920, 1);
+      };
+      return score(b) - score(a);
+    });
+
+    const videoUrl = files[0]?.link;
+    if (!videoUrl) continue;
+
+    const download = await fetch(videoUrl);
+    if (!download.ok) continue;
+
+    const filename = `pexels-source-${Date.now()}-${i}.mp4`;
+    const filePath = path.join(VIDEO_DIR, filename);
+    fs.writeFileSync(filePath, Buffer.from(await download.arrayBuffer()));
+    downloaded.push({ path: filePath, sourceUrl: video.url, duration: Number(video.duration || 0) });
+  }
+
+  if (!downloaded.length) {
+    throw new Error("Pexels no devolvió archivos de vídeo descargables.");
+  }
+
+  const stamp = Date.now();
+  const montage = path.join(VIDEO_DIR, `pexels-montage-${stamp}.mp4`);
+  const finalName = `relaxscape-pexels-${stamp}-${hours}h.mp4`;
+  const finalPath = path.join(VIDEO_DIR, finalName);
+
+  // Normalizamos y unimos los clips. Después repetimos el montaje hasta llegar
+  // exactamente a la duración elegida por el usuario.
+  const inputs = [];
+  const filters = [];
+  downloaded.forEach((item, i) => {
+    inputs.push("-i", item.path);
+    const scale = aspectRatio === "9:16"
+      ? "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2"
+      : "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2";
+    filters.push(`[${i}:v]fps=30,${scale},format=yuv420p[v${i}]`);
   });
-  const videoUrl = files[0]?.link;
-  if (!videoUrl) throw new Error("Pexels no devolvió un archivo de vídeo válido.");
+  filters.push(downloaded.map((_, i) => `[v${i}]`).join("") + `concat=n=${downloaded.length}:v=1:a=0[vout]`);
 
-  const download = await fetch(videoUrl);
-  if (!download.ok) throw new Error("No se pudo descargar el vídeo gratuito seleccionado.");
-  const filename = `pexels-${Date.now()}.mp4`;
-  fs.writeFileSync(path.join(VIDEO_DIR, filename), Buffer.from(await download.arrayBuffer()));
+  await runFfmpeg([
+    "-y",
+    ...inputs,
+    "-filter_complex", filters.join(";"),
+    "-map", "[vout]",
+    "-an",
+    "-c:v", "libx264",
+    "-preset", "veryfast",
+    "-crf", "25",
+    "-movflags", "+faststart",
+    montage
+  ]);
 
-  return { name: filename, url: `/media/videos/${filename}`, source: "Pexels", sourceUrl: chosen.url };
+  await runFfmpeg([
+    "-y",
+    "-stream_loop", "-1",
+    "-i", montage,
+    "-t", String(hours * 3600),
+    "-an",
+    "-c:v", "libx264",
+    "-preset", "veryfast",
+    "-crf", "25",
+    "-movflags", "+faststart",
+    finalPath
+  ]);
+
+  // Borramos los clips temporales para no llenar el disco de Render.
+  for (const item of downloaded) {
+    try { fs.unlinkSync(item.path); } catch {}
+  }
+  try { fs.unlinkSync(montage); } catch {}
+
+  return {
+    name: finalName,
+    url: `/media/videos/${finalName}`,
+    source: "Pexels",
+    sourceUrl: downloaded[0]?.sourceUrl,
+    clips: downloaded.length,
+    durationHours: hours
+  };
 }
-
 app.post("/api/generate-ai-video", async (req, res) => {
   const key = process.env.PEXELS_API_KEY;
   if (!key) return res.status(400).json({ error: "Añade PEXELS_API_KEY en Render. La API de Pexels es gratuita y permite buscar vídeos sin pagar." });
   const prompt = req.body.prompt || "peaceful cinematic nature landscape, relaxing atmosphere, no people, no text";
   const aspectRatio = req.body.aspectRatio === "9:16" ? "9:16" : "16:9";
   try {
-    const result = await generatePexelsVideo(prompt, aspectRatio, key);
+    const durationHours = Number(req.body.durationHours || 1);
+    const result = await generatePexelsVideo(prompt, aspectRatio, key, durationHours);
     res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });
