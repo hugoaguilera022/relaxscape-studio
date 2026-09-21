@@ -1396,18 +1396,34 @@ async function startReplicateMusicGeneration(query){
   // generic /v1/predictions endpoint. Using the model-specific predictions URL
   // can return a 404 even though the model itself is public.
   const version="fishaudio/ace-step-1.5:74e3a7d383b18815e277de5223f5fe9d53d38832de15aa567fe729fa129d0d85";
-  const r=await fetchWithTimeout("https://api.replicate.com/v1/predictions",{
-    method:"POST",
-    headers:{"Authorization":"Bearer "+token,"Content-Type":"application/json","Prefer":"wait=1","Cancel-After":"15m"},
-    body:JSON.stringify({version,input})
-  },20000);
-  const text=await r.text(); let data={}; try{data=JSON.parse(text)}catch{}
-  if(!r.ok){
+  // Con cuentas sin método de pago, Replicate puede responder 429 aunque el
+  // siguiente intento sea válido. Esperamos automáticamente al reset para que
+  // el usuario no tenga que pulsar el botón varias veces. No cambiamos ningún
+  // parámetro de la generación ni tocamos el pipeline de imágenes/Freesound.
+  let lastDetail="";
+  for(let attempt=0;attempt<4;attempt++){
+    const r=await fetchWithTimeout("https://api.replicate.com/v1/predictions",{
+      method:"POST",
+      headers:{"Authorization":"Bearer "+token,"Content-Type":"application/json","Prefer":"wait=1","Cancel-After":"15m"},
+      body:JSON.stringify({version,input})
+    },20000);
+    const text=await r.text(); let data={}; try{data=JSON.parse(text)}catch{}
+    if(r.ok) return data;
     const detail=data?.detail||data?.error||text.slice(0,500)||"Replicate rechazó la generación.";
-    if(r.status===429) throw new Error("Replicate está limitando las solicitudes temporalmente. Espera unos segundos y vuelve a intentarlo. Si tu cuenta aún no tiene método de pago, Replicate limita las predicciones a 6 por minuto.");
+    lastDetail=detail;
+    if(r.status===429 && attempt<3){
+      const m=String(detail).match(/resets? in ~?(\d+)s/i);
+      const waitMs=Math.max(11000,((m?Number(m[1]):10)+2)*1000);
+      console.log("[AI Music] Replicate rate limit; reintentando en",Math.round(waitMs/1000),"s.");
+      await new Promise(resolve=>setTimeout(resolve,waitMs));
+      continue;
+    }
+    if(r.status===429){
+      throw new Error("Replicate sigue limitando la cuenta. El código ya reintenta automáticamente; si no hay método de pago, Replicate aplica un máximo de 6 predicciones por minuto.");
+    }
     throw new Error(detail);
   }
-  return data;
+  throw new Error(lastDetail||"Replicate rechazó la generación.");
 }
 async function finalizeReplicateMusicJob(job){
   const token=process.env.REPLICATE_API_TOKEN;
