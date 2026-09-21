@@ -880,7 +880,7 @@ app.post("/api/video-preview-options",(req,res)=>{
     try{
       const imageName=decodeURIComponent(image.split("/").pop());
       let imagePath=path.join(IMAGE_DIR,imageName);
-      if(!fs.existsSync(imagePath) && /^https?:\\/\\//i.test(image)){
+      if(!fs.existsSync(imagePath) && (image.startsWith("http://") || image.startsWith("https://"))){
         const downloaded=await fetchWithTimeout(image,{},10000);
         if(!downloaded.ok)throw new Error("No se pudo descargar el paisaje seleccionado.");
         imagePath=path.join(IMAGE_DIR,"preview-image-"+jobId+".jpg");
