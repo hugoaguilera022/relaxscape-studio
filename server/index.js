@@ -87,37 +87,73 @@ function writeWav(file, samples, sampleRate=44100, channels=2){
 }
 
 function makeCompositionWav(track, wavPath){
-  // Generamos solo 30 s de material original. Después FFmpeg lo repite para
-  // formar la previa de 3 min. Así Render no necesita reservar ~100 MB por pista.
-  const sr=44100, dur=20, n=sr*dur, samples=new Float32Array(n*2);
-  const r=track.f1, m=track.f2, h=track.f3, bass=Math.max(55,r*.5), beat=60/56;
-  const melody=[r*2,m*2,h*2,m*2,r*2,h*2,m*2,r*1.5,m*2,h*2,r*2,m*2,h*2,m*2,r*2,h*1.5];
-  const arp=[r*2.5,m*2.5,h*2.5,m*3,r*3,h*3,m*2.5,r*2.5];
-  const seed=Math.floor(r*1000)%997;
-  for(let i=0;i<n;i++){
-    const t=i/sr, bar=Math.floor(t/(beat*16)), pos=t%(beat*16);
-    const mi=Math.floor(pos/beat)%melody.length, ai=Math.floor(pos/(beat/2))%arp.length;
-    const mf=melody[(mi+bar)%melody.length], af=arp[(ai+bar*2)%arp.length];
-    const mpos=(pos%beat)/beat, apos=(pos%(beat/2))/(beat/2);
-    const menv=Math.sin(Math.PI*Math.min(1,mpos))*Math.sin(Math.PI*Math.min(1,mpos*1.15));
-    const aenv=Math.sin(Math.PI*Math.min(1,apos))*0.7;
-    const swell=.65+.35*Math.sin(2*Math.PI*t/17);
-    const pad=(Math.sin(2*Math.PI*r*t)+.65*Math.sin(2*Math.PI*m*t)+.45*Math.sin(2*Math.PI*h*t))*0.035*swell;
-    const sub=Math.sin(2*Math.PI*bass*t)*0.055;
-    const melodyTone=Math.sin(2*Math.PI*mf*t)*.075*menv;
-    const harmonic=Math.sin(2*Math.PI*(mf*2)*t)*.018*menv;
-    const arptone=Math.sin(2*Math.PI*af*t)*.026*aenv;
-    const pulsePhase=(t%beat);
-    const pulse=Math.exp(-18*pulsePhase)*Math.sin(2*Math.PI*62*t)*.055;
-    const noise=(Math.sin((i+seed)*12.9898)*43758.5453%1)*.006;
-    const texture=.012*Math.sin(2*Math.PI*(r*1.01)*t)*Math.sin(2*Math.PI*t/9);
-    const x=Math.tanh((pad+sub+melodyTone+harmonic+arptone+pulse+noise+texture)*1.45);
-    const pan=.12*Math.sin(2*Math.PI*t/23);
-    samples[i*2]=x*(1-pan); samples[i*2+1]=x*(1+pan);
+  // Motor musical local: genera una composición ambiental distinta por pista.
+  // No usa tonos aislados: combina progresión armónica, piano sintético por capas,
+  // pads, bajo muy suave, textura de aire/agua y variaciones lentas.
+  const sr=44100, dur=30, n=sr*dur, samples=new Float32Array(n*2);
+  const root=track.f1, third=track.f2, fifth=track.f3;
+  const seed=Math.abs(Math.floor(root*100 + third*10 + fifth)) % 1000;
+  const bpm=[46,48,50,52][seed%4], beat=60/bpm, bar=beat*4;
+  const scale=[1, 9/8, 6/5, 4/3, 3/2, 5/3, 9/5];
+  const progressions=[
+    [0,5,3,4,0,2,5,4],
+    [0,3,5,4,0,5,2,4],
+    [0,5,1,4,0,3,5,2],
+    [0,4,5,3,0,2,4,5]
+  ][seed%4];
+  const chordRoots=progressions.map(x=>root*scale[x]);
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  const midiToHz=m=>440*Math.pow(2,(m-69)/12);
+  const piano=(f,t,vel=1)=>{
+    const attack=Math.min(0.025,t);
+    const env=t<attack?t/attack:Math.exp(-3.2*Math.max(0,t-attack));
+    return vel*env*(0.72*Math.sin(2*Math.PI*f*t)+0.19*Math.sin(4*Math.PI*f*t)+0.07*Math.sin(6*Math.PI*f*t));
+  };
+  const pad=(f,t,vel=1)=>{
+    const e=(1-Math.exp(-t*1.8))*Math.exp(-t/13);
+    return vel*e*(0.55*Math.sin(2*Math.PI*f*t)+0.28*Math.sin(2*Math.PI*(f*1.002)*t)+0.17*Math.sin(2*Math.PI*(f*2)*t));
+  };
+  const notes=[];
+  for(let barIndex=0;barIndex<8;barIndex++){
+    const cr=chordRoots[barIndex];
+    const chord=[cr,cr*5/4,cr*3/2,cr*2];
+    for(let j=0;j<4;j++) notes.push({t:barIndex*bar+j*beat,f:chord[j%3],v:.12});
   }
-  // Fade in/out para evitar clicks.
-  const fade=sr*6;
-  for(let i=0;i<fade;i++){const g=i/fade;samples[i*2]*=g;samples[i*2+1]*=g;const j=n-1-i;const q=i/fade;samples[j*2]*=q;samples[j*2+1]*=q;}
+  // Melodía lenta: pocas notas, con pausas y registro alto para que respire.
+  const melodyRatios=[2, 2.25, 2.5, 3, 2.5, 2.25, 2, 1.875, 2.5, 3, 2.25, 2];
+  for(let k=0;k<12;k++){
+    const t=k*beat*2 + beat*.35;
+    const cr=chordRoots[Math.floor(k/1.5)%8];
+    notes.push({t,f:cr*melodyRatios[(k+seed)%melodyRatios.length],v:.16});
+  }
+  for(let i=0;i<n;i++){
+    const t=i/sr, barIndex=Math.min(7,Math.floor(t/bar)), within=t%bar;
+    let x=0;
+    // Pad armónico continuo con movimiento lento.
+    const cr=chordRoots[barIndex];
+    x += pad(cr,t%bar,.075)+pad(cr*5/4,t%bar,.055)+pad(cr*3/2,t%bar,.05);
+    // Bajo redondo, muy discreto, solo en cambios de compás.
+    const bassF=cr/2;
+    x += Math.sin(2*Math.PI*bassF*t)*(.035+.012*Math.sin(2*Math.PI*t/19));
+    // Piano y notas de melodía.
+    for(const note of notes){
+      const nt=t-note.t;
+      if(nt>=0 && nt<3.8) x += piano(note.f,nt,note.v);
+    }
+    // Brillo ambiental muy sutil, diferente por semilla.
+    const airF=6500+(seed%5)*420;
+    x += .004*Math.sin(2*Math.PI*airF*t)*(.5+.5*Math.sin(2*Math.PI*t/11));
+    // Textura tipo aire/agua determinista, sin ruido áspero.
+    const ripple=Math.sin(2*Math.PI*(0.17+seed*.003)*t)+.5*Math.sin(2*Math.PI*(0.31+seed*.004)*t);
+    x += .009*ripple*Math.sin(2*Math.PI*(220+seed%7*13)*t);
+    // Fade global y pequeños swells para sensación de mezcla continua.
+    const inG=Math.min(1,t/5), outG=Math.min(1,(dur-t)/7);
+    const swell=.78+.22*Math.sin(2*Math.PI*t/17 + seed);
+    x=Math.tanh(x*1.15)*inG*outG*swell;
+    const pan=.16*Math.sin(2*Math.PI*t/(21+seed%6));
+    samples[i*2]=clamp(x*(1-pan),-0.85,.85);
+    samples[i*2+1]=clamp(x*(1+pan),-0.85,.85);
+  }
   writeWav(wavPath,samples,sr,2);
 }
 
