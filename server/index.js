@@ -9,6 +9,7 @@ import { spawn } from "child_process";
 import cron from "node-cron";
 import ffmpegPath from "ffmpeg-static";
 import { InferenceClient } from "@huggingface/inference";
+import { Client as GradioClient, handle_file as gradioHandleFile } from "@gradio/client";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1387,109 +1388,158 @@ function buildAIGenPrompt(query){
 // GRATUITO: usamos la API REST oficial del Space de ACE-Step 1.5.
 // No usamos Replicate ni una API de Gradio: ACE-Step documenta /v1/music/generate
 // para crear la tarea, /v1/jobs/{job_id} para consultarla y /v1/audio para descargarla.
-const ACESTEP_HF_SPACE="https://ace-step-ace-step-v1-5.hf.space";
+const MUSICGEN_SPACE="facebook/MusicGen";
 
-async function aceStepHFGenerate(query, durationSeconds){
-  const payload={
-    caption:buildAIGenPrompt(query),
-    lyrics:"[Instrumental]",
-    audio_duration:Math.max(10,Math.min(600,Number(durationSeconds)||120)),
-    thinking:false,
-    model:"acestep-v15-turbo",
-    audio_format:"mp3",
-    batch_size:1,
-    inference_steps:8,
-    guidance_scale:1,
-    shift:3,
-    seed:-1
-  };
-  const r=await fetchWithTimeout(
-    ACESTEP_HF_SPACE+"/v1/music/generate",
-    {
-      method:"POST",
-      headers:{"Content-Type":"application/json","Accept":"application/json"},
-      body:JSON.stringify(payload)
-    },
-    30000
-  );
-  const text=await r.text();
-  let data={}; try{data=JSON.parse(text)}catch{}
-  if(!r.ok){ const detail=data?.detail??data?.error??data?.message??text.slice(0,700); const pretty=typeof detail==="string"?detail:JSON.stringify(detail); throw new Error(pretty||("ACE-Step HTTP "+r.status)); }
-  if(!data.job_id) throw new Error("ACE-Step no devolvió un job_id.");
-  return data.job_id;
-}
-
-async function aceStepHFWait(jobId, timeoutMs=18*60*1000){
-  const started=Date.now();
-  while(Date.now()-started<timeoutMs){
-    const r=await fetchWithTimeout(
-      ACESTEP_HF_SPACE+"/v1/jobs/"+encodeURIComponent(jobId),
-      {headers:{Accept:"application/json"}},
-      30000
-    );
-    const text=await r.text();
-    let data={}; try{data=JSON.parse(text)}catch{}
-    if(!r.ok) throw new Error(data?.detail||data?.error||text.slice(0,700)||("ACE-Step status HTTP "+r.status));
-    if(data.status==="succeeded") return data.result;
-    if(data.status==="failed") throw new Error(data.error||"ACE-Step terminó con un error.");
-    await new Promise(resolve=>setTimeout(resolve,7000));
-  }
-  throw new Error("ACE-Step tardó demasiado en responder. El Space gratuito puede estar despertando o saturado.");
-}
-
-function findAudioPath(value){
-  if(!value) return null;
+function findGradioFile(value){
+  if(!value)return null;
   if(typeof value==="string"){
-    if(/^https?:\/\//i.test(value)) return value;
-    if(/\.(wav|mp3|flac)(\?|$)/i.test(value)) return value;
+    if(/^https?:\\/\\//i.test(value))return value;
+    if(/\\.(wav|mp3|flac|ogg)(\\?|$)/i.test(value))return value;
     return null;
   }
   if(Array.isArray(value)){
-    for(const item of value){const u=findAudioPath(item);if(u)return u}
+    for(const x of value){const u=findGradioFile(x);if(u)return u}
     return null;
   }
   if(typeof value==="object"){
-    for(const k of ["first_audio_path","audio_paths","url","audio","path","file","value"]){
-      const u=findAudioPath(value[k]); if(u)return u;
+    for(const k of ["url","path","file","value"]){
+      const u=findGradioFile(value[k]);if(u)return u;
     }
-    for(const k of Object.keys(value)){const u=findAudioPath(value[k]);if(u)return u}
+    for(const k of Object.keys(value)){const u=findGradioFile(value[k]);if(u)return u}
   }
   return null;
 }
 
-async function downloadHFGeneratedAudio(result, stamp){
-  const audioPath=findAudioPath(result);
-  if(!audioPath) throw new Error("ACE-Step terminó pero no devolvió la ruta del audio.");
-  let audioUrl=audioPath;
-  if(!/^https?:\/\//i.test(audioUrl)){
-    audioUrl=ACESTEP_HF_SPACE+"/v1/audio?path="+encodeURIComponent(audioUrl);
-  }
-  const audio=await fetchWithTimeout(audioUrl,{headers:{Accept:"audio/*"}},120000);
-  if(!audio.ok) throw new Error("No se pudo descargar el audio generado por ACE-Step (HTTP "+audio.status+").");
-  const filename="relaxscape-ai-"+stamp+".mp3";
-  const out=path.join(MUSIC_DIR,filename);
-  const bytes=Buffer.from(await audio.arrayBuffer());
-  if(!bytes.length) throw new Error("ACE-Step devolvió un archivo vacío.");
-  fs.writeFileSync(out,bytes);
-  return {name:filename,url:"/media/music/"+encodeURIComponent(filename),provider:"ACE-Step 1.5 vía Hugging Face gratuito",generatedFromSearch:true,query:""};
+async function downloadToFile(url,out){
+  const r=await fetchWithTimeout(url,{headers:{Accept:"audio/*"}},60000);
+  if(!r.ok)throw new Error("No se pudo descargar el audio de referencia (HTTP "+r.status+").");
+  const b=Buffer.from(await r.arrayBuffer());
+  if(!b.length)throw new Error("El audio de referencia llegó vacío.");
+  fs.writeFileSync(out,b);
 }
 
-async function processFreeAceStepJob(job){
+async function buildMusicGenReference(query,workDir){
+  const key=process.env.FREESOUND_API_KEY;
+  if(!key)throw new Error("Falta FREESOUND_API_KEY para reutilizar los audios de Freesound.");
+  fs.mkdirSync(workDir,{recursive:true});
+  const queries=buildFreesoundQueries(query);
+  const all=[];
+  for(const searchQuery of queries){
+    const url=new URL("https://freesound.org/apiv2/search/");
+    url.searchParams.set("query",searchQuery);
+    url.searchParams.set("page_size","6");
+    url.searchParams.set("sort","score");
+    url.searchParams.set("fields","id,name,tags,username,license,url,duration,previews,description,avg_rating,num_downloads");
+    const r=await fetchWithTimeout(url.toString(),{
+      headers:{Authorization:"Token "+key,Accept:"application/json"}
+    },10000);
+    if(!r.ok)continue;
+    const data=await r.json();
+    for(const x of (data.results||[])){
+      const preview=x.previews?.["preview-hq-mp3"]||x.previews?.["preview-lq-mp3"];
+      if(preview)all.push({...x,preview});
+    }
+  }
+  const unique=[...new Map(all.map(x=>[x.id,x])).values()]
+    .sort((a,b)=>((b.avg_rating||0)*10+(b.num_downloads||0)/100000)-((a.avg_rating||0)*10+(a.num_downloads||0)/100000))
+    .slice(0,3);
+  if(!unique.length)throw new Error("Freesound no encontró audios utilizables para esta búsqueda.");
+
+  const files=[];
+  for(let i=0;i<unique.length;i++){
+    const f=path.join(workDir,"ref-"+i+".mp3");
+    await downloadToFile(unique[i].preview,f);
+    files.push(f);
+  }
+
+  const reference=path.join(workDir,"reference.wav");
+  const inputs=[];
+  const labels=[];
+  for(let i=0;i<files.length;i++){
+    inputs.push("-i",files[i]);
+    labels.push("["+i+":a]aresample=32000,atrim=0:10,asetpts=N/SR/TB[a"+i+"]");
+  }
+  const concat=labels.map((_,i)=>"[a"+i+"]").join("");
+  await runFfmpeg([
+    "-y",...inputs,
+    "-filter_complex",labels.join(";")+";"+concat+"concat=n="+files.length+":v=0:a=1[out]",
+    "-map","[out]","-ar","32000","-ac","1",reference
+  ]);
+  return {reference,sourceCount:unique.length,sourceNames:unique.map(x=>x.name)};
+}
+
+async function musicGenOne(prompt,referencePath){
+  const client=await GradioClient.connect(MUSICGEN_SPACE);
+  const result=await client.predict("/predict",[
+    prompt,
+    gradioHandleFile(referencePath)
+  ]);
+  const remote=findGradioFile(result?.data);
+  if(!remote)throw new Error("MusicGen terminó pero no devolvió un archivo de audio.");
+  return remote;
+}
+
+async function downloadMusicGenResult(remote,out){
+  let url=remote;
+  if(!/^https?:\\/\\//i.test(url)){
+    url="https://facebook-musicgen.hf.space"+(url.startsWith("/")?url:"/"+url);
+  }
+  await downloadToFile(url,out);
+}
+
+async function processFreeMusicGenJob(job){
+  const workDir=path.join(MUSIC_DIR,"musicgen-"+job.id);
   try{
     job.status="starting";
-    const jobId=await aceStepHFGenerate(job.query,120);
-    job.eventId=jobId;
+    const ref=await buildMusicGenReference(job.query,workDir);
     job.status="running";
-    const raw=await aceStepHFWait(jobId);
+    job.sourceNames=ref.sourceNames;
+
+    const prompts=[
+      buildAIGenPrompt(job.query)+" Instrumental only. Use the uploaded reference as a broad melodic and rhythmic influence. Recompose it into a coherent professional relaxing track. Variation A.",
+      buildAIGenPrompt(job.query)+" Instrumental only. Keep the requested genre, instruments and atmosphere strict. Use the uploaded reference as musical material and create a complementary second section. Variation B."
+    ];
+    const aiFiles=[];
+    for(let i=0;i<prompts.length;i++){
+      const remote=await musicGenOne(prompts[i],ref.reference);
+      const out=path.join(workDir,"ai-"+i+".wav");
+      await downloadMusicGenResult(remote,out);
+      aiFiles.push(out);
+    }
+
+    const core=path.join(workDir,"core.mp3");
+    await runFfmpeg([
+      "-y","-i",aiFiles[0],"-i",aiFiles[1],"-i",ref.reference,
+      "-filter_complex",
+      "[0:a]aresample=48000,volume=0.88[a0];[1:a]aresample=48000,volume=0.88[a1];[2:a]aresample=48000,volume=0.12,atrim=0:24,asetpts=N/SR/TB[ref];[a0][a1]concat=n=2:v=0:a=1[ai];[ai][ref]amix=inputs=2:duration=longest:normalize=1,alimiter=limit=0.96[out]",
+      "-map","[out]","-ar","48000","-ac","2",core
+    ]);
+
     const stamp=Date.now();
-    const result=await downloadHFGeneratedAudio(raw,stamp);
-    result.query=job.query;
-    job.result=result;
+    const filename="relaxscape-ai-"+stamp+".mp3";
+    const finalPath=path.join(MUSIC_DIR,filename);
+    await runFfmpeg([
+      "-y","-stream_loop","-1","-i",core,
+      "-t","60","-af","loudnorm=I=-16:TP=-1.5:LRA=11",
+      "-c:a","libmp3lame","-b:a","192k",finalPath
+    ]);
+    job.result={
+      name:filename,
+      url:"/media/music/"+encodeURIComponent(filename),
+      provider:"MusicGen vía Hugging Face gratuito",
+      generatedFromSearch:true,
+      query:job.query,
+      reusedFreesound:true,
+      sourceCount:ref.sourceCount,
+      sourceNames:ref.sourceNames
+    };
     job.status="succeeded";
   }catch(e){
     job.status="failed";
-    job.error=e.message;
-    console.error("[AI Music] ACE-Step gratuito ERROR",e.stack||e.message);
+    job.error=e?.message||String(e);
+    console.error("[AI Music] MusicGen gratuito ERROR",e.stack||e.message);
+  }finally{
+    try{fs.rmSync(workDir,{recursive:true,force:true})}catch{}
   }
 }
 
@@ -1503,8 +1553,8 @@ app.post("/api/generate-freesound-ai-mix", async (req,res)=>{
   const jobId="music-"+Date.now()+"-"+Math.random().toString(36).slice(2,9);
   const job={id:jobId,status:"queued",query:cleanQuery,durationHours:hours,result:null,error:null,createdAt:Date.now(),eventId:null};
   FREESOUND_MIX_JOBS.set(jobId,job);
-  processFreeAceStepJob(job);
-  return res.json({jobId,status:"queued",provider:"ACE-Step 1.5 vía Hugging Face Space gratuito"});
+  processFreeMusicGenJob(job);
+  return res.json({jobId,status:"queued",provider:"MusicGen vía Hugging Face Space gratuito"});
 });
 
 app.get("/api/generate-freesound-ai-mix-status", async (req,res)=>{
