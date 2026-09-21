@@ -187,15 +187,43 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 30000) {
 }
 
 async function generatePollinationsImageFile(prompt, index) {
+  // Pollinations actualmente puede exigir autenticación en su API. Si no hay
+  // una clave gratuita configurada, usamos Pexels como respaldo sin coste.
   const url = "https://gen.pollinations.ai/image/" + encodeURIComponent(prompt) +
     "?width=1920&height=1080&nologo=true&model=flux";
-  const r = await fetchWithTimeout(url, { headers: pollinationsHeaders() }, 30000);
-  if (!r.ok) throw new Error("Pollinations imagen HTTP " + r.status);
-  const type = r.headers.get("content-type") || "";
-  if (!type.includes("image")) throw new Error("Pollinations no devolvió una imagen.");
-  const filename = "ai-free-option-" + Date.now() + "-" + index + ".jpg";
-  fs.writeFileSync(path.join(IMAGE_DIR, filename), Buffer.from(await r.arrayBuffer()));
-  return { name: filename, url: "/media/images/" + encodeURIComponent(filename), ai: true, provider: "Pollinations" };
+  try {
+    const r = await fetchWithTimeout(url, { headers: pollinationsHeaders() }, 30000);
+    if (r.ok && (r.headers.get("content-type") || "").includes("image")) {
+      const filename = "ai-free-option-" + Date.now() + "-" + index + ".jpg";
+      fs.writeFileSync(path.join(IMAGE_DIR, filename), Buffer.from(await r.arrayBuffer()));
+      return { name: filename, url: "/media/images/" + encodeURIComponent(filename), ai: true, provider: "Pollinations" };
+    }
+    throw new Error("Pollinations imagen HTTP " + r.status);
+  } catch (pollError) {
+    const key = process.env.PEXELS_API_KEY;
+    if (!key) throw pollError;
+    const q = "peaceful relaxing " + prompt.replace(/[^a-zA-Z0-9áéíóúüñÁÉÍÓÚÜÑ ]/g, " ").slice(0, 100);
+    const r = await fetchWithTimeout(
+      "https://api.pexels.com/v1/search?query=" + encodeURIComponent(q) +
+      "&per_page=15&orientation=landscape&size=large",
+      { headers: { Authorization: key } },
+      20000
+    );
+    const data = await r.json().catch(() => ({}));
+    const photo = (data.photos || []).find(p => p.src?.large2x || p.src?.large);
+    if (!r.ok || !photo) throw pollError;
+    const img = await fetchWithTimeout(photo.src?.large2x || photo.src.large, {}, 20000);
+    if (!img.ok) throw pollError;
+    const filename = "free-landscape-option-" + Date.now() + "-" + index + ".jpg";
+    fs.writeFileSync(path.join(IMAGE_DIR, filename), Buffer.from(await img.arrayBuffer()));
+    return {
+      name: filename,
+      url: "/media/images/" + encodeURIComponent(filename),
+      ai: false,
+      provider: "Pexels",
+      fallback: true
+    };
+  }
 }
 
 async function generatePollinationsMusicFile(prompt, index) {
