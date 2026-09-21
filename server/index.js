@@ -456,83 +456,133 @@ function getAIMusicOptions(){
   return [];
 }
 
+async function generatePollinationsAIImage(prompt, index=0) {
+  const key = process.env.POLLINATIONS_API_KEY;
+  if (!key) throw new Error("Falta POLLINATIONS_API_KEY en Render para generar imágenes IA.");
+  const variations = [
+    "wide cinematic establishing shot, calm composition, soft natural light, photorealistic",
+    "wide cinematic landscape, different camera angle and depth, atmospheric perspective, photorealistic",
+    "wide cinematic landscape, foreground depth, subtle mist and realistic natural lighting, photorealistic",
+    "wide cinematic landscape, alternate time-of-day feeling, rich detail and peaceful atmosphere, photorealistic"
+  ];
+  const finalPrompt = String(prompt || "peaceful nature landscape") + ", " + variations[index % variations.length] + ", no people, no text, no logos, premium relaxation video background";
+  const url = "https://gen.pollinations.ai/image/" + encodeURIComponent(finalPrompt)
+    + "?model=flux&width=1920&height=1080&nologo=true&seed=" + (Date.now() + index * 7919);
+  const r = await fetch(url, { headers: { Authorization: "Bearer " + key } });
+  if (!r.ok) {
+    const raw = await r.text();
+    throw new Error("Pollinations Image HTTP " + r.status + ": " + raw.slice(0, 300));
+  }
+  const contentType = r.headers.get("content-type") || "image/jpeg";
+  const ext = contentType.includes("png") ? "png" : "jpg";
+  const filename = "ai-landscape-" + Date.now() + "-" + index + "." + ext;
+  fs.writeFileSync(path.join(IMAGE_DIR, filename), Buffer.from(await r.arrayBuffer()));
+  return {
+    name: filename,
+    url: "/media/images/" + encodeURIComponent(filename),
+    ai: true,
+    provider: "Pollinations AI",
+    fallback: false,
+    label: "Imagen IA " + (index + 1)
+  };
+}
+
 app.post("/api/ai-options", async (req, res) => {
-  const theme = String(req.body?.theme || "peaceful lake, misty mountains, soft dawn light").trim().slice(0, 120);
-  const musicPrompt = String(req.body?.musicPrompt || "very slow deep relaxation piano, soft felt piano as the main instrument, sparse emotional notes, long sustained chords, warm intimate tone, subtle deep ambient pad, very spacious reverb, extremely gentle dynamics, no drums, no percussion, no beat, no rhythmic pulse, no vocals").trim().slice(0, 220);
+  const theme = String(req.body?.theme || "peaceful lake, misty mountains, soft dawn light").trim().slice(0, 500);
+  const musicPrompt = String(req.body?.musicPrompt || "very slow deep relaxation ambient music, warm pads, spacious reverb, no drums, no percussion, no vocals").trim().slice(0, 220);
   const images = [];
   const imageErrors = [];
 
-  try {
-    const key = process.env.PEXELS_API_KEY;
-    if (!key) throw new Error("Falta PEXELS_API_KEY en Render.");
-    const r = await fetchWithTimeout(
-      "https://api.pexels.com/v1/search?query=" + encodeURIComponent(theme + " peaceful nature") +
-      "&per_page=30&orientation=landscape&size=large&locale=en-US",
-      { headers: { Authorization: key } }, 8000
-    );
-    if (!r.ok) throw new Error("Pexels HTTP " + r.status);
-    const data = await r.json();
-    const pool = (data.photos || [])
-      .filter(p => p.src?.large || p.src?.large2x)
-      .sort(() => Math.random() - 0.5)
-      .slice(0, 4);
-    for (let i=0;i<pool.length;i++) {
-      const photo=pool[i];
-      const src=photo.src?.large2x || photo.src?.large;
+  // Las 4 imágenes de esta sección son imágenes IA nuevas basadas en la búsqueda.
+  // Pexels queda únicamente como respaldo si Pollinations no está configurado o falla.
+  const pollinationsKey = process.env.POLLINATIONS_API_KEY;
+  if (pollinationsKey) {
+    for (let i = 0; i < 4; i++) {
       try {
-        const img=await fetchWithTimeout(src,{},12000);
-        if(!img.ok) continue;
-        const filename="pexels-ai-"+photo.id+"-"+Date.now()+"-"+i+".jpg";
-        fs.writeFileSync(path.join(IMAGE_DIR,filename),Buffer.from(await img.arrayBuffer()));
-        images.push({name:filename,url:"/media/images/"+encodeURIComponent(filename),sourceUrl:photo.url||src,ai:false,provider:"Pexels",fallback:false,label:"Paisaje gratuito "+(images.length+1)});
-      } catch(e) {
-        imageErrors.push("Foto Pexels "+photo.id+": "+e.message);
+        images.push(await generatePollinationsAIImage(theme, i));
+      } catch (e) {
+        imageErrors.push("Imagen IA " + (i + 1) + ": " + e.message);
       }
-      if(images.length>=4) break;
     }
-    if(images.length<4) imageErrors.push("Pexels devolvió "+images.length+" de 4 imágenes.");
-  } catch(e) {
-    imageErrors.push(e.message || "Error de Pexels");
+  } else {
+    imageErrors.push("Falta POLLINATIONS_API_KEY en Render.");
   }
 
-  if(images.length<4){
-    const needed=4-images.length;
-    for(let i=0;i<needed;i++){
-      const filename="relaxscape-local-landscape-"+Date.now()+"-"+i+".svg";
-      images.push(makeFallbackLandscape(filename,theme));
+  if (images.length < 4) {
+    try {
+      const key = process.env.PEXELS_API_KEY;
+      if (!key) throw new Error("Falta PEXELS_API_KEY en Render.");
+      const r = await fetchWithTimeout(
+        "https://api.pexels.com/v1/search?query=" + encodeURIComponent(theme + " peaceful nature") +
+        "&per_page=40&orientation=landscape&size=large&locale=en-US",
+        { headers: { Authorization: key } }, 10000
+      );
+      if (!r.ok) throw new Error("Pexels HTTP " + r.status);
+      const data = await r.json();
+      const pool = (data.photos || [])
+        .filter(p => p.src?.large2x || p.src?.large)
+        .sort(() => Math.random() - 0.5);
+      for (let i = 0; i < pool.length && images.length < 4; i++) {
+        const photo = pool[i];
+        try {
+          const src = photo.src?.large2x || photo.src?.large;
+          const img = await fetchWithTimeout(src, {}, 12000);
+          if (!img.ok) continue;
+          const filename = "pexels-ai-fallback-" + photo.id + "-" + Date.now() + "-" + i + ".jpg";
+          fs.writeFileSync(path.join(IMAGE_DIR, filename), Buffer.from(await img.arrayBuffer()));
+          images.push({
+            name: filename,
+            url: "/media/images/" + encodeURIComponent(filename),
+            sourceUrl: photo.url || src,
+            ai: false,
+            provider: "Pexels fallback",
+            fallback: true,
+            label: "Foto respaldo " + (images.length + 1)
+          });
+        } catch (e) {
+          imageErrors.push("Foto respaldo " + photo.id + ": " + e.message);
+        }
+      }
+    } catch (e) {
+      imageErrors.push("Pexels fallback: " + e.message);
     }
-    imageErrors.push("Se completaron los 4 paisajes con fondos locales porque Pexels no devolvió suficientes resultados.");
   }
 
-  // Las imágenes se devuelven inmediatamente. La música se prepara en segundo plano
-  // para que Crear IA no quede bloqueado mientras se renderizan las 4 previas.
-  // Cada pulsación de búsqueda debe crear 4 archivos NUEVOS.
-  // Nunca reutilizamos una generación anterior aunque la descripción sea igual.
+  if (images.length < 4) {
+    const needed = 4 - images.length;
+    for (let i = 0; i < needed; i++) {
+      const filename = "relaxscape-local-landscape-" + Date.now() + "-" + i + ".svg";
+      images.push(makeFallbackLandscape(filename, theme));
+    }
+    imageErrors.push("Se completaron las opciones restantes con un fondo local.");
+  }
+
   const generationId = ++aiMusicGenerationId;
   aiMusicTracks = aiTracksForBackground(musicPrompt, generationId);
-  aiMusicTracks.forEach(t => { try { fs.rmSync(path.join(MUSIC_DIR,t.file), {force:true}); } catch {} });
+  aiMusicTracks.forEach(t => { try { fs.rmSync(path.join(MUSIC_DIR, t.file), { force:true }); } catch {} });
   aiMusicErrors = [];
   aiMusicPreparing = true;
   const currentTracks = aiMusicTracks;
   ensureBuiltinMusic(currentTracks)
-    .catch(e=>{
+    .catch(e => {
       if (generationId === aiMusicGenerationId) {
-        aiMusicErrors.push(e.message||String(e));
-        console.error("[AI Music] preparación:",e.stack||e.message);
+        aiMusicErrors.push(e.message || String(e));
+        console.error("[AI Music] preparación:", e.stack || e.message);
       }
     })
-    .finally(()=>{
-      if (generationId === aiMusicGenerationId) aiMusicPreparing=false;
+    .finally(() => {
+      if (generationId === aiMusicGenerationId) aiMusicPreparing = false;
     });
-  const initialMusic=getAIMusicOptions();
+
+  const initialMusic = getAIMusicOptions();
   res.json({
     images,
-    music:initialMusic,
-    musicReady:initialMusic.length>=4,
-    musicPreparing:aiMusicPreparing,
+    music: initialMusic,
+    musicReady: initialMusic.length >= 4,
+    musicPreparing: aiMusicPreparing,
     imageErrors,
-    musicErrors:aiMusicErrors.slice(),
-    provider:"RelaxScape Free"
+    musicErrors: aiMusicErrors.slice(),
+    provider: "Pollinations Images + ElevenLabs Music"
   });
 });
 
