@@ -10,6 +10,7 @@
 <aside>
   <nav>
     <button class="nav active" data-tab="dashboard">⌂ <span>Inicio</span></button>
+    <button class="nav" data-tab="ai">✨ <span>Crear IA</span></button>
     <button class="nav" data-tab="landscapes">◉ <span>Paisajes</span></button>
     <button class="nav" data-tab="music">♫ <span>Música</span></button>
     <button class="nav" data-tab="schedule">◷ <span>Programación</span></button>
@@ -19,7 +20,7 @@
 </aside>
 <main>
 <section id="dashboard" class="tab active">
-  <div class="hero"><div><p class="eyebrow">CENTRO DE CONTROL</p><h1>Tu próximo vídeo,<br><em>sin complicaciones.</em></h1><p class="sub">Crea paisajes relajantes en 1 o 2 horas, revisa el resultado y descarga el MP4.</p></div><div class="hero-art"><div class="moon"></div><div class="mountains"></div></div></div>
+  <div class="hero"><div><p class="eyebrow">CENTRO DE CONTROL</p><h1>Tu próximo vídeo,<br><em>sin complicaciones.</em></h1><p class="sub">Crea paisajes relajantes, genera música con IA y combina tus recursos en vídeos largos.</p></div><div class="hero-art"><div class="moon"></div><div class="mountains"></div></div></div>
   <div class="stats"><div><small>VÍDEOS GENERADOS</small><b id="statVideos">0</b></div><div><small>PROGRAMACIÓN</small><b id="statSchedule">Diaria</b></div><div><small>DURACIÓN</small><b>1–2 h</b></div></div>
   <div class="builder">
     <div class="builder-head"><div><span class="step">01</span><div><h2>Crear vídeo</h2><p>Configura paisaje, música y duración.</p></div></div><span class="badge">MP4 · 1080p</span></div>
@@ -30,6 +31,25 @@
       <div class="field"><label>CALIDAD</label><div class="selectbox disabled">Full HD · 1920×1080</div></div>
     </div>
     <div class="builder-bottom"><div id="builderStatus">Selecciona tus recursos para comenzar.</div><button id="generate" class="primary">Generar vídeo <b>→</b></button></div>
+  </div>
+</section>
+
+<section id="ai" class="tab">
+  <div class="section-head"><div><p class="eyebrow">INTELIGENCIA ARTIFICIAL</p><h2>Crear contenido</h2></div><span class="badge">Veo 3.1 + Lyria 3.5</span></div>
+  <div class="ai-card">
+    <label>DESCRIBE TU CONTENIDO</label>
+    <textarea id="aiPrompt" class="text area" placeholder="Ej.: Un lago tranquilo entre montañas al amanecer, niebla suave sobre el agua, movimiento de cámara lento, ambiente cinematográfico y relajante."></textarea>
+    <div class="ai-grid">
+      <div><label>VÍDEO</label><select id="aiAspect"><option value="16:9">16:9 horizontal</option><option value="9:16">9:16 vertical</option></select></div>
+      <div><label>DURACIÓN</label><select id="aiDuration"><option value="1">1 hora</option><option value="2">2 horas</option></select></div>
+    </div>
+    <p class="ai-note">Al elegir «Vídeo + música», RelaxScape genera automáticamente música instrumental relajante y la mantiene durante toda la duración seleccionada.</p>
+    <div class="ai-actions">
+      <button id="aiVideo" class="primary">🎬 Generar vídeo IA</button>
+      <button id="aiMusic" class="primary">🎵 Generar música IA</button>
+      <button id="aiBoth" class="primary">✨ Generar vídeo + música</button>
+    </div>
+    <div id="aiStatus" class="ai-status">Necesitas configurar GEMINI_API_KEY en Render para activar Veo y Lyria.</div>
   </div>
 </section>
 
