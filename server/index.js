@@ -389,25 +389,21 @@ async function ensureBuiltinMusic(tracks=BUILTIN_MUSIC){
       fs.rmSync(out,{force:true});
       console.log("[Music v14] Generando:",track.label,track.file);
       try{
-        const generated=await generateLyriaMusicFile(track.musicProfile || track.label, track.variant||1);
-        const generatedPath=path.join(MUSIC_DIR, generated.name);
-        fs.copyFileSync(generatedPath, out);
-        fs.rmSync(generatedPath,{force:true});
-        console.log("[Lyria 3.5] LISTA:",track.file);
+        const alt=await generatePollinationsMusicFile(track.musicProfile || track.label, track.variant||1);
+        const altPath=path.join(MUSIC_DIR,alt.name);
+        fs.copyFileSync(altPath,out);
+        fs.rmSync(altPath,{force:true});
+        console.log("[ElevenLabs Music v2.5/Pollinations] LISTA:",track.file);
       }catch(e){
-        // IMPORTANTE: no ocultamos un fallo de Lyria detrás del mismo sintetizador local.
-        // Primero intentamos otro generador de audio externo con el MISMO briefing único.
-        // Así, si Lyria no está disponible, las cuatro opciones siguen siendo composiciones
-        // generadas de forma independiente y no cuatro variaciones del mismo timbre local.
-        console.warn("[Lyria 3.5] No disponible:",e.message);
+        console.warn("[ElevenLabs Music v2.5/Pollinations] No disponible:",e.message);
         try{
-          const alt=await generatePollinationsMusicFile(track.musicProfile || track.label, track.variant||1);
-          const altPath=path.join(MUSIC_DIR,alt.name);
-          fs.copyFileSync(altPath,out);
-          fs.rmSync(altPath,{force:true});
-          console.log("[Pollinations] LISTA:",track.file);
-        }catch(altError){
-          console.warn("[Pollinations] No disponible, usando motor local diferenciado:",altError.message);
+          const generated=await generateLyriaMusicFile(track.musicProfile || track.label, track.variant||1);
+          const generatedPath=path.join(MUSIC_DIR, generated.name);
+          fs.copyFileSync(generatedPath, out);
+          fs.rmSync(generatedPath,{force:true});
+          console.log("[Lyria 3.5] LISTA:",track.file);
+        }catch(lyriaError){
+          console.warn("[Lyria 3.5] No disponible, usando motor local diferenciado:",lyriaError.message);
           makeCompositionWav(track,wav);
           await runFfmpeg(["-y","-i",wav,"-t","12","-af","highpass=f=28,lowpass=f=16500,acompressor=threshold=-22dB:ratio=2:attack=35:release=220:makeup=1,alimiter=limit=0.92","-c:a","libmp3lame","-b:a","192k","-ar","44100",out]);
         }
@@ -561,16 +557,23 @@ async function generatePollinationsImageFile(prompt, index) {
 }
 
 async function generatePollinationsMusicFile(prompt, index) {
-  const url = "https://gen.pollinations.ai/audio/" + encodeURIComponent(prompt);
-  const r = await fetchWithTimeout(url, { headers: pollinationsHeaders() }, 12000);
-  if (!r.ok) throw new Error("Pollinations música HTTP " + r.status);
+  const seed = Math.floor(Math.random()*4294967295);
+  const params = new URLSearchParams({
+    model: "elevenlabs/music-v2.5",
+    duration: "30",
+    instrumental: "true",
+    seed: String(seed),
+    response_format: "mp3"
+  });
+  const url = "https://gen.pollinations.ai/audio/" + encodeURIComponent(String(prompt).slice(0,900)) + "?" + params.toString();
+  const r = await fetchWithTimeout(url, { headers: pollinationsHeaders() }, 60000);
+  if (!r.ok) throw new Error("Pollinations Music HTTP " + r.status);
   const type = r.headers.get("content-type") || "";
-  if (!type.includes("audio") && !type.includes("mpeg") && !type.includes("octet-stream")) {
-    throw new Error("Pollinations no devolvió audio.");
-  }
-  const filename = "ai-free-music-" + Date.now() + "-" + index + ".mp3";
+  if (!type.includes("audio") && !type.includes("mpeg") && !type.includes("octet-stream")) throw new Error("Pollinations no devolvió audio musical.");
+  const filename = "ai-free-music-" + Date.now() + "-" + index + "-" + seed + ".mp3";
   fs.writeFileSync(path.join(MUSIC_DIR, filename), Buffer.from(await r.arrayBuffer()));
-  return { name: filename, url: "/media/music/" + encodeURIComponent(filename), ai: true, provider: "Pollinations" };
+  if (fs.statSync(path.join(MUSIC_DIR, filename)).size < 4096) throw new Error("Pollinations devolvió un audio vacío.");
+  return { name: filename, url: "/media/music/" + encodeURIComponent(filename), ai: true, provider: "ElevenLabs Music v2.5 vía Pollinations", generated: true, fallback: false, seed };
 }
 
 
