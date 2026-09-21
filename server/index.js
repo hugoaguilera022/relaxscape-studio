@@ -89,7 +89,7 @@ function writeWav(file, samples, sampleRate=44100, channels=2){
 function makeCompositionWav(track, wavPath){
   // Generamos solo 30 s de material original. Después FFmpeg lo repite para
   // formar la previa de 3 min. Así Render no necesita reservar ~100 MB por pista.
-  const sr=44100, dur=30, n=sr*dur, samples=new Float32Array(n*2);
+  const sr=44100, dur=20, n=sr*dur, samples=new Float32Array(n*2);
   const r=track.f1, m=track.f2, h=track.f3, bass=Math.max(55,r*.5), beat=60/56;
   const melody=[r*2,m*2,h*2,m*2,r*2,h*2,m*2,r*1.5,m*2,h*2,r*2,m*2,h*2,m*2,r*2,h*1.5];
   const arp=[r*2.5,m*2.5,h*2.5,m*3,r*3,h*3,m*2.5,r*2.5];
@@ -299,43 +299,43 @@ app.post("/api/ai-options", async (req, res) => {
         theme + " misty forest"
       ];
 
-      // No bloqueamos toda la petición por una búsqueda lenta de Pexels.
-      // Tomamos la primera respuesta válida y descargamos hasta 4 fotos.
-      for (const q of queries) {
-        if (images.length >= 4) break;
-        try {
-          const r = await fetchWithTimeout(
-            "https://api.pexels.com/v1/search?query=" + encodeURIComponent(q) +
-            "&per_page=12&orientation=landscape&size=large&locale=en-US",
-            { headers: { Authorization: key } }, 12000
-          );
-          if (!r.ok) {
-            imageErrors.push("Pexels HTTP " + r.status);
-            continue;
-          }
+      // Una sola búsqueda + descargas en paralelo: evitamos que Render agote
+      // el tiempo de la petición por hacer 4 búsquedas y 4 descargas en cadena.
+      try {
+        const r = await fetchWithTimeout(
+          "https://api.pexels.com/v1/search?query=" + encodeURIComponent(queries[0]) +
+          "&per_page=12&orientation=landscape&size=large&locale=en-US",
+          { headers: { Authorization: key } }, 8000
+        );
+        if (!r.ok) {
+          imageErrors.push("Pexels HTTP " + r.status);
+        } else {
           const data = await r.json();
-          for (const photo of (data.photos || [])) {
-            if (images.length >= 4) break;
+          const candidates = (data.photos || [])
+            .filter(p => (p.src?.large2x || p.src?.large) && p.width >= 1280 && p.height >= 720)
+            .sort(() => Math.random() - 0.5).slice(0, 2);
+          const results = await Promise.allSettled(candidates.map(async (photo, i) => {
             const src = photo.src?.large2x || photo.src?.large;
-            if (!src || photo.width < 1280 || photo.height < 720) continue;
-            try {
-              const img = await fetchWithTimeout(src, {}, 12000);
-              if (!img.ok) continue;
-              const filename = "free-ai-option-" + Date.now() + "-" + (images.length + 1) + ".jpg";
-              fs.writeFileSync(path.join(IMAGE_DIR, filename), Buffer.from(await img.arrayBuffer()));
-              images.push({
-                name: filename,
-                url: "/media/images/" + encodeURIComponent(filename),
-                ai: false,
-                provider: "Pexels",
-                fallback: true,
-                label: "Paisaje gratuito " + (images.length + 1)
-              });
-            } catch {}
+            const img = await fetchWithTimeout(src, {}, 8000);
+            if (!img.ok) throw new Error("Pexels foto HTTP " + img.status);
+            const filename = "free-ai-option-" + Date.now() + "-" + (i + 1) + ".jpg";
+            fs.writeFileSync(path.join(IMAGE_DIR, filename), Buffer.from(await img.arrayBuffer()));
+            return {
+              name: filename,
+              url: "/media/images/" + encodeURIComponent(filename),
+              ai: false,
+              provider: "Pexels",
+              fallback: true,
+              label: "Paisaje gratuito " + (i + 1)
+            };
+          }));
+          for (const result of results) {
+            if (result.status === "fulfilled") images.push(result.value);
+            else imageErrors.push(result.reason?.message || "No se pudo descargar una foto.");
           }
-        } catch (e) {
-          imageErrors.push(e.message || "Error de Pexels");
         }
+      } catch (e) {
+        imageErrors.push(e.message || "Error de Pexels");
       }
       if (!images.length) imageErrors.push("Pexels no devolvió imágenes.");
     } else {
