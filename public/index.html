@@ -11,6 +11,7 @@
   <nav>
     <button class="nav active" data-tab="dashboard">⌂ <span>Inicio</span></button>
     <button class="nav" data-tab="ai">✨ <span>Crear IA</span></button>
+    <button class="nav" data-tab="youtube">▶ <span>YouTube → Vídeo</span></button>
     <button class="nav" data-tab="landscapes">◉ <span>Paisajes</span></button>
     <button class="nav" data-tab="music">♫ <span>Música</span></button>
     <button class="nav" data-tab="schedule">◷ <span>Programación</span></button>
@@ -56,6 +57,17 @@
   </div>
 </section>
 
+<section id="youtube" class="tab">
+  <div class="section-head"><div><p class="eyebrow">YOUTUBE → RELAX VIDEO</p><h2>Convierte tu audio en un vídeo relajante</h2><p class="sub">Pega el enlace de YouTube de un vídeo que tengas derecho a utilizar, añade su archivo de audio y RelaxScape creará el paisaje IA y el vídeo manteniendo ese audio.</p></div><span class="badge">FLUX · AUDIO ORIGINAL · 1 HORA</span></div>
+  <div class="ai-builder">
+    <div class="prompt-card"><label for="ytUrl">ENLACE DE YOUTUBE</label><div class="prompt-search"><input id="ytUrl" class="text" placeholder="https://www.youtube.com/watch?v=..."><button id="ytAnalyze" class="search-btn" type="button">⌕</button></div><small id="ytMeta" class="note">Solo procesa contenido que tengas derecho a utilizar.</small></div>
+    <div class="prompt-card"><label for="ytAudio">ARCHIVO DE AUDIO DEL VÍDEO</label><input id="ytAudio" class="text" type="file" accept="audio/*"><small class="note">Sube el audio original que quieres conservar. Así evitamos descargar contenido de YouTube directamente.</small></div>
+    <div class="prompt-card"><label for="ytVisualPrompt">DESCRIPCIÓN VISUAL</label><div class="prompt-search"><textarea id="ytVisualPrompt" class="text" rows="3" placeholder="Ej.: lago nocturno, montañas, niebla suave, luz de luna..."></textarea><button id="ytGenerate" class="primary small" type="button">✨ Crear vídeo</button></div></div>
+    <div id="ytStatus" class="builder-bottom">Pega el enlace, sube el audio y describe el ambiente visual.</div>
+    <div id="ytResult" class="hidden"></div>
+  </div>
+</section>
+
 <section id="landscapes" class="tab"><div class="section-head"><div><p class="eyebrow">BIBLIOTECA VISUAL</p><h2>Elige tu paisaje</h2><p class="sub">Fotos Full HD de Pexels para crear vídeos relajantes.</p></div><div class="actions"><button id="loadPexels" class="primary small">↻ Buscar nuevos paisajes</button><label class="button">＋ Subir imagen<input id="imageInput" type="file" accept="image/*" hidden></label><button id="aiImage" class="primary small">✨ Crear con IA</button></div></div><div class="category-chips" id="landscapeCategories"><button data-q="mountain lake peaceful">🏔️ Montañas</button><button data-q="calm ocean sea">🌊 Océano</button><button data-q="misty forest">🌲 Bosque</button><button data-q="rain nature">🌧️ Lluvia</button><button data-q="sunset landscape">🌅 Atardecer</button><button data-q="peaceful lake">🏞️ Lago</button><button data-q="clouds sky">☁️ Nubes</button><button data-q="snow mountains">❄️ Nieve</button></div><input id="prompt" class="text" placeholder="Ej.: lago alpino al amanecer, bosque, océano, montaña…"><div id="imageGrid" class="gallery"></div></section>
 
 <section id="music" class="tab"><div class="section-head"><div><p class="eyebrow">BIBLIOTECA SONORA</p><h2>Música relajante</h2><p class="sub">24 pistas ambientales de distintos estilos. Puedes escucharlas y crear mezclas originales de 1 o 2 horas combinando toda la biblioteca.</p></div><label class="button">＋ Subir música<input id="musicInput" type="file" accept="audio/*" hidden></label></div><div class="mix-tools"><button id="mix1h" class="primary small">🎧 Crear mezcla 1 hora</button><button id="mix2h" class="ghost small">🌙 Crear mezcla 2 horas</button><span id="mixStatus"></span></div><div class="music-filters" id="musicFilters"><button class="active" data-cat="Todas">Todas</button><button data-cat="Sueño">😴 Sueño</button><button data-cat="Meditación">🧘 Meditación</button><button data-cat="Naturaleza">🌿 Naturaleza</button><button data-cat="Relax">✨ Relax</button><button data-cat="Concentración">🎯 Concentración</button></div><div id="musicList" class="track-grid"></div></section>
@@ -69,6 +81,7 @@
 </div>
 <footer>RelaxScape Studio · Vídeos proporcionados por <a href="https://www.pexels.com/" target="_blank" rel="noopener">Pexels</a> · Usa imágenes y música con derechos de uso adecuados.</footer>
 <script src="/app.js?v=20260922-02"></script>
+<script src="/youtube.js?v=20260922-01"></script>
 <script>
 document.addEventListener("click",function(e){const b=e.target.closest(".nav");if(!b)return;document.querySelectorAll(".nav").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));const tab=document.getElementById(b.dataset.tab);if(tab)tab.classList.add("active");if(b.dataset.tab==="ai"&&typeof window.ensureAIOptions==="function")window.ensureAIOptions();});
 </script>
