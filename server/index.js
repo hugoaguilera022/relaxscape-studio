@@ -131,7 +131,7 @@ async function generatePexelsVideo(prompt, aspectRatio, key, durationHours = 1) 
   if (![1, 2].includes(hours)) throw new Error("La duración debe ser de 1 o 2 horas.");
 
   const search = await fetch(
-    `https://api.pexels.com/v1/videos/search?query=${encodeURIComponent(query)}&per_page=10&orientation=${aspectRatio === "9:16" ? "portrait" : "landscape"}&size=small&locale=en-US`,
+    `https://api.pexels.com/v1/videos/search?query=${encodeURIComponent(query)}&per_page=10&orientation=${aspectRatio === "9:16" ? "portrait" : "landscape"}&size=large&locale=en-US`,
     { headers: { Authorization: key } }
   );
   const data = await search.json();
@@ -139,16 +139,23 @@ async function generatePexelsVideo(prompt, aspectRatio, key, durationHours = 1) 
   const videos = (data.videos || []).filter(v => v.video_files?.length && Number(v.duration || 0) >= 5);
   if (!videos.length) throw new Error("Pexels no encontró un vídeo. Prueba: océano, bosque, lluvia o montañas.");
 
-  // Para que funcione rápido en Render, usamos un único clip y lo repetimos.
-  const video = videos[0];
-  const files = [...video.video_files].sort((a,b) => {
-    const wanted = f => aspectRatio === "9:16" ? f.height > f.width : f.width >= f.height;
-    return (wanted(b) ? 100000 : 0) - (wanted(a) ? 100000 : 0)
-      - Math.abs((b.width || 0) - (aspectRatio === "9:16" ? 720 : 1280))
-      + Math.abs((a.width || 0) - (aspectRatio === "9:16" ? 720 : 1280));
+  // Elegimos el archivo de mayor calidad compatible con el formato solicitado.
+  // Priorizamos 1080p; si Pexels ofrece 4K, también puede ser seleccionado.
+  const video = [...videos].sort((a, b) => Number(b.duration || 0) - Number(a.duration || 0))[0];
+  const targetWidth = aspectRatio === "9:16" ? 1080 : 1920;
+  const targetHeight = aspectRatio === "9:16" ? 1920 : 1080;
+  const compatible = video.video_files.filter(f => f.link && f.width && f.height);
+  const files = [...compatible].sort((a,b) => {
+    const portraitA = a.height > a.width;
+    const portraitB = b.height > b.width;
+    const targetPortrait = aspectRatio === "9:16";
+    const orientationPenaltyA = portraitA === targetPortrait ? 0 : 10000000;
+    const orientationPenaltyB = portraitB === targetPortrait ? 0 : 10000000;
+    const resolutionPenaltyA = Math.abs((a.width || 0) - targetWidth) + Math.abs((a.height || 0) - targetHeight);
+    const resolutionPenaltyB = Math.abs((b.width || 0) - targetWidth) + Math.abs((b.height || 0) - targetHeight);
+    return (orientationPenaltyA + resolutionPenaltyA) - (orientationPenaltyB + resolutionPenaltyB);
   });
   const url = files[0]?.link;
-  if (!url) throw new Error("Pexels no devolvió un archivo de vídeo descargable.");
 
   const stamp = Date.now();
   const source = path.join(VIDEO_DIR, `pexels-${stamp}-source.mp4`);
