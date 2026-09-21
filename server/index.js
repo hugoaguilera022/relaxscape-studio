@@ -88,9 +88,9 @@ async function ensureBuiltinMusic(tracks = BUILTIN_MUSIC) {
         "-f","lavfi","-i",`sine=frequency=${track.f3}:sample_rate=44100:duration=${dur}`,
         "-f","lavfi","-i",`anoisesrc=color=brown:amplitude=0.025:sample_rate=44100:duration=${dur}`,
         "-filter_complex",
-        "[0:a]volume=0.075,tremolo=f=0.045:d=0.25,lowpass=f=900[a0];" +
-        "[1:a]volume=0.055,tremolo=f=0.031:d=0.35,lowpass=f=1400[a1];" +
-        "[2:a]volume=0.040,tremolo=f=0.021:d=0.45,lowpass=f=1900[a2];" +
+        "[0:a]volume=0.075,tremolo=f=0.045:depth=0.25,lowpass=f=900[a0];" +
+        "[1:a]volume=0.055,tremolo=f=0.031:depth=0.35,lowpass=f=1400[a1];" +
+        "[2:a]volume=0.040,tremolo=f=0.021:depth=0.45,lowpass=f=1900[a2];" +
         "[3:a]highpass=f=35,lowpass=f=700,volume=0.55[a3];" +
         "[a0][a1][a2][a3]amix=inputs=4:duration=longest:normalize=0," +
         "aecho=0.8:0.72:850|1350:0.14|0.09," +
