@@ -249,8 +249,24 @@ function renderAICreator(){
         if(x)downloadExternalMusic(x);
       });
     }else if(S.aiMusic.length){
-      mg.innerHTML=S.aiMusic.map((x,i)=>'<div class="ai-track '+(S.music?.url===x.url?"selected":"")+'" data-url="'+x.url+'" data-name="'+x.name+'"><div><b>♫ Música original '+(i+1)+'</b><small>Previa · melodía · ambiente · texturas</small></div><div class="ai-track-actions"><audio controls preload="metadata" src="'+x.url+(x.url.includes("?")?"&":"?")+"fresh="+encodeURIComponent(x.name+"-"+Date.now())+'"></audio><a class="preview-download" href="'+x.url+'" download>↓ Descargar previa</a></div></div>').join("");
-      $$("#aiMusicList .ai-track").forEach(e=>e.onclick=ev=>{if(ev.target.tagName==="AUDIO")return;S.music={url:e.dataset.url,name:e.dataset.name};renderAICreator()});
+      mg.innerHTML='<div class="music-options-title"><b>🎵 3 propuestas · 1 minuto cada una</b><small>Escucha las tres y selecciona la que quieras convertir en la versión final.</small></div>'+S.aiMusic.map((x,i)=>'<div class="ai-track '+(S.music?.url===x.url?"selected":"")+'" data-url="'+x.url+'" data-name="'+x.name+'"><div><b>♫ Propuesta '+(i+1)+'</b><small>Previa de 1 minuto · interpretación diferente de tu búsqueda</small></div><div class="ai-track-actions"><audio controls preload="metadata" src="'+x.url+(x.url.includes("?")?"&":"?")+"fresh="+encodeURIComponent(x.name+"-"+Date.now())+'"></audio><button type="button" class="primary" data-select-ai="'+x.url+'">✓ Seleccionar</button></div></div>').join("")+'<div class="mixer-duration"><label>Duración final <select id="aiFinalHours"><option value="1">1 hora</option><option value="2">2 horas</option><option value="3">3 horas</option><option value="4">4 horas</option><option value="6">6 horas</option><option value="8">8 horas</option></select></label><button type="button" id="createFinalAIMusic" class="primary" '+(!S.music?"disabled":"")+'>🎵 Crear versión final</button></div>';
+      $("#aiMusicList .ai-track").forEach(e=>e.onclick=ev=>{if(ev.target.tagName==="AUDIO"||ev.target.closest("[data-select-ai]"))return;S.music={url:e.dataset.url,name:e.dataset.name,previewOnly:true,originalMusicPrompt:($("#aiMusicPrompt")?.value||"").trim()};renderAICreator()});
+      $("#aiMusicList [data-select-ai]").forEach(b=>b.onclick=ev=>{ev.stopPropagation();const x=S.aiMusic.find(v=>v.url===b.dataset.selectAi);if(x){S.music={...x,previewOnly:true,originalMusicPrompt:($("#aiMusicPrompt")?.value||"").trim()};renderAICreator()}});
+      const finalBtn=$("#createFinalAIMusic");
+      if(finalBtn)finalBtn.onclick=async()=>{
+        if(!S.music)return;
+        finalBtn.disabled=true;
+        const hours=Number($("#aiFinalHours")?.value||1);
+        const st=$("#aiSelectionStatus");
+        if(st)st.textContent="🎵 Creando la versión final de "+hours+" hora"+(hours===1?"":"s")+"…";
+        try{
+          const d=await api("/api/music-preview-final",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({music:S.music.url,musicPrompt:S.music.originalMusicPrompt||($("#aiMusicPrompt")?.value||"").trim(),durationHours:hours})});
+          S.music={...d,generatedFromSearch:true,durationHours:hours};
+          if(st)st.textContent="✓ Música final de "+hours+" hora"+(hours===1?"":"s")+" lista.";
+          renderAICreator();update();picker();
+        }catch(e){if(st)st.textContent="No se pudo crear la versión final: "+e.message}
+        finally{finalBtn.disabled=false}
+      };
     }else{
       mg.innerHTML='<div class="empty">♫ Busca una música o un sonido para seleccionar las fuentes de tu mezcla.</div>';
     }
