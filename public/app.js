@@ -72,7 +72,7 @@ async function generateAIMusicOnly(){
   S.aiLoading=true; S.aiMusic=[]; S.music=null;
   const status=$( "#aiSelectionStatus"), mg=$( "#aiMusicList");
   if(status)status.textContent="♫ Analizando tu búsqueda y generando 4 versiones profesionales con IA…";
-  if(mg)mg.innerHTML='<div class="empty">♫ Eleven Music está componiendo 4 versiones distintas a partir de tu búsqueda…</div>';
+  if(mg)mg.innerHTML='<div class="empty">♫ La IA local está componiendo 4 versiones distintas a partir de tu búsqueda…</div>';
   try{
     await api("/api/ai-music",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({musicPrompt:prompt})});
     await waitForAIMusic();
@@ -80,7 +80,7 @@ async function generateAIMusicOnly(){
     if(status)status.textContent="✓ 4 versiones musicales generadas. Escucha las previas y elige una.";
   }catch(e){
     if(status)status.textContent="Error de música: "+e.message;
-    if(mg)mg.innerHTML='<div class="empty">No se pudo generar la música.<br><small>'+e.message+'</small><br><small>Comprueba ELEVENLABS_API_KEY en Render.</small></div>';
+    if(mg)mg.innerHTML='<div class="empty">No se pudo generar la música.<br><small>'+e.message+'</small><br><small>La música IA funciona con el motor gratuito integrado; no necesita ElevenLabs.</small></div>';
   }finally{S.aiLoading=false;renderAICreator()}
 }
 
@@ -102,7 +102,7 @@ async function waitForAIMusic(){
     if(status){
       const count=S.aiMusic.length;
       status.textContent=count
-        ? "♫ "+count+"/4 versiones listas. Eleven Music sigue generando las restantes…"
+        ? "♫ "+count+"/4 versiones listas. La IA sigue generando las restantes…"
         : "♫ Generando 4 versiones profesionales con IA…";
     }
     await new Promise(r=>setTimeout(r,3000));
