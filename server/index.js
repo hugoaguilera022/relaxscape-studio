@@ -1508,12 +1508,12 @@ function createFreesoundAiJob(query){
 
 
 // -------------------- FREESOUND SELECTED MIX --------------------
-// The user chooses the individual Freesound sources first. This endpoint only
-// mixes those selected previews; it does not alter image generation or search.
-app.post("/api/mix-selected-freesound", async (req,res)=>{
-  const tracks=Array.isArray(req.body?.tracks)?req.body.tracks.slice(0,6):[];
-  if(tracks.length<2) return res.status(400).json({error:"Selecciona al menos 2 sonidos para crear la mezcla."});
-  const work=path.join(MUSIC_DIR,"selected-mix-"+Date.now()+"-"+Math.random().toString(36).slice(2,7));
+const selectedMixJobs=new Map();
+
+async function buildSelectedFreesoundMixJob(jobId,tracks,durationHours){
+  const job=selectedMixJobs.get(jobId);
+  if(!job)return;
+  const work=path.join(MUSIC_DIR,"selected-mix-"+jobId);
   fs.mkdirSync(work,{recursive:true});
   try{
     const local=[];
@@ -1526,12 +1526,10 @@ app.post("/api/mix-selected-freesound", async (req,res)=>{
       fs.writeFileSync(file,Buffer.from(await rr.arrayBuffer()));
       if(!fs.statSync(file).size) throw new Error("Una de las previas seleccionadas llegó vacía.");
       local.push(file);
+      job.progress=Math.round(((i+1)/tracks.length)*30);
     }
 
-    // First create a 10-minute soundscape. Each selected source is looped and
-    // balanced as a layer; then the finished soundscape is looped to one hour.
-    const inputs=[];
-    const filters=[];
+    const inputs=[],filters=[];
     const layerVolume=(0.78/local.length).toFixed(5);
     for(let i=0;i<local.length;i++){
       inputs.push("-stream_loop","-1","-i",local[i]);
@@ -1540,21 +1538,26 @@ app.post("/api/mix-selected-freesound", async (req,res)=>{
     const joined=local.map((_,i)=>"[a"+i+"]").join("");
     filters.push(joined+"amix=inputs="+local.length+":duration=longest:dropout_transition=5:normalize=0[mix]");
     filters.push("[mix]alimiter=limit=0.96:attack=5:release=50[out]");
-    const base=path.join(work,"mix-10m.mp3");
-    await runFfmpeg([
-      "-y",...inputs,
-      "-filter_complex",filters.join(";"),
-      "-map","[out]","-t","600",
-      "-c:a","libmp3lame","-b:a","192k","-ar","48000",base
-    ]);
 
-    const durationHours=Number(req.body?.durationHours||1);
-    if(![1,2].includes(durationHours)) throw new Error("La duración de la mezcla debe ser de 1 o 2 horas.");
+    // Short preview first: this is the actual selected mix, not a generic sample.
+    const previewName="selected-freesound-preview-"+durationHours+"h-"+Date.now()+".mp3";
+    const previewPath=path.join(MUSIC_DIR,previewName);
+    await runFfmpeg(["-y",...inputs,"-filter_complex",filters.join(";"),"-map","[out]","-t","90","-c:a","libmp3lame","-b:a","192k","-ar","48000",previewPath]);
+    job.preview={
+      name:previewName,
+      url:"/media/music/"+encodeURIComponent(previewName),
+      durationSeconds:90
+    };
+    job.progress=40;
+    job.status="preview-ready";
+
+    // Build the requested 1 or 2 hour file in the background.
     const finalName="selected-freesound-mix-"+durationHours+"h-"+Date.now()+".mp3";
     const finalPath=path.join(MUSIC_DIR,finalName);
-    await runFfmpeg(["-y","-stream_loop","-1","-i",base,"-t",String(durationHours*3600),"-c:a","copy",finalPath]);
-
-    res.json({
+    await runFfmpeg(["-y",...inputs,"-filter_complex",filters.join(";"),"-map","[out]","-t",String(durationHours*3600),"-c:a","libmp3lame","-b:a","192k","-ar","48000",finalPath]);
+    job.progress=100;
+    job.status="succeeded";
+    job.result={
       name:finalName,
       url:"/media/music/"+encodeURIComponent(finalName),
       label:"Mezcla · "+local.length+" sonidos Freesound · "+durationHours+" h",
@@ -1564,13 +1567,38 @@ app.post("/api/mix-selected-freesound", async (req,res)=>{
       generatedFromSearch:false,
       durationHours,
       tracks:tracks.map(t=>({id:t.id,name:t.name,sourceUrl:t.sourceUrl,username:t.username,license:t.license}))
-    });
+    };
   }catch(e){
+    job.status="failed";
+    job.error=e?.message||String(e);
     console.error("[Selected Freesound Mix] ERROR",e?.stack||e?.message||e);
-    res.status(500).json({error:"No se pudo crear la mezcla: "+e.message});
   }finally{
     fs.rmSync(work,{recursive:true,force:true});
+    setTimeout(()=>selectedMixJobs.delete(jobId),10*60*1000);
   }
+}
+
+app.post("/api/mix-selected-freesound", async (req,res)=>{
+  const tracks=Array.isArray(req.body?.tracks)?req.body.tracks.slice(0,6):[];
+  if(tracks.length<2) return res.status(400).json({error:"Selecciona al menos 2 sonidos para crear la mezcla."});
+  const durationHours=Number(req.body?.durationHours||1);
+  if(![1,2].includes(durationHours)) return res.status(400).json({error:"La duración de la mezcla debe ser de 1 o 2 horas."});
+  const jobId="selected-"+Date.now()+"-"+Math.random().toString(36).slice(2,8);
+  selectedMixJobs.set(jobId,{status:"running",progress:0,preview:null,result:null,error:null});
+  buildSelectedFreesoundMixJob(jobId,tracks,durationHours);
+  res.json({jobId,durationHours});
+});
+
+app.get("/api/mix-selected-freesound-status", (req,res)=>{
+  const job=selectedMixJobs.get(String(req.query.jobId||""));
+  if(!job)return res.status(404).json({error:"No se encontró la mezcla solicitada."});
+  res.json({
+    status:job.status,
+    progress:job.progress||0,
+    preview:job.preview||null,
+    result:job.result||null,
+    error:job.error||null
+  });
 });
 
 app.post("/api/generate-freesound-ai-mix", (req,res)=>{
