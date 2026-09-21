@@ -90,7 +90,7 @@ function makeCompositionWav(track, wavPath){
   // Motor armónico v7: ambient cinematográfico, progresiones lentas, voice-leading
   // estricto, melodía respirada y capas suaves. Se renderiza a 22.05 kHz y se
   // entrega a FFmpeg a 44.1 kHz para mantener calidad sin bloquear Render.
-  const sr=22050, dur=12, n=sr*dur, samples=new Float32Array(n*2);
+  const sr=11025, dur=10, n=sr*dur, samples=new Float32Array(n*2);
   const profile=String(track.musicProfile||"").toLowerCase();
   const ultraCalm=/relax|calm|sleep|meditat|peace|soft|ambient|piano|nature|spa|healing|stress|anxiety/.test(profile);
   const darkCalm=/deep|night|dream|sleep/.test(profile);
@@ -240,6 +240,11 @@ function makeCompositionWav(track, wavPath){
     bassEvents.push({t:b*bar,f:hz(ch.root-24),v:variant===3?.045:.055});
     if(variant===1) bassEvents.push({t:b*bar+bassStep,f:hz(ch.root-24),v:.035});
   }
+  const eventsByBar=Array.from({length:8},()=>[]);
+  for(const ev of events){
+    const eb=Math.max(0,Math.min(7,Math.floor(ev.t/bar)));
+    eventsByBar[eb].push(ev);
+  }
 
   for(let i=0;i<n;i++){
     const t=i/sr;
@@ -267,6 +272,14 @@ function makeCompositionWav(track, wavPath){
     left+=bv; right+=bv;
 
     for(const ev of events){
+      const nt=t-ev.t;
+      if(nt>=0 && nt<3.8){
+        const v=piano(ev.f,nt,ev.v);
+        const ep=.06*Math.sin(2*Math.PI*(ev.t+t)/23);
+        left+=v*(1-ep); right+=v*(1+ep);
+      }
+    }
+    for(const ev of previousEvents){
       const nt=t-ev.t;
       if(nt>=0 && nt<3.8){
         const v=piano(ev.f,nt,ev.v);
