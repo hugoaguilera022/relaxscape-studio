@@ -857,75 +857,126 @@ app.post("/api/ai-images", async (req, res) => {
   }
 });
 
-const musicPreviewJobs=new Map();
+const videoPreviewJobs=new Map();
 
-app.post("/api/music-preview-options", (req,res)=>{
+app.post("/api/video-preview-options",(req,res)=>{
   const prompt=String(req.body?.musicPrompt||"").trim().slice(0,700);
+  const image=String(req.body?.image||"").trim();
   if(!prompt)return res.status(400).json({error:"Escribe primero qué música quieres crear."});
-  const jobId="mp-"+Date.now()+"-"+Math.random().toString(36).slice(2,8);
-  const tracks=[1,2,3].map((variant)=>({
+  if(!image)return res.status(400).json({error:"Selecciona primero un paisaje IA."});
+  const jobId="vp-"+Date.now()+"-"+Math.random().toString(36).slice(2,8);
+  const variants=[1,2,3].map((variant)=>({
     userSearch:prompt,originalMusicPrompt:prompt,
     musicProfile:buildAIMusicPrompt(prompt,variant),
     userMusicBrief:buildAIMusicPrompt(prompt,variant),
     variant,generationSeed:jobId+"-"+variant,
-    file:"music-preview-"+jobId+"-"+variant+".mp3",
-    label:"Propuesta "+variant,
-    forceRegenerate:true
+    file:"video-preview-"+jobId+"-"+variant+".mp3"
   }));
-  musicPreviewJobs.set(jobId,{status:"running",progress:0,results:[],error:null});
+  videoPreviewJobs.set(jobId,{status:"running",progress:0,results:[],error:null});
   (async()=>{
-    const job=musicPreviewJobs.get(jobId);
+    const job=videoPreviewJobs.get(jobId);
+    const work=path.join(VIDEO_DIR,jobId);
+    fs.mkdirSync(work,{recursive:true});
     try{
-      const results=await Promise.all(tracks.map(async(track,i)=>{
-        const out=path.join(MUSIC_DIR,track.file);
-        await generateAIMusicFile(track,out,60000);
-        job.progress=Math.round(((i+1)/tracks.length)*100);
-        return {name:track.file,url:"/media/music/"+encodeURIComponent(track.file),label:track.label,provider:"RelaxScape Free AI Music Engine",generatedFromSearch:true,originalMusicPrompt:prompt,variant:track.variant,durationSeconds:60};
-      }));
-      job.results=results;job.status="succeeded";
-    }catch(e){job.status="failed";job.error=e?.message||String(e);}
-    setTimeout(()=>musicPreviewJobs.delete(jobId),20*60*1000);
+      const imageName=decodeURIComponent(image.split("/").pop());
+      let imagePath=path.join(IMAGE_DIR,imageName);
+      if(!fs.existsSync(imagePath) && /^https?:\\/\\//i.test(image)){
+        const downloaded=await fetchWithTimeout(image,{},10000);
+        if(!downloaded.ok)throw new Error("No se pudo descargar el paisaje seleccionado.");
+        imagePath=path.join(IMAGE_DIR,"preview-image-"+jobId+".jpg");
+        fs.writeFileSync(imagePath,Buffer.from(await downloaded.arrayBuffer()));
+      }
+      if(!fs.existsSync(imagePath))throw new Error("No se encontró el paisaje seleccionado.");
+      const results=[];
+      for(let i=0;i<variants.length;i++){
+        const track=variants[i];
+        const musicPath=path.join(work,track.file);
+        await generateAIMusicFile(track,musicPath,60000);
+        const videoName="video-preview-"+jobId+"-"+track.variant+".mp4";
+        const out=path.join(VIDEO_DIR,videoName);
+        await runFfmpeg([
+          "-y","-loop","1","-i",imagePath,"-i",musicPath,
+          "-t","60",
+          "-vf","scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
+          "-c:v","libx264","-preset","veryfast","-crf","27",
+          "-c:a","aac","-b:a","128k","-shortest",out
+        ]);
+        results.push({
+          name:videoName,
+          url:"/media/videos/"+encodeURIComponent(videoName),
+          label:"Vídeo propuesta "+track.variant,
+          variant:track.variant,
+          durationSeconds:60,
+          musicUrl:"/media/music/"+encodeURIComponent(track.file),
+          originalMusicPrompt:prompt,
+          imageUrl:image
+        });
+        job.results=results.slice();
+        job.progress=Math.round(((i+1)/variants.length)*100);
+      }
+      job.status="succeeded";
+    }catch(e){
+      console.error("[Video previews] ERROR",e.stack||e.message||e);
+      job.status="failed";
+      job.error=e?.message||String(e);
+    }finally{
+      fs.rmSync(work,{recursive:true,force:true});
+      setTimeout(()=>videoPreviewJobs.delete(jobId),30*60*1000);
+    }
   })();
   res.status(202).json({jobId});
 });
 
-app.get("/api/music-preview-options-status",(req,res)=>{
-  const job=musicPreviewJobs.get(String(req.query.jobId||""));
-  if(!job)return res.status(404).json({error:"No se encontró la generación de propuestas."});
+app.get("/api/video-preview-options-status",(req,res)=>{
+  const job=videoPreviewJobs.get(String(req.query.jobId||""));
+  if(!job)return res.status(404).json({error:"No se encontró la generación de vídeos."});
   res.json({status:job.status,progress:job.progress||0,results:job.results||[],error:job.error||null});
 });
 
-app.post("/api/music-preview-final", async(req,res)=>{
-  const music=String(req.body?.music||"").trim();
+app.post("/api/video-preview-final",async(req,res)=>{
   const prompt=String(req.body?.musicPrompt||"").trim().slice(0,700);
+  const image=String(req.body?.image||"").trim();
+  const variant=Math.min(3,Math.max(1,Number(req.body?.variant||1)));
   const hours=Number(req.body?.durationHours||1);
-  if(!music||!prompt)return res.status(400).json({error:"Faltan la propuesta musical o la búsqueda original."});
-  if(![1,2,3,4,6,8].includes(hours))return res.status(400).json({error:"Duración no válida."});
-  const name=decodeURIComponent(music.split("/").pop());
-  const source=path.join(MUSIC_DIR,name);
-  if(!fs.existsSync(source))return res.status(404).json({error:"No se encontró la propuesta seleccionada."});
-  const finalName="relaxscape-final-"+hours+"h-"+Date.now()+".mp3";
-  const out=path.join(MUSIC_DIR,finalName);
+  if(!prompt||!image)return res.status(400).json({error:"Faltan el paisaje o la búsqueda musical."});
+  if(!Number.isInteger(hours)||hours<1||hours>24)return res.status(400).json({error:"La duración debe ser entre 1 y 24 horas."});
+  const imageName=decodeURIComponent(image.split("/").pop());
+  const imagePath=path.join(IMAGE_DIR,imageName);
+  if(!fs.existsSync(imagePath))return res.status(404).json({error:"No se encontró el paisaje seleccionado."});
+  const work=path.join(VIDEO_DIR,"final-"+Date.now()+"-"+Math.random().toString(36).slice(2,7));
+  const finalName="relaxscape-final-"+hours+"h-"+Date.now()+".mp4";
+  const out=path.join(VIDEO_DIR,finalName);
+  fs.mkdirSync(work,{recursive:true});
   try{
-    const profile=buildAIMusicPrompt(prompt,1);
-    const track={userSearch:prompt,originalMusicPrompt:prompt,musicProfile:profile,variant:1,generationSeed:"final-"+Date.now()};
-    const work=path.join(MUSIC_DIR,"final-"+Date.now());
-    fs.mkdirSync(work,{recursive:true});
-    try{
-      const segments=[];
-      for(let i=0;i<4;i++){
-        const seg=path.join(work,"segment-"+i+".mp3");
-        await generateAIMusicFile({...track,variant:(i%4)+1,generationSeed:"final-"+Date.now()+"-"+i},seg,180000);
-        segments.push(seg);
-      }
-      const list=path.join(work,"concat.txt");
-      fs.writeFileSync(list,segments.map(x=>"file '"+x.replace(/'/g,"'\\''")+"'").join("\n"));
-      const base=path.join(work,"base.mp3");
-      await runFfmpeg(["-y","-f","concat","-safe","0","-i",list,"-c:a","libmp3lame","-b:a","192k","-ar","48000",base]);
-      await runFfmpeg(["-y","-stream_loop","-1","-i",base,"-t",String(hours*3600),"-c:a","copy",out]);
-    }finally{fs.rmSync(work,{recursive:true,force:true});}
-    res.json({name:finalName,url:"/media/music/"+encodeURIComponent(finalName),hours,provider:"RelaxScape Free AI Music Engine",generatedFromSearch:true});
-  }catch(e){res.status(500).json({error:"No se pudo crear la música final: "+e.message});}
+    const trackBase={
+      userSearch:prompt,originalMusicPrompt:prompt,
+      musicProfile:buildAIMusicPrompt(prompt,variant),
+      userMusicBrief:buildAIMusicPrompt(prompt,variant),
+      variant,forceRegenerate:true
+    };
+    const segments=[];
+    for(let i=0;i<4;i++){
+      const seg=path.join(work,"segment-"+i+".mp3");
+      await generateAIMusicFile({...trackBase,generationSeed:"final-"+Date.now()+"-"+i},seg,180000);
+      segments.push(seg);
+    }
+    const list=path.join(work,"concat.txt");
+    fs.writeFileSync(list,segments.map(x=>"file '"+x.replace(/'/g,"'\\''")+"'").join("\n"));
+    const base=path.join(work,"base.mp3");
+    await runFfmpeg(["-y","-f","concat","-safe","0","-i",list,"-c:a","libmp3lame","-b:a","192k","-ar","48000",base]);
+    await runFfmpeg([
+      "-y","-loop","1","-i",imagePath,"-stream_loop","-1","-i",base,
+      "-t",String(hours*3600),
+      "-vf","scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
+      "-c:v","libx264","-preset","veryfast","-crf","23","-c:a","aac","-b:a","160k","-shortest",out
+    ]);
+    res.json({name:finalName,url:"/media/videos/"+encodeURIComponent(finalName),hours,variant,generatedFromSearch:true,originalMusicPrompt:prompt});
+  }catch(e){
+    console.error("[Video final] ERROR",e.stack||e.message||e);
+    res.status(500).json({error:"No se pudo crear el vídeo final: "+e.message});
+  }finally{
+    fs.rmSync(work,{recursive:true,force:true});
+  }
 });
 
 app.post("/api/ai-music", async (req,res)=>{
