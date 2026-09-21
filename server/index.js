@@ -47,7 +47,7 @@ function safe(name) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-const MUSIC_ENGINE_VERSION = "v13-relaxation-genre-lock";
+const MUSIC_ENGINE_VERSION = "v14-professional-ambient-master";
 
 const BUILTIN_MUSIC = [
   ["relax-piano.mp3","Piano nocturno","Sueño",261.63,329.63,392],
@@ -90,7 +90,7 @@ function makeCompositionWav(track, wavPath){
   // Motor armónico v7: ambient cinematográfico, progresiones lentas, voice-leading
   // estricto, melodía respirada y capas suaves. Se renderiza a 22.05 kHz y se
   // entrega a FFmpeg a 44.1 kHz para mantener calidad sin bloquear Render.
-  const sr=8000, dur=5, n=sr*dur, samples=new Float32Array(n*2);
+  const sr=22050, dur=8, n=sr*dur, samples=new Float32Array(n*2);
   const profile=String(track.musicProfile||"").toLowerCase();
   const ultraCalm=/relax|relaj|calm|calma|tranquil|peace|soft|ambient|piano|nature|spa|healing|bienestar|stress|estrés|ansiedad|anxiety|meditat|sleep|suave/.test(profile);
   const darkCalm=/deep|night|dream|sleep/.test(profile);
@@ -362,9 +362,9 @@ async function ensureBuiltinMusic(tracks=BUILTIN_MUSIC){
     const wav=path.join(MUSIC_DIR,"."+track.file+".wav");
     try{
       fs.rmSync(out,{force:true});
-      console.log("[Music v11] Generando:",track.label,track.file);
+      console.log("[Music v14] Generando:",track.label,track.file);
       makeCompositionWav(track,wav);
-      await runFfmpeg(["-y","-i",wav,"-t","24","-c:a","libmp3lame","-b:a","160k","-ar","44100",out]);
+      await runFfmpeg(["-y","-i",wav,"-t","24","-af","highpass=f=28,lowpass=f=16500,acompressor=threshold=-22dB:ratio=2:attack=35:release=220:makeup=1,loudnorm=I=-18:TP=-1.5:LRA=7","-c:a","libmp3lame","-b:a","192k","-ar","44100",out]);
       if(!valid(track)) throw new Error("FFmpeg no creó un MP3 válido");
       console.log("[Music v11] LISTA:",track.file,fs.statSync(out).size,"bytes");
       return true;
