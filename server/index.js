@@ -1277,6 +1277,125 @@ app.post("/api/generate-ai-video", async (req, res) => {
   }
 });
 
+
+// -------------------- FREESOUND EXTERNAL MUSIC SEARCH --------------------
+// The external search is preview-only by default. We never alter the image
+// generation pipeline. Previews are fetched from Freesound and can optionally
+// be imported locally so they can be used in RelaxScape videos.
+function buildFreesoundQueries(input=""){
+  const q=String(input||"").trim().slice(0,500);
+  const n=q.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  const aliases=[
+    ["piano","piano acoustic","piano solo relaxing"],
+    ["flauta","flute","bamboo flute"],
+    ["guitarra","acoustic guitar","classical guitar"],
+    ["violin","violin","solo violin"],
+    ["cuerdas","strings","string ensemble"],
+    ["arpa","harp","harp relaxing"],
+    ["kalimba","kalimba","mbira"],
+    ["lluvia","rain","rain ambience"],
+    ["rio","river","flowing water"],
+    ["corriente de agua","flowing water","stream water"],
+    ["agua fluyendo","flowing water","stream water"],
+    ["cascada","waterfall","waterfall ambience"],
+    ["oceano","ocean waves","sea ambience"],
+    ["mar","ocean waves","sea ambience"],
+    ["bosque","forest ambience","forest birds"],
+    ["pajaros","forest birds","birds nature"],
+    ["chimenea","fireplace","fire crackling"],
+    ["fuego","fireplace","fire crackling"]
+  ];
+  const expanded=[q];
+  for(const [needle,...terms] of aliases){
+    if(n.includes(needle)) expanded.push(...terms);
+  }
+  return [...new Set(expanded)].filter(Boolean).slice(0,4);
+}
+
+app.get("/api/external-music-search", async (req,res)=>{
+  const key=process.env.FREESOUND_API_KEY;
+  if(!key){
+    return res.status(400).json({
+      error:"Falta FREESOUND_API_KEY en Render. Crea una clave gratuita de Freesound y añádela como variable de entorno."
+    });
+  }
+  const input=String(req.query.q||"").trim();
+  if(!input) return res.status(400).json({error:"Escribe qué música o sonido quieres buscar."});
+  try{
+    const queries=buildFreesoundQueries(input);
+    const all=[];
+    for(const query of queries){
+      const url=new URL("https://freesound.org/apiv2/search/");
+      url.searchParams.set("query",query);
+      url.searchParams.set("page_size","8");
+      url.searchParams.set("sort","score");
+      url.searchParams.set("fields","id,name,tags,username,license,url,duration,previews,description,avg_rating,num_downloads");
+      const r=await fetchWithTimeout(url.toString(),{
+        headers:{Authorization:"Token "+key,Accept:"application/json"}
+      },10000);
+      const data=await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(data.detail||data.error||("Freesound HTTP "+r.status));
+      for(const x of (data.results||[])){
+        const preview=x.previews?.["preview-hq-mp3"]||x.previews?.["preview-lq-mp3"];
+        if(!preview) continue;
+        all.push({
+          id:x.id,
+          name:x.name||"Freesound audio",
+          username:x.username||"Unknown",
+          license:x.license||"Unknown",
+          duration:Number(x.duration||0),
+          rating:x.avg_rating==null?null:Number(x.avg_rating),
+          downloads:Number(x.num_downloads||0),
+          tags:Array.isArray(x.tags)?x.tags.slice(0,12):[],
+          preview,
+          sourceUrl:x.url||("https://freesound.org/s/"+x.id),
+          provider:"Freesound"
+        });
+      }
+    }
+    const unique=[];
+    const seen=new Set();
+    for(const x of all){
+      if(seen.has(x.id)) continue;
+      seen.add(x.id);
+      unique.push(x);
+    }
+    unique.sort((a,b)=>(b.rating||0)-(a.rating||0) || b.downloads-a.downloads);
+    res.json({provider:"Freesound",query:input,results:unique.slice(0,12)});
+  }catch(e){
+    console.error("[Freesound Search] ERROR",e.stack||e.message);
+    res.status(502).json({error:"No se pudo buscar en Freesound: "+e.message});
+  }
+});
+
+app.post("/api/import-external-music", async (req,res)=>{
+  const {preview,name="Freesound preview",soundId,sourceUrl,username,license}=req.body||{};
+  if(!preview || !/^https?:\/\//i.test(preview)) return res.status(400).json({error:"Previa externa no válida."});
+  try{
+    const r=await fetchWithTimeout(preview,{headers:{Accept:"audio/mpeg,audio/*"}},20000);
+    if(!r.ok) throw new Error("Freesound preview HTTP "+r.status);
+    const safeName=safe(String(name).slice(0,90)).replace(/\.(mp3|ogg|wav)$/i,"");
+    const filename="freesound-"+String(soundId||Date.now())+"-"+safeName+".mp3";
+    const out=path.join(MUSIC_DIR,filename);
+    fs.writeFileSync(out,Buffer.from(await r.arrayBuffer()));
+    const stat=fs.statSync(out);
+    if(!stat.size) throw new Error("La previa externa llegó vacía.");
+    res.json({
+      name:filename,
+      url:"/media/music/"+encodeURIComponent(filename),
+      label:name,
+      provider:"Freesound",
+      sourceUrl,
+      username,
+      license,
+      externalId:soundId
+    });
+  }catch(e){
+    console.error("[Freesound Import] ERROR",e.stack||e.message);
+    res.status(502).json({error:"No se pudo importar la previa de Freesound: "+e.message});
+  }
+});
+
 app.post("/api/generate-ai-music", async (req, res) => {
   const key = process.env.GEMINI_API_KEY;
   if (!key) return res.status(400).json({ error: "Añade GEMINI_API_KEY en Render para activar Lyria." });
