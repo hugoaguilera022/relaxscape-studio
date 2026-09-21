@@ -47,7 +47,7 @@ function safe(name) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-const MUSIC_ENGINE_VERSION = "v16-stable-high-quality-preview";
+const MUSIC_ENGINE_VERSION = "v17-lyria35-high-fidelity";
 
 const BUILTIN_MUSIC = [
   ["relax-piano.mp3","Piano nocturno","Sueño",261.63,329.63,392],
@@ -363,8 +363,17 @@ async function ensureBuiltinMusic(tracks=BUILTIN_MUSIC){
     try{
       fs.rmSync(out,{force:true});
       console.log("[Music v14] Generando:",track.label,track.file);
-      makeCompositionWav(track,wav);
-      await runFfmpeg(["-y","-i",wav,"-t","24","-af","highpass=f=28,lowpass=f=16500,acompressor=threshold=-22dB:ratio=2:attack=35:release=220:makeup=1,loudnorm=I=-18:TP=-1.5:LRA=7","-c:a","libmp3lame","-b:a","192k","-ar","44100",out]);
+      try{
+        const generated=await generateLyriaMusicFile(track.musicProfile || track.label, track.variant||1);
+        const generatedPath=path.join(MUSIC_DIR, generated.name);
+        fs.copyFileSync(generatedPath, out);
+        fs.rmSync(generatedPath,{force:true});
+        console.log("[Lyria 3.5] LISTA:",track.file);
+      }catch(e){
+        console.warn("[Lyria 3.5] No disponible, usando motor local:",e.message);
+        makeCompositionWav(track,wav);
+        await runFfmpeg(["-y","-i",wav,"-t","24","-af","highpass=f=28,lowpass=f=16500,acompressor=threshold=-22dB:ratio=2:attack=35:release=220:makeup=1,alimiter=limit=0.92","-c:a","libmp3lame","-b:a","192k","-ar","44100",out]);
+      }
       if(!valid(track)) throw new Error("FFmpeg no creó un MP3 válido");
       console.log("[Music v11] LISTA:",track.file,fs.statSync(out).size,"bytes");
       return true;
@@ -527,18 +536,18 @@ async function generateLyriaMusicFile(prompt, index=1) {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": key },
     body: JSON.stringify({
-      model: "lyria-3-clip-preview",
-      input: prompt,
+      model: "lyria-3.5",
+      input: String(prompt || "") + ". Instrumental only. Professional relaxation ambient music, very slow, organic acoustic instruments, natural dynamics, warm spacious studio mix, no vocals, no lyrics.",
       response_format: { type: "audio" }
     })
-  }, 45000);
+  }, 120000);
   const data = await r.json();
-  if (!r.ok) throw new Error(data.error?.message || ("Lyria HTTP " + r.status));
-  const b64 = data.output_audio?.data;
-  if (!b64) throw new Error("Lyria no devolvió audio.");
-  const filename = "ai-lyria-relax-" + Date.now() + "-" + index + ".mp3";
+  if (!r.ok) throw new Error(data.error?.message || ("Lyria 3.5 HTTP " + r.status));
+  const b64 = data.output_audio?.data || data.steps?.flatMap(s=>s.content||[]).find(x=>x.type==="audio")?.data;
+  if (!b64) throw new Error("Lyria 3.5 no devolvió audio.");
+  const filename = "ai-lyria35-relax-" + Date.now() + "-" + index + ".mp3";
   fs.writeFileSync(path.join(MUSIC_DIR, filename), Buffer.from(b64, "base64"));
-  return { name: filename, url: "/media/music/" + encodeURIComponent(filename), ai: true, provider: "Google Lyria 3", generated: true, fallback: false };
+  return { name: filename, url: "/media/music/" + encodeURIComponent(filename), ai: true, provider: "Google Lyria 3.5", generated: true, fallback: false };
 }
 
 function makeFallbackLandscape(filename, theme="nature") {
