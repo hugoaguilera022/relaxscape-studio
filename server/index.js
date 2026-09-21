@@ -99,7 +99,9 @@ function makeCompositionWav(track, wavPath){
   // Motor musical procedural: la búsqueda controla de forma fuerte la composición.
   // No reutiliza una melodía fija: hash + variante determinan estructura, armonía,
   // instrumento principal, registro, tempo, motivo, densidad y movimiento estéreo.
-  const sr=24000, dur=42, n=sr*dur, samples=new Float32Array(n*2);
+  // Previa corta para que Render pueda generar las 4 opciones rápidamente.
+  // La versión larga se construye después a partir de esta composición.
+  const sr=24000, dur=18, n=sr*dur, samples=new Float32Array(n*2);
   const variant=((Number(track.variant||1)-1)%4+4)%4;
   const brief=String(track.userSearch||track.originalMusicPrompt||track.musicProfile||"relaxscape").toLowerCase();
   const hz=m=>440*Math.pow(2,(m-69)/12);
@@ -195,7 +197,8 @@ function makeCompositionWav(track, wavPath){
   const glass=(f,t,v=1)=>t<0||t>4?0:v*Math.min(1,t/.004)*Math.exp(-t/2.8)*(.55*Math.sin(2*Math.PI*f*t)+.25*Math.sin(2*Math.PI*2.01*f*t)+.12*Math.sin(2*Math.PI*3.97*f*t));
 
   const events=[];
-  // Una progresión completa de 9 barras, elegida por la búsqueda.
+  // Tres barras son suficientes para una previa de 18 s y reducen muchísimo
+  // el coste de CPU en Render.
   const progressionOptions=[
     [0,3,5,4,0,2,3,1,0],[0,5,3,4,1,0,3,5,0],[0,2,4,1,3,5,2,4,0],
     [0,4,2,5,3,1,4,2,0],[0,1,4,3,5,2,1,4,0],[0,5,1,4,2,3,5,1,0]
@@ -209,7 +212,7 @@ function makeCompositionWav(track, wavPath){
   const noteStep=pick([beat/2,beat,beat*1.5]);
   const register=pick([0,0,1,1,2]);
 
-  for(let b=0;b<9;b++){
+  for(let b=0;b<3;b++){
     const chord=progression[b];
     const chordRoot=degree(chord,0);
     const chord2=degree(chord+2,0);
@@ -299,8 +302,15 @@ function generateFreeMusicFile(track, outPath) {
 
 async function ensureBuiltinMusic(tracks=[]) {
   const results=[];
+  // MUY IMPORTANTE: no bloquear /api/ai-options antes de devolver las fotos.
+  // El motor musical es CPU-intensivo y síncrono, así que cedemos el control
+  // al event loop para que Express pueda responder primero con las 4 imágenes.
+  await new Promise(resolve => setImmediate(resolve));
   for (const track of tracks) {
     try {
+      // Permite que /api/ai-options-status y las peticiones del navegador
+      // tengan oportunidad de entrar entre generaciones.
+      await new Promise(resolve => setImmediate(resolve));
       const out=path.join(MUSIC_DIR, track.file);
       fs.rmSync(out,{force:true});
       const basePrompt=String(track.musicProfile||track.userMusicBrief||"professional deep relaxation ambient music").trim();
