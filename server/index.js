@@ -445,7 +445,7 @@ function makeCompositionWav(track, wavPath){
 async function generateAIMusicFile(track, outPath){
   // Motor local gratuito: la búsqueda del usuario controla directamente la composición.
   // Generamos WAV temporal y lo convertimos a MP3 real para que el navegador lo reproduzca.
-  const wavPath=outPath.replace(/\\.mp3$/i,".wav");
+  const wavPath=outPath.replace(/\.mp3$/i,".wav");
   makeCompositionWav(track, wavPath);
   await runFfmpeg(["-y","-i",wavPath,"-c:a","libmp3lame","-b:a","192k","-ar","48000",outPath]);
   fs.rmSync(wavPath,{force:true});
