@@ -87,73 +87,140 @@ function writeWav(file, samples, sampleRate=44100, channels=2){
 }
 
 function makeCompositionWav(track, wavPath){
-  // Motor musical local: genera una composición ambiental distinta por pista.
-  // No usa tonos aislados: combina progresión armónica, piano sintético por capas,
-  // pads, bajo muy suave, textura de aire/agua y variaciones lentas.
+  // Motor armónico v2: afinación temperada, acordes con 7ª/9ª, voice-leading
+  // suave y síntesis multicapa para acercarse a un piano/ambient profesional.
   const sr=44100, dur=30, n=sr*dur, samples=new Float32Array(n*2);
-  const root=track.f1, third=track.f2, fifth=track.f3;
-  const seed=Math.abs(Math.floor(root*100 + third*10 + fifth)) % 1000;
+  const seed=Math.abs(Math.floor(track.f1*100 + track.f2*10 + track.f3)) % 1000;
   const bpm=[46,48,50,52][seed%4], beat=60/bpm, bar=beat*4;
-  const scale=[1, 9/8, 6/5, 4/3, 3/2, 5/3, 9/5];
+  const midiFromHz=f=>69+12*Math.log2(f/440);
+  const hz=m=>440*Math.pow(2,(m-69)/12);
+  const baseMidi=Math.round(midiFromHz(track.f1));
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+
+  // Progresiones diatónicas en grados, con mezcla controlada de maj7/add9/sus2.
   const progressions=[
     [0,5,3,4,0,2,5,4],
     [0,3,5,4,0,5,2,4],
     [0,5,1,4,0,3,5,2],
     [0,4,5,3,0,2,4,5]
   ][seed%4];
-  const chordRoots=progressions.map(x=>root*scale[x]);
-  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
-  const midiToHz=m=>440*Math.pow(2,(m-69)/12);
+  const scale=[0,2,4,5,7,9,11];
+  const qualities=[
+    ["maj7",[0,4,7,11]],["m7",[0,3,7,10]],["m7",[0,3,7,10]],
+    ["maj7",[0,4,7,11]],["maj7",[0,4,7,11]],["m7",[0,3,7,10]],
+    ["m7",[0,3,7,10]],["7sus2",[0,2,7,10]]
+  ];
+
+  // Cada acorde queda dentro de un registro cómodo y sus notas se mantienen
+  // cerca del acorde anterior para evitar saltos artificiales.
+  const chords=[];
+  let previous=[baseMidi+12,baseMidi+16,baseMidi+19,baseMidi+23];
+  for(let b=0;b<8;b++){
+    const degree=progressions[b];
+    const root=baseMidi+scale[degree];
+    const q=qualities[(degree+b+seed)%qualities.length];
+    let notes=q[1].map(iv=>root+iv);
+    while(notes[0]<baseMidi+12) notes=notes.map(x=>x+12);
+    while(notes[3]>baseMidi+36) notes=notes.map(x=>x-12);
+    // Voice leading: cada voz busca la inversión más cercana anterior.
+    notes=notes.map((x,i)=>{
+      const choices=[x-12,x,x+12];
+      return choices.reduce((best,v)=>Math.abs(v-previous[i])<Math.abs(best-previous[i])?v:best,choices[0]);
+    }).sort((a,b)=>a-b);
+    previous=notes;
+    chords.push({root,notes,quality:q[0]});
+  }
+
   const piano=(f,t,vel=1)=>{
-    const attack=Math.min(0.025,t);
-    const env=t<attack?t/attack:Math.exp(-3.2*Math.max(0,t-attack));
-    return vel*env*(0.72*Math.sin(2*Math.PI*f*t)+0.19*Math.sin(4*Math.PI*f*t)+0.07*Math.sin(6*Math.PI*f*t));
+    if(t<0)return 0;
+    const attack=Math.min(.018,t);
+    const decay=Math.exp(-2.7*Math.max(0,t-attack));
+    const release=t>3.4?Math.exp(-4.5*(t-3.4)):1;
+    const env=(t<attack?t/attack:decay)*release;
+    const inharm=0.0018*f*f/10000;
+    return vel*env*(
+      .64*Math.sin(2*Math.PI*f*t)+
+      .20*Math.sin(2*Math.PI*(2*f+inharm)*t)+
+      .095*Math.sin(2*Math.PI*(3*f+inharm*1.7)*t)+
+      .04*Math.sin(2*Math.PI*(4*f+inharm*2.4)*t)
+    );
   };
+  const softPiano=(f,t,vel)=>piano(f,t,vel*.82);
   const pad=(f,t,vel=1)=>{
-    const e=(1-Math.exp(-t*1.8))*Math.exp(-t/13);
-    return vel*e*(0.55*Math.sin(2*Math.PI*f*t)+0.28*Math.sin(2*Math.PI*(f*1.002)*t)+0.17*Math.sin(2*Math.PI*(f*2)*t));
+    const attack=1.8, release=Math.max(0,Math.min(1,(t-10)/5));
+    const env=(1-Math.exp(-t/attack))*Math.exp(-t/20)*(1-.35*release);
+    const det=.0022;
+    return vel*env*(
+      .50*Math.sin(2*Math.PI*f*t)+
+      .22*Math.sin(2*Math.PI*f*(1-det)*t)+
+      .22*Math.sin(2*Math.PI*f*(1+det)*t)+
+      .06*Math.sin(2*Math.PI*2*f*t)
+    );
   };
-  const notes=[];
-  for(let barIndex=0;barIndex<8;barIndex++){
-    const cr=chordRoots[barIndex];
-    const chord=[cr,cr*5/4,cr*3/2,cr*2];
-    for(let j=0;j<4;j++) notes.push({t:barIndex*bar+j*beat,f:chord[j%3],v:.12});
-  }
-  // Melodía lenta: pocas notas, con pausas y registro alto para que respire.
-  const melodyRatios=[2, 2.25, 2.5, 3, 2.5, 2.25, 2, 1.875, 2.5, 3, 2.25, 2];
-  for(let k=0;k<12;k++){
-    const t=k*beat*2 + beat*.35;
-    const cr=chordRoots[Math.floor(k/1.5)%8];
-    notes.push({t,f:cr*melodyRatios[(k+seed)%melodyRatios.length],v:.16});
-  }
-  for(let i=0;i<n;i++){
-    const t=i/sr, barIndex=Math.min(7,Math.floor(t/bar)), within=t%bar;
-    let x=0;
-    // Pad armónico continuo con movimiento lento.
-    const cr=chordRoots[barIndex];
-    x += pad(cr,t%bar,.075)+pad(cr*5/4,t%bar,.055)+pad(cr*3/2,t%bar,.05);
-    // Bajo redondo, muy discreto, solo en cambios de compás.
-    const bassF=cr/2;
-    x += Math.sin(2*Math.PI*bassF*t)*(.035+.012*Math.sin(2*Math.PI*t/19));
-    // Piano y notas de melodía.
-    for(const note of notes){
-      const nt=t-note.t;
-      if(nt>=0 && nt<3.8) x += piano(note.f,nt,note.v);
+
+  const events=[];
+  // Arpegio de piano: inversiones suaves, no acordes mecánicos.
+  for(let b=0;b<8;b++){
+    const ch=chords[b];
+    const order=[0,2,1,3,1,2,0,1];
+    for(let j=0;j<8;j++){
+      const note=ch.notes[order[(j+seed)%order.length]];
+      events.push({t:b*bar+j*(beat/2)+beat*.06,f:hz(note),v:.115+(j%3===0?.025:0)});
     }
-    // Brillo ambiental muy sutil, diferente por semilla.
-    const airF=6500+(seed%5)*420;
-    x += .004*Math.sin(2*Math.PI*airF*t)*(.5+.5*Math.sin(2*Math.PI*t/11));
-    // Textura tipo aire/agua determinista, sin ruido áspero.
-    const ripple=Math.sin(2*Math.PI*(0.17+seed*.003)*t)+.5*Math.sin(2*Math.PI*(0.31+seed*.004)*t);
-    x += .009*ripple*Math.sin(2*Math.PI*(220+seed%7*13)*t);
-    // Fade global y pequeños swells para sensación de mezcla continua.
-    const inG=Math.min(1,t/5), outG=Math.min(1,(dur-t)/7);
-    const swell=.78+.22*Math.sin(2*Math.PI*t/17 + seed);
-    x=Math.tanh(x*1.15)*inG*outG*swell;
-    const pan=.16*Math.sin(2*Math.PI*t/(21+seed%6));
-    samples[i*2]=clamp(x*(1-pan),-0.85,.85);
-    samples[i*2+1]=clamp(x*(1+pan),-0.85,.85);
   }
+  // Melodía principal: solo notas pertenecientes al acorde o tensiones 9ª.
+  const melodySteps=[0,1,2,1,3,2,1,0,2,3,1,0];
+  for(let k=0;k<12;k++){
+    const b=Math.min(7,Math.floor(k/1.5)), ch=chords[b];
+    const candidates=[...ch.notes.map(hz),hz(ch.notes[0]+14),hz(ch.notes[1]+14)];
+    const f=candidates[melodySteps[(k+seed)%melodySteps.length]%candidates.length];
+    events.push({t:k*beat*2+beat*.55,f,v:.16});
+  }
+
+  for(let i=0;i<n;i++){
+    const t=i/sr;
+    const b=Math.min(7,Math.floor(t/bar));
+    const ch=chords[b];
+    let x=0;
+
+    // Pad estéreo cálido: fundamental + 3ª + 7ª, sin llenar demasiado el espectro.
+    x+=pad(hz(ch.notes[0]-12),t%bar,.055);
+    x+=pad(hz(ch.notes[1]),t%bar,.035);
+    x+=pad(hz(ch.notes[3]),t%bar,.025);
+
+    // Bajo: fundamental con una quinta muy ocasional para reforzar la armonía.
+    const bass=hz(ch.notes[0]-24);
+    x+=Math.sin(2*Math.PI*bass*t)*.045;
+    x+=Math.sin(2*Math.PI*bass*1.5*t)*(.008+.004*Math.sin(2*Math.PI*t/13));
+
+    for(const ev of events){
+      const nt=t-ev.t;
+      if(nt>=0&&nt<4.2)x+=piano(ev.f,nt,ev.v);
+    }
+
+    // Capa de aire armónico, afinada y muy baja.
+    x+=softPiano(hz(ch.notes[3]+12),t%bar,.018);
+
+    // Movimiento ambiental suave, sin ruido digital agresivo.
+    const texture=Math.sin(2*Math.PI*(.11+(seed%7)*.009)*t);
+    x+=texture*Math.sin(2*Math.PI*(180+(seed%5)*17)*t)*.0035;
+
+    // Fade + compresión suave para evitar picos y mantener una sensación de mezcla.
+    const inG=Math.min(1,t/4), outG=Math.min(1,(dur-t)/5);
+    const swell=.88+.12*Math.sin(2*Math.PI*t/18+seed);
+    x=Math.tanh(x*1.35)*inG*outG*swell;
+
+    // Paneo lento y micro-diferencia entre canales.
+    const pan=.12*Math.sin(2*Math.PI*t/(22+seed%5));
+    samples[i*2]=clamp(x*(1-pan),-.78,.78);
+    samples[i*2+1]=clamp(x*(1+pan),-.78,.78);
+  }
+
+  // Master sencillo: normalización conservadora + fade final.
+  let peak=0;
+  for(let i=0;i<samples.length;i++) peak=Math.max(peak,Math.abs(samples[i]));
+  const gain=peak>.001?Math.min(1.55,.82/peak):1;
+  for(let i=0;i<samples.length;i++) samples[i]*=gain;
   writeWav(wavPath,samples,sr,2);
 }
 
