@@ -47,7 +47,7 @@ function safe(name) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-const MUSIC_ENGINE_VERSION = "v23-multi-timbre-no-omissions";
+const MUSIC_ENGINE_VERSION = "v24-freeform-musicgpt-style";
 
 const BUILTIN_MUSIC = [
   ["relax-piano.mp3","Piano nocturno","Sueño",261.63,329.63,392],
@@ -555,91 +555,76 @@ async function generateLyriaMusicFile(prompt,index=1){
   const key=process.env.GEMINI_API_KEY;
   if(!key) throw new Error("GEMINI_API_KEY no configurada");
 
-  const atmosphere=String(prompt||"deep relaxation ambient music").slice(0,260);
-  const p=atmosphere.toLowerCase();
-  const has=(...w)=>w.some(x=>p.includes(x));
+  // IMPORTANTE: el usuario escribe una descripción musical libre.
+  // No intentamos convertirla en una lista cerrada de instrumentos.
+  // Lyria recibe la intención completa y decide la instrumentación/arreglo.
+  const userDescription=String(prompt||"deep relaxing ambient music").trim().slice(0,700);
   const n=Math.max(1,Number(index))-1;
 
-  // Cada previa tiene una familia tímbrica claramente distinta.
-  // Si el usuario pide un instrumento concreto, se respeta; si no, repartimos el espectro.
-  const families=[
-    "warm concert grand piano / felt piano, close natural recording, rich pedal resonance",
-    "airy bamboo flute and breathy woodwind, intimate natural room, soft sustained notes",
-    "warm nylon-string acoustic guitar, fingerpicked, woody body resonance, intimate close microphone",
-    "soft legato cello and small string ensemble, warm bow texture, spacious natural room"
-  ];
-  const family=families[n%families.length];
-
-  const requested=[];
-  if(has("piano","pianístico","pianistica","teclas","piano de cola","grand piano")) requested.push("warm concert grand piano");
-  if(has("guitarra","acústica","acustica","nylon","guitar")) requested.push("warm nylon-string acoustic guitar");
-  if(has("violín","violin","cello","cuerdas","strings")) requested.push("soft legato strings");
-  if(has("flauta","flute","bambú","bambu","wind")) requested.push("airy bamboo flute");
-  if(has("sintetizador","synth","electrónica","electronica")) requested.push("warm analog synthesizer");
-  if(has("agua","water","océano","oceano","mar","olas","waves","lluvia","rain","cascada","waterfall")) requested.push("subtle clean water ambience");
-  if(has("bosque","forest","naturaleza","nature","pájaros","pajaros","birds")) requested.push("organic forest ambience");
-
-  const explicit=requested.length>0 ? requested.join(", ") : family;
-  const requestedPalette=requested.length>0 ? requested.join(" + ") : family;
-  const arrangements=requested.length>0 ? [
-    "use ALL requested instruments and textures clearly: the first requested sound leads, the others provide audible secondary phrases and sustained layers",
-    "use ALL requested instruments and textures clearly: alternate the lead between the requested sounds while keeping the others softly audible",
-    "use ALL requested instruments and textures clearly: build a layered ensemble where each requested sound has its own register and musical role",
-    "use ALL requested instruments and textures clearly: create a slow conversational arrangement with distinct entrances, counterlines and texture changes for every requested sound"
-  ] : [
-    "piano-led motif with gentle answering phrases and long pedal resonance",
-    "breathy flute melody over very soft sustained harmony, with pauses between phrases",
-    "fingerpicked guitar motif with subtle counter-melody and slowly changing open chords",
-    "legato string theme with cello counterline, slow harmonic bloom and gentle resolution"
-  ];
-  const structures=[
-    "A-B-A' structure with a recognizable motif, harmonic development and transformed return",
-    "four-part arc: intimate opening, gradual harmonic expansion, quiet emotional peak, peaceful release",
-    "through-composed ambient flow with recurring motif and two gently contrasting harmonic areas",
-    "slow theme-and-variation form with three variations, each changing register and texture subtly"
+  const directions=[
+    "Interpret the description literally and make the requested musical idea the main creative brief. Develop a clear opening, evolving middle and satisfying ending.",
+    "Keep the same creative brief, but choose a different arrangement, lead timbre, register, voicing and texture. Preserve every important musical detail described by the user.",
+    "Keep the same creative brief, but create a distinctly different professional production: change instrumentation balance, melodic contour, harmony and spatial depth while preserving the requested mood and elements.",
+    "Keep the same creative brief, but make the most immersive version: introduce instruments and textures gradually, create subtle variation and a memorable musical motif without becoming repetitive."
   ];
 
   const finalPrompt=[
-    "Create an original professional instrumental deep-relaxation ambient composition.",
-    "MULTI-SOUND REQUIREMENT: if the user requested multiple instruments or textures, ALL of them must be audibly present in this option; never reduce the request to one sound.",
-    "REQUESTED PALETTE: "+requestedPalette+".",
-    requested.length ? "OPTION ROLE: distribute the requested palette across distinct lead, harmony, counterline and texture roles; do not collapse it to one timbre." : "PRIMARY TIMBRE FOR THIS OPTION: "+family+".",
-    "USER REQUESTED SOUND: "+explicit+".",
-    "Do not default to piano if piano was not requested. Do not omit any requested instrument or texture.",
-    arrangements[n%arrangements.length]+".",
-    structures[n%structures.length]+".",
-    "The four options must be audibly different: rotate which requested instrument is the lead in each option, change register and articulation, and change harmonic texture and room character. Every requested sound remains audible in every option.",
-    "Musically developed rather than a static loop: memorable but understated motif, counter-phrase, voice leading, harmonic movement, cadential breathing points and subtle variation every 8-16 bars.",
-    "Very slow 40-55 BPM feel, long phrases, natural dynamics, consonant extended harmony such as maj7, add9, sus2 and gentle minor colors.",
-    "No drums, no percussion, no bass groove, no pop drop, no aggressive rhythm, no vocals, no lyrics, no sudden impacts.",
-    "Clean high-end stereo recording aesthetic: realistic acoustic transients, warm low mids, silky highs, controlled sub-bass, natural room and spacious reverb.",
-    "Long-form meditation ambience similar in peaceful mood and sonic spaciousness to the supplied relaxation reference, but completely original.",
-    "User atmosphere: "+atmosphere+".",
-    "Do not reproduce any existing melody, recording or distinctive musical phrase."
+    "Create an original professional instrumental music track from the user's description below.",
+    "THIS IS A FREE-FORM MUSIC BRIEF, NOT A KEYWORD SEARCH.",
+    "Treat the user's entire description as the source of truth for genre, mood, instruments, textures, tempo, rhythm, harmony, structure, production, era, atmosphere and any other musical details they mention.",
+    "Do not replace the user's idea with a generic relaxation preset.",
+    "If the user names several instruments, ALL of them must be audibly present and musically integrated.",
+    "If the user describes a musical role, arrangement, rhythm, melody, chord progression, sound design or production characteristic, follow it rather than inventing a simpler substitute.",
+    "Do not add piano merely because the music is relaxing. Do not add drums, percussion, vocals or other elements unless the user's description calls for them or they are musically necessary and compatible with the description.",
+    "Create a real musical arrangement with identifiable sections, phrases, motifs, harmonic movement, counterpoint or complementary layers where appropriate. Do not make a single static drone or one-sound loop.",
+    "Make this option substantially different from the other three while preserving the user's brief.",
+    "Variation for this option: "+directions[n%directions.length]+".",
+    "The result must sound professionally produced, coherent and intentional, with realistic timbre, dynamics, stereo depth and controlled frequency balance.",
+    "Do not reproduce an existing song, melody, recording or distinctive musical phrase.",
+    "USER'S MUSIC DESCRIPTION: "+userDescription
   ].join(" ");
 
   const r=await fetchWithTimeout("https://generativelanguage.googleapis.com/v1beta/interactions",{
     method:"POST",
     headers:{"Content-Type":"application/json","x-goog-api-key":key},
-    body:JSON.stringify({model:"lyria-3.5",input:finalPrompt,response_format:{type:"audio"}})
+    body:JSON.stringify({
+      model:"lyria-3.5",
+      input:finalPrompt,
+      response_format:{type:"audio"}
+    })
   },45000);
+
   const data=await r.json().catch(()=>({}));
   if(!r.ok) throw new Error(data.error?.message||("Lyria 3.5 HTTP "+r.status));
+
   const b64=data.output_audio?.data||data.steps?.flatMap(s=>s.content||[]).find(x=>x.type==="audio")?.data;
   if(!b64) throw new Error("Lyria 3.5 no devolvió audio.");
 
   const raw=path.join(MUSIC_DIR,".lyria-"+Date.now()+"-"+index+".bin");
   fs.writeFileSync(raw,Buffer.from(b64,"base64"));
-  const outName="ai-reference-relax-v21-"+hashText(finalPrompt)+"-"+index+".mp3";
+  const outName="ai-freeform-v23-"+hashText(finalPrompt)+"-"+index+".mp3";
   const out=path.join(MUSIC_DIR,outName);
+
   try{
     await runFfmpeg(["-y","-i",raw,
       "-af","highpass=f=28,lowpass=f=18500,acompressor=threshold=-28dB:ratio=1.35:attack=30:release=350:makeup=1,alimiter=limit=0.94",
       "-ar","44100","-ac","2","-c:a","libmp3lame","-b:a","320k",out]);
-  }finally{fs.rmSync(raw,{force:true})}
+  }finally{
+    fs.rmSync(raw,{force:true});
+  }
+
   if(!fs.existsSync(out)||fs.statSync(out).size<4096) throw new Error("El audio generado no es válido.");
-  return {name:outName,url:"/media/music/"+encodeURIComponent(outName),ai:true,provider:"Google Lyria 3.5",generated:true,fallback:false,label:"IA · "+(n+1)};
+  return {
+    name:outName,
+    url:"/media/music/"+encodeURIComponent(outName),
+    ai:true,
+    provider:"Google Lyria 3.5",
+    generated:true,
+    fallback:false,
+    label:"IA · "+(n+1)
+  };
 }
+
 function makeFallbackLandscape(filename, theme="nature") {
   const safeTheme = String(theme).replace(/[&<>"]/g, "");
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
