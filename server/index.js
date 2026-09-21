@@ -534,29 +534,37 @@ function makeCompositionWav(track, wavPath, durationMs=18000){
   };
 
   // -------------------- 6. RENDER + MEZCLA --------------------
+  // Renderizamos cada evento dentro de su propia ventana temporal. La versión
+  // anterior recorría TODOS los eventos para CADA muestra, lo que hacía que
+  // previews de 60 s pudieran tardar demasiado en Render. Esta ruta mantiene
+  // exactamente la misma síntesis, pero reduce drásticamente el trabajo.
+  for(const e of events){
+    const renderer=renderers[e.role];
+    if(!renderer)continue;
+    const start=Math.max(0,Math.floor(e.t*sr));
+    const end=Math.min(n,Math.ceil(e.end*sr));
+    for(let i=start;i<end;i++){
+      const nt=i/sr-e.t;
+      if(nt<0)continue;
+      const x=renderer(e.f,nt,e.v);
+      const t=i/sr;
+      const pan=.13*Math.sin(2*Math.PI*t/(8+(h%5)));
+      samples[i*2]+=x*(1-pan);
+      samples[i*2+1]+=x*(1+pan);
+    }
+  }
+
   for(let i=0;i<n;i++){
     const t=i/sr;
-    let l=0,r=0;
-    const pan=.13*Math.sin(2*Math.PI*t/(8+(h%5)));
-
-    for(const e of events){
-      const nt=t-e.t;
-      if(nt<0||t>e.end)continue;
-      let x=0;
-      const renderer=renderers[e.role];
-      if(renderer)x=renderer(e.f,nt,e.v);
-      l+=x*(1-pan); r+=x*(1+pan);
-    }
+    let l=samples[i*2],r=samples[i*2+1];
 
     if(leadRole==="piano"){
-      for(let b=0;b<totalBars;b++){
-        const bt=b*bar;
-        if(t>=bt){
-          const nt=t-bt, c=progression[b%progression.length];
-          l+=pianoPedal(hz(degree(c)-12),nt,.045);
-          r+=pianoPedal(hz(degree(c)-12),nt,.041);
-        }
-      }
+      const barIndex=Math.min(totalBars-1,Math.max(0,Math.floor(t/bar)));
+      const bt=barIndex*bar;
+      const nt=t-bt;
+      const c=progression[barIndex%progression.length];
+      l+=pianoPedal(hz(degree(c)-12),nt,.045);
+      r+=pianoPedal(hz(degree(c)-12),nt,.041);
     }
 
     const tx=texture(t);
