@@ -94,8 +94,13 @@ function makeCompositionWav(track, wavPath){
   const profile=String(track.musicProfile||"").toLowerCase();
   const ultraCalm=/relax|calm|sleep|meditat|peace|soft|ambient|piano|nature|spa|healing|stress|anxiety/.test(profile);
   const darkCalm=/deep|night|dream|sleep/.test(profile);
-  const seed=Math.abs(Math.floor(track.f1*100 + track.f2*10 + track.f3)) % 1000;
-  const bpm=(ultraCalm ? [40,42,44,46] : [46,48,50,52])[seed%4], beat=60/bpm, bar=beat*4;
+  const seed=Math.abs(Math.floor(track.f1*100 + track.f2*10 + track.f3 + (track.variant||0)*137)) % 1000;
+  const variant=Number(track.variant||0)%4;
+  const flowing=/ocean|water|river|rain|waterfall|waves/.test(profile);
+  const nature=/forest|mountain|nature|bamboo|garden|birds/.test(profile);
+  const dream=/dream|sleep|night|star|moon|meditat|zen/.test(profile);
+  const bpmSet=flowing?[42,46,50,54]:dream?[38,40,43,46]:nature?[44,48,52,56]:[40,44,48,52];
+  const bpm=bpmSet[variant], beat=60/bpm, bar=beat*4;
   const hz=m=>440*Math.pow(2,(m-69)/12);
   const midiFromHz=f=>69+12*Math.log2(f/440);
   const baseMidi=Math.round(midiFromHz(track.f1));
@@ -107,7 +112,8 @@ function makeCompositionWav(track, wavPath){
     {scale:[0,2,3,5,7,9,10], name:"dorian"},
     {scale:[0,2,3,5,7,8,10], name:"minor"}
   ];
-  const mode=modes[darkCalm ? 2 : seed%3];
+  const modeIndex=darkCalm ? 2 : ((seed+variant)%modes.length);
+  const mode=modes[modeIndex];
   const scale=mode.scale;
 
   // Progresiones pensadas para reposo: tónica, subdominante y dominante
@@ -118,7 +124,7 @@ function makeCompositionWav(track, wavPath){
     [0,3,4,5,0,4,3,0],
     [0,5,1,4,0,3,4,0]
   ];
-  const degrees=progressions[seed%progressions.length];
+  const degrees=progressions[(seed+variant*2)%progressions.length];
 
   const chordIntervals=[
     [0,4,7,11,14], // maj9
@@ -135,7 +141,13 @@ function makeCompositionWav(track, wavPath){
     const degree=degrees[b];
     const root=baseMidi+scale[degree];
     const isMinor=((degree===2||degree===3||degree===5)&&mode.name!=="major");
-    const intervals=isMinor?[0,3,7,10,14]:chordIntervals[(degree+b+seed)%2];
+    const extensionSet=[
+      [0,4,7,11,14],
+      [0,3,7,10,14],
+      [0,4,7,10,14],
+      [0,3,7,11,14]
+    ];
+    const intervals=isMinor?[0,3,7,10,14]:extensionSet[(variant+b+seed)%extensionSet.length];
     let raw=intervals.map(iv=>root+iv);
     while(raw[0]<baseMidi+10) raw=raw.map(x=>x+12);
     while(raw[raw.length-1]>baseMidi+38) raw=raw.map(x=>x-12);
@@ -179,11 +191,20 @@ function makeCompositionWav(track, wavPath){
   // Eventos: arpegio lento, melodía con silencios y notas de paso siempre
   // pertenecientes al acorde/escala. Nada de notas aleatorias fuera de tono.
   const events=[];
+  const arpPatterns=[
+    [0,1,2,4,2,1],
+    [0,2,1,4,1,2],
+    [0,1,4,2],
+    [0,2,4,1,2,4,1,0]
+  ];
+  const arp=arpPatterns[variant];
   for(let b=0;b<8;b++){
-    const ch=chords[b], order=[0,1,2,4,2,1];
-    for(let j=0;j<6;j++){
-      const note=ch.notes[order[(j+seed+b)%order.length]];
-      events.push({t:b*bar+j*(bar/6)+.08,f:hz(note),v:.095+(j===0?.018:0)});
+    const ch=chords[b];
+    for(let j=0;j<arp.length;j++){
+      const note=ch.notes[arp[(j+seed+b)%arp.length]];
+      const slot=bar/arp.length;
+      const swing=variant===2 ? (j%2?beat*.10:0) : 0;
+      events.push({t:b*bar+j*slot+.08+swing,f:hz(note),v:ultraCalm ? (.060+(j===0?.015:0)) : (.085+(j===0?.025:0))});
     }
   }
 
@@ -193,7 +214,7 @@ function makeCompositionWav(track, wavPath){
     [4,null,3,2,3,null,1,2],
     [2,4,null,3,2,null,3,1]
   ];
-  const mp=melodyPatterns[ultraCalm ? (seed+1)%melodyPatterns.length : seed%melodyPatterns.length];
+  const mp=melodyPatterns[(seed+variant+(ultraCalm?1:0))%melodyPatterns.length];
   for(let b=0;b<8;b++){
     const ch=chords[b];
     for(let j=0;j<8;j++){
@@ -205,13 +226,20 @@ function makeCompositionWav(track, wavPath){
       ];
       const note=pool[degree%pool.length];
       // Entradas fuera del pulso para una sensación humana y flotante.
-      const t=b*bar+j*(beat/2)+beat*(j%2===0?.18:.05);
+      const rhythmOffset=[.18,.05,.28,.10][variant];
+      const t=b*bar+j*(beat/2)+beat*(j%2===0?rhythmOffset:.04);
       events.push({t,f:hz(note),v:ultraCalm ? (.050+(j%4===0?.012:0)) : (.095+(j%4===0?.025:0))});
     }
   }
 
   // Una nota grave por compás: refuerza el centro tonal sin crear un ritmo marcado.
-  const bassEvents=chords.map((ch,b)=>({t:b*bar,f:hz(ch.root-24),v:.065}));
+  const bassStep=variant===1 ? bar/2 : bar;
+  const bassEvents=[];
+  for(let b=0;b<8;b++){
+    const ch=chords[b];
+    bassEvents.push({t:b*bar,f:hz(ch.root-24),v:variant===3?.045:.055});
+    if(variant===1) bassEvents.push({t:b*bar+bassStep,f:hz(ch.root-24),v:.035});
+  }
 
   for(let i=0;i<n;i++){
     const t=i/sr;
@@ -225,16 +253,17 @@ function makeCompositionWav(track, wavPath){
     const pan=.08*Math.sin(2*Math.PI*t/19);
     const padNotes=[ch.notes[0]-12,ch.notes[1],ch.notes[3],ch.notes[4]];
     const padLevels=ultraCalm ? [.060,.038,.026,.016] : [.045,.028,.020,.012];
+    const padScale=variant===0?1.0:variant===1?.88:variant===2?.72:.94;
     for(let p=0;p<padNotes.length;p++){
-      const v=padVoice(hz(padNotes[p]),chordT,padLevels[p]);
+      const v=padVoice(hz(padNotes[p]),chordT,padLevels[p]*padScale);
       left+=v*(1-pan); right+=v*(1+pan);
     }
 
     // Bajo ligado al cambio de acorde, sin oscilador permanente que produzca
     // choques armónicos entre acordes.
-    const be=bassEvents[b];
-    const bt=t-be.t;
-    const bv=bass(be.f,bt,be.v);
+    const activeBass=bassEvents.filter(x=>x.t<=t).slice(-1)[0];
+    const bt=activeBass ? t-activeBass.t : 999;
+    const bv=activeBass ? bass(activeBass.f,bt,activeBass.v) : 0;
     left+=bv; right+=bv;
 
     for(const ev of events){
@@ -247,7 +276,7 @@ function makeCompositionWav(track, wavPath){
     }
 
     // Aire alto muy sutil, siempre basado en la 9ª del acorde.
-    const air=padVoice(hz(ch.notes[4]+12),chordT,ultraCalm ? .009 : .006);
+    const air=padVoice(hz(ch.notes[4]+12),chordT,ultraCalm ? .009 : (variant===2?.012:.006));
     left+=air*.88; right+=air*1.05;
 
     // Entrada/salida global muy suave para que el preview pueda repetirse.
@@ -537,12 +566,20 @@ function aiTracksForBackground(prompt=""){
   ];
   return bases.map((f,i)=>{
     const b=BUILTIN_MUSIC[i];
-    const shift=((seedBase+i*7)%5)-2;
+    const shift=((seedBase+i*7)%7)-3;
+    const variant=i;
+    const profiles=[
+      "variation 1: flowing piano and warm pads, spacious and legato",
+      "variation 2: softer minor/dorian atmosphere, sparse melody and long notes",
+      "variation 3: gentle rhythmic pulse, wider arpeggio and brighter air texture",
+      "variation 4: deep cinematic ambient, different chord voicings and descending melody"
+    ];
     return {...b,
       file:"ai-prompt-"+hashText(p)+"-"+(i+1)+".mp3",
       label:"IA · "+(i+1),
+      variant,
       f1:f[0]*Math.pow(2,shift/12),f2:f[1]*Math.pow(2,shift/12),f3:f[2]*Math.pow(2,shift/12),
-      musicProfile:p+" variation "+(i+1)
+      musicProfile:p+" "+profiles[i]
     };
   });
 }
