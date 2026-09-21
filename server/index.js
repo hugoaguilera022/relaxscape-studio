@@ -128,23 +128,31 @@ function makeCompositionWav(track, wavPath){
     world:has("world","oriental","oriental","indian","japanese","zen")
   };
 
-  let root=semantic.dark?45:semantic.bright?62:semantic.ocean?57:semantic.forest?52:semantic.mountain?50:semantic.piano?57:57;
-  if(semantic.sleep||semantic.meditation) root-=5;
-  const scale=semantic.dark?[0,2,3,5,7,8,10]
-    :semantic.world||semantic.flute?[0,2,3,7,9]
-    :semantic.cinematic||semantic.strings?[0,2,3,5,7,9,10]
-    :semantic.bright?[0,2,4,6,7,9,11]
-    :[0,2,4,7,9];
-  let bpm=semantic.sleep?34:semantic.meditation?38:semantic.focus?48:semantic.cinematic?42:semantic.ocean?40:44;
-  if(semantic.synth) bpm+=4;
-  const beat=60/bpm, bar=beat*4;
-  // La semilla NO puede depender solo de f1/f2/f3: eso hacía que una nueva búsqueda
-  // pudiera producir exactamente el mismo audio que una generación anterior.
-  // Ahora cada búsqueda/sesión aporta una semilla única y cada variante la transforma.
+  // Semilla musical real: cada búsqueda/sesión y cada variante cambia la composición.
+  // No se usa solo para el nombre del archivo; afecta tonalidad, tempo, progresión y melodía.
   const seedText=String(track.generationSeed||track.sessionNonce||track.musicProfile||track.userMusicBrief||"relaxscape");
   let seedHash=2166136261;
   for(const ch of seedText){ seedHash^=ch.charCodeAt(0); seedHash=Math.imul(seedHash,16777619); }
   const seed=Math.abs((seedHash>>>0)+variant*997+Math.floor((Number(track.f1)||220)*7+(Number(track.f2)||330)*3+(Number(track.f3)||392)))%997;
+  const baseRoot=semantic.dark?45:semantic.bright?62:semantic.ocean?57:semantic.forest?52:semantic.mountain?50:semantic.piano?57:57;
+  let root=baseRoot + ((seed%9)-4);
+  if(semantic.sleep||semantic.meditation) root-=5;
+  const scaleOptions=[
+    [0,2,4,7,9],
+    [0,2,3,5,7,9,10],
+    [0,2,3,7,9],
+    [0,2,4,6,7,9,11],
+    [0,1,3,5,7,8,10]
+  ];
+  const scale=semantic.dark?[0,2,3,5,7,8,10]
+    :semantic.world||semantic.flute?[0,2,3,7,9]
+    :semantic.cinematic||semantic.strings?[0,2,3,5,7,9,10]
+    :semantic.bright?[0,2,4,6,7,9,11]
+    :scaleOptions[seed%scaleOptions.length];
+  let bpm=semantic.sleep?34:semantic.meditation?38:semantic.focus?48:semantic.cinematic?42:semantic.ocean?40:44;
+  if(semantic.synth) bpm+=4;
+  bpm += (seed%5)-2;
+  const beat=60/bpm, bar=beat*4;
   const scaleNote=(m,d,oct=0)=>m+scale[((d%scale.length)+scale.length)%scale.length]+12*oct;
 
   // Cuatro arreglos diferentes dentro del mismo briefing:
@@ -214,7 +222,7 @@ function makeCompositionWav(track, wavPath){
   const events=[];
   const rootMidi=root;
   for(let b=0;b<4;b++){
-    const r=rootMidi + [0,5,3,4][b%4];
+    const r=rootMidi + [0,5,3,4][(b+seed)%4] + ((seed + b*3)%5)-2;
     if(primary==="strings"){
       for(let k=0;k<4;k++) events.push({t:b*bar,f:hz(scaleNote(r,k)),v:k===0?.075:.050,role:"strings"});
       events.push({t:b*bar+bar*.52,f:hz(scaleNote(r,2,1)),v:.045,role:"strings"});
@@ -227,12 +235,12 @@ function makeCompositionWav(track, wavPath){
       const degrees=[0,1,2,4,3,2,1,0];
       for(let j=0;j<8;j++){
         if(j===6) continue;
-        events.push({t:b*bar+j*(beat/2)+.08,f:hz(scaleNote(r,degrees[(j+b+seed)%degrees.length],1)),v:j===0?.09:.065,role:semantic.flute||semantic.world?"flute":"pluck"});
+        events.push({t:b*bar+j*(beat/2)+.08,f:hz(scaleNote(r,degrees[(j+b+seed+variant*3)%degrees.length],1)),v:j===0?.09:.065,role:semantic.flute||semantic.world?"flute":"pluck"});
       }
       events.push({t:b*bar+bar*.38,f:hz(scaleNote(r,2,1)),v:.045,role:"pluck"});
     } else {
       for(let j=0;j<5;j++){
-        events.push({t:b*bar+j*(bar/5)+.10,f:hz(scaleNote(r,(j+b+seed)%5,1)),v:j===0?.18:.12,role:"piano"});
+        events.push({t:b*bar+j*(bar/5)+.10,f:hz(scaleNote(r,(j+b+seed+variant*2)%5,1)),v:j===0?.18:.12,role:"piano"});
       }
       events.push({t:b*bar+bar*.62,f:hz(scaleNote(r,2,2)),v:.065,role:"pluck"});
       events.push({t:b*bar,f:hz(scaleNote(r,0,-1)),v:.065,role:"cello"});
