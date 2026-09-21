@@ -361,28 +361,46 @@ app.post("/api/ai-options", async (req, res) => {
       imageErrors.push("Pexels no respondió; se activó el paisaje local de respaldo.");
     }
 
-    // La música se prepara después de las imágenes, independientemente de
-    // que Pexels tenga clave o de que alguna búsqueda haya fallado.
+    // IMPORTANTE: la previa NO depende de FFmpeg. En Render, convertir
+    // la composición a MP3 durante esta petición podía bloquear la respuesta
+    // y dejar al usuario viendo "Generando..." sin foto ni música.
+    // Generamos WAV PCM directamente: el navegador lo reproduce y FFmpeg
+    // solo entra en juego cuando el usuario pide la versión larga.
     const existingMusic = BUILTIN_MUSIC.filter(t => fs.existsSync(path.join(MUSIC_DIR, t.file)));
-    const musicTracks = [...(existingMusic.length ? existingMusic : BUILTIN_MUSIC)]
-      .sort(() => Math.random() - 0.5).slice(0, 1);
+    const track = [...(existingMusic.length ? existingMusic : BUILTIN_MUSIC)]
+      .sort(() => Math.random() - 0.5)[0];
     try {
-      await ensureBuiltinMusic(musicTracks);
+      if (existingMusic.length) {
+        music.push({
+          name: track.file,
+          url: "/media/music/" + encodeURIComponent(track.file),
+          ai: true,
+          provider: "RelaxScape Ambient Engine",
+          generated: true,
+          fallback: false,
+          label: track.label,
+          category: track.category
+        });
+      } else {
+        const previewName = "relaxscape-preview-" + Date.now() + ".wav";
+        const previewPath = path.join(MUSIC_DIR, previewName);
+        makeCompositionWav(track, previewPath);
+        if (fs.existsSync(previewPath)) {
+          music.push({
+            name: previewName,
+            url: "/media/music/" + encodeURIComponent(previewName),
+            ai: true,
+            provider: "RelaxScape Ambient Engine",
+            generated: true,
+            fallback: true,
+            label: track.label,
+            category: track.category
+          });
+        }
+      }
     } catch (e) {
+      console.error("[AI options] No se pudo crear la previa WAV:", e.message);
       musicErrors.push("Error generando música: " + e.message);
-    }
-    for (const track of musicTracks) {
-      if (!fs.existsSync(path.join(MUSIC_DIR, track.file))) continue;
-      music.push({
-        name: track.file,
-        url: "/media/music/" + encodeURIComponent(track.file),
-        ai: true,
-        provider: "RelaxScape Ambient Engine",
-        generated: true,
-        fallback: false,
-        label: track.label,
-        category: track.category
-      });
     }
     if (!music.length) musicErrors.push("No se pudo preparar la biblioteca musical.");
 
