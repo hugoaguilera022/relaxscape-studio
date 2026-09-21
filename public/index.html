@@ -35,23 +35,24 @@
 </section>
 
 <section id="ai" class="tab">
-  <div class="section-head"><div><p class="eyebrow">INTELIGENCIA ARTIFICIAL</p><h2>Crear contenido</h2></div><span class="badge">Herramientas adicionales</span></div>
-  <div class="ai-card">
-    <label>DESCRIBE TU CONTENIDO</label>
-    <textarea id="aiPrompt" class="text area" placeholder="Ej.: Un lago tranquilo entre montañas al amanecer, niebla suave sobre el agua, movimiento de cámara lento, ambiente cinematográfico y relajante."></textarea>
-    <div class="ai-grid">
-      <div><label>VÍDEO</label><select id="aiAspect"><option value="16:9">16:9 horizontal</option><option value="9:16">9:16 vertical</option></select></div>
-      <div><label>DURACIÓN</label><select id="aiDuration"><option value="1">1 hora</option></select></div>
+  <div class="section-head"><div><p class="eyebrow">CREADOR IA</p><h2>Vídeo relajante de 1 hora</h2><p class="sub">Elige una foto y una música. RelaxScape creará un MP4 real de 1 hora en Full HD.</p></div><span class="badge">MP4 · 1080p · 1 HORA</span></div>
+  <div class="ai-builder">
+    <div class="ai-choice">
+      <div class="choice-head"><div><span class="step">01</span><div><h3>Elige tu foto</h3><p>Paisajes Full HD de Pexels o imágenes que hayas subido.</p></div></div><button id="aiLoadPhotos" class="primary small">↻ Nuevos paisajes</button></div>
+      <div id="aiImageGrid" class="ai-gallery"></div>
     </div>
-    <p class="ai-note">Esta sección es opcional. El creador principal usa una foto fija de alta calidad + una pista relajante para generar un MP4 real de 1 hora.</p>
-    <div class="ai-actions">
-      <button id="aiVideo" class="primary">🎬 Crear vídeo gratis</button>
-      <button id="aiMusic" class="primary">🎵 Generar música IA</button>
-      <button id="aiBoth" class="primary">✨ Generar vídeo + música</button>
+    <div class="ai-choice">
+      <div class="choice-head"><div><span class="step">02</span><div><h3>Elige tu música</h3><p>Selecciona la música relajante que sonará durante la hora completa.</p></div></div><button id="aiGoMusic" class="ghost small">Ver biblioteca →</button></div>
+      <div id="aiMusicList" class="ai-music-list"></div>
     </div>
-    <div id="aiStatus" class="ai-status">Configura PEXELS_API_KEY en Render para crear vídeos gratis. La música IA usa GEMINI_API_KEY.</div>
+    <div class="ai-final">
+      <div><span class="step">03</span><div><h3>Crear vídeo</h3><p id="aiSelectionStatus">Selecciona una foto y una música para continuar.</p><div class="ai-summary"><span>🖼️ <b id="aiSelectedPhoto">Sin foto</b></span><span>♫ <b id="aiSelectedMusic">Sin música</b></span><span>⏱️ <b>1 hora</b></span><span>HD <b>1920×1080</b></span></div></div></div>
+      <button id="aiCreateHour" class="primary big">✨ Crear vídeo de 1 hora <b>→</b></button>
+    </div>
   </div>
 </section>
+
+<section id="landscapes" class="tab">
 
 <section id="landscapes" class="tab"><div class="section-head"><div><p class="eyebrow">BIBLIOTECA VISUAL</p><h2>Elige tu paisaje</h2><p class="sub">Fotos Full HD de Pexels para crear vídeos relajantes.</p></div><div class="actions"><button id="loadPexels" class="primary small">↻ Buscar nuevos paisajes</button><label class="button">＋ Subir imagen<input id="imageInput" type="file" accept="image/*" hidden></label><button id="aiImage" class="primary small">✨ Crear con IA</button></div></div><div class="category-chips" id="landscapeCategories"><button data-q="mountain lake peaceful">🏔️ Montañas</button><button data-q="calm ocean sea">🌊 Océano</button><button data-q="misty forest">🌲 Bosque</button><button data-q="rain nature">🌧️ Lluvia</button><button data-q="sunset landscape">🌅 Atardecer</button><button data-q="peaceful lake">🏞️ Lago</button><button data-q="clouds sky">☁️ Nubes</button><button data-q="snow mountains">❄️ Nieve</button></div><input id="prompt" class="text" placeholder="Ej.: lago alpino al amanecer, bosque, océano, montaña…"><div id="imageGrid" class="gallery"></div></section>
 
