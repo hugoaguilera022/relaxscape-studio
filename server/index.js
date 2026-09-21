@@ -572,10 +572,10 @@ async function generateLyriaMusicFile(prompt,index=1){
   const n=Math.max(1,Number(index))-1;
 
   const directions=[
-    "OPTION A — Organic acoustic performance. Build a clearly audible human-like arrangement around warm felt piano or the user's requested lead instrument, nylon guitar, intimate bowed strings and airy woodwind. Use a slow 4/4 pulse without drums, varied chord inversions, a memorable 8-bar motif, call-and-response phrases, close-mic detail and a large warm room. The arrangement must evolve every 8–16 bars.",
-    "OPTION B — Cinematic ambient composition. Make the harmony and texture the main story: low cello, evolving string ensemble, wide analog pads, subtle piano only if compatible, long swells, suspended chords, counter-melodies and deep stereo space. Start sparse, grow gradually, reach a rich middle section and dissolve naturally. Avoid sounding like Option A.",
-    "OPTION C — Ethereal electronic composition. Use warm analog synths, evolving pads, glassy high textures, soft sub bass, granular ambience and slowly moving stereo layers. Create a distinct melodic motif with changing register and harmony, with no acoustic-piano dominance. The sound should be modern, spacious and detailed rather than a static drone.",
-    "OPTION D — Organic/world relaxation composition. Use bamboo flute or breathy woodwind, nylon guitar, resonant plucked textures, soft strings and environmental atmosphere when compatible with the brief. Use modal harmony, different melodic phrasing, subtle rubato and natural acoustic space. Make this composition audibly different in timbre, register and melodic contour from A, B and C."
+    "OPTION A — FELT PIANO / ACOUSTIC CHAMBER. Sonic identity: intimate felt piano lead, nylon-string guitar answering it, solo cello and airy flute accents. 46 BPM, gentle 4/4, human timing, close microphones and warm wooden room. Harmony should use rich major-7/9 and suspended voicings. Build a real 16-bar melody with rests, variation and call-and-response. NO SYNTH LEAD, NO BIG CINEMATIC PAD, NO ELECTRONIC DRONE.",
+    "OPTION B — CINEMATIC STRINGS / DEEP SPACE. Sonic identity: cello and viola lead, layered legato violins, very wide evolving analog pad underneath, rare low piano hits only as accents. 40 BPM, long 8-bar swells, suspended/minor-9 harmony, huge hall reverb and slow dynamic arcs. The melody should be carried by bowed strings and move through different registers. NO GUITAR LEAD, NO FLUTE LEAD, NO ARPEGGIATED PIANO LOOP.",
+    "OPTION C — ANALOG ELECTRONIC / ETHEREAL. Sonic identity: warm analog polysynth lead, evolving granular pads, glassy high textures, soft sub-bass and slowly moving stereo modulation. 52 BPM, free 4/4 pulse, modern spacious mix, electronic melodic motif with octave/register changes and harmonic movement. Acoustic instruments must NOT dominate. NO FELT-PIANO LEAD, NO ORCHESTRAL STRING WALL, NO GENERIC SPA PAD.",
+    "OPTION D — BAMBOO / NYLON WORLD AMBIENT. Sonic identity: breathy bamboo flute lead, nylon guitar ostinatos, resonant hand-plucked tones, very light bowed-string bed and natural outdoor room ambience. 44 BPM with subtle rubato, modal harmony, long melodic breaths and organic imperfections. The flute must clearly carry the melody while guitar provides the rhythmic identity. NO SYNTH LEAD, NO PIANO LEAD, NO HUGE CINEMATIC REVERB."
   ];
 
   const requestNonce="lyria-fresh-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,12)+"-v"+(n+1);
@@ -589,9 +589,11 @@ async function generateLyriaMusicFile(prompt,index=1){
     "If the user describes a musical role, arrangement, rhythm, melody, chord progression, sound design or production characteristic, follow it rather than inventing a simpler substitute.",
     "Do not add piano merely because the music is relaxing. Do not add drums, percussion, vocals or other elements unless the user's description calls for them or they are musically necessary and compatible with the description.",
     "Create a real musical arrangement with identifiable sections, phrases, motifs, harmonic movement, counterpoint or complementary layers where appropriate. Do not make a single static drone or one-sound loop.",
-    "Make this option substantially different from the other three while preserving the user's brief.",
+    "The numbered sonic identity below is NON-NEGOTIABLE. Preserve the user's requested mood, but use this identity to force four genuinely different compositions.",
     "Variation for this option: "+directions[n%directions.length]+".",
-    "Explore a broad timbral and frequency spectrum from deep controlled lows through detailed mids to airy highs, while keeping the mix soft, balanced and non-fatiguing.",
+    "Do not average the four identities together. Do not use the same lead instrument, chord texture, register, groove, opening, melodic contour or production template as another option.",
+    "The first 10 seconds must already reveal this option's unique sonic identity. The composition must contain multiple sections and evolve rather than becoming a generic relaxation loop.",
+    "Explore the full audible spectrum from controlled sub/low bass through detailed mids to airy highs, with distinct foreground, midground and background layers.",
     "The result must sound professionally produced, coherent and intentional, with realistic timbre, dynamics, stereo depth, layered textures and controlled frequency balance.",
     "Do not reproduce an existing song, melody, recording or distinctive musical phrase.",
     "USER'S MUSIC DESCRIPTION: "+userDescription
