@@ -758,7 +758,7 @@ const SONIC_PALETTES = [
 ];
 
 function aiTracksForBackground(prompt="", generationId=0){
-  const p=String(prompt||"deep relaxation ambient music").trim().slice(0,700);
+  const p="professional deep-relaxation ambient music for peace, stress relief and sleep: soft felt piano or warm keyboards, gentle sustained strings, airy pads, very slow expressive melody, warm consonant chords, spacious natural reverb, subtle evolving texture, no drums, no percussion, no aggressive bass, no bright pop elements, no tension, no abrupt changes";
   const seed=Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8);
   const sessionNonce="session-"+generationId+"-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,10);
   const paletteOrder=[...SONIC_PALETTES].sort(()=>Math.random()-0.5).slice(0,4);
