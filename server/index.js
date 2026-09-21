@@ -123,48 +123,54 @@ app.post("/api/generate-video", async (req, res) => {
   } catch (e) { res.status(500).json({ error: "No se pudo generar el vídeo: " + e.message }); }
 });
 
-function geminiHeaders(key) {
-  return { "Content-Type": "application/json", "x-goog-api-key": key };
-}
+async function generatePexelsVideo(prompt, aspectRatio, key) {
+  const query = String(prompt || "peaceful nature landscape")
+    .replace(/[^a-zA-Z0-9áéíóúüñÁÉÍÓÚÜÑ ,.-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120) || "peaceful nature landscape";
 
-async function waitForVeo(operationName, key) {
-  const deadline = Date.now() + 8 * 60 * 1000;
-  while (Date.now() < deadline) {
-    await new Promise(r => setTimeout(r, 7000));
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/${operationName}`, { headers: { "x-goog-api-key": key } });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error?.message || "Error consultando Veo.");
-    if (data.done) {
-      if (data.error) throw new Error(data.error.message || "Veo no pudo generar el vídeo.");
-      const uri = data.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri;
-      if (!uri) throw new Error("Veo terminó pero no devolvió el vídeo.");
-      return uri;
-    }
-  }
-  throw new Error("La generación de vídeo está tardando demasiado. Inténtalo de nuevo.");
+  const search = await fetch(
+    `https://api.pexels.com/v1/videos/search?query=${encodeURIComponent(query)}&per_page=15&orientation=${aspectRatio === "9:16" ? "portrait" : "landscape"}`,
+    { headers: { Authorization: key } }
+  );
+  const data = await search.json();
+  if (!search.ok) throw new Error(data.error || "No se pudieron buscar vídeos gratuitos en Pexels.");
+
+  const videos = (data.videos || []).filter(v => v.video_files?.length);
+  if (!videos.length) throw new Error("No encontramos un vídeo gratuito que encaje con tu descripción. Prueba con otra descripción.");
+
+  const chosen = videos[Math.floor(Math.random() * videos.length)];
+  const files = [...chosen.video_files].sort((a, b) => {
+    const score = file => {
+      const portraitBonus = aspectRatio === "9:16" ? (file.height > file.width ? 2 : 0) : (file.width >= file.height ? 2 : 0);
+      const sizeScore = Math.min((file.width || 0) / 1920, 1);
+      return portraitBonus + sizeScore;
+    };
+    return score(b) - score(a);
+  });
+  const videoUrl = files[0]?.link;
+  if (!videoUrl) throw new Error("Pexels no devolvió un archivo de vídeo válido.");
+
+  const download = await fetch(videoUrl);
+  if (!download.ok) throw new Error("No se pudo descargar el vídeo gratuito seleccionado.");
+  const filename = `pexels-${Date.now()}.mp4`;
+  fs.writeFileSync(path.join(VIDEO_DIR, filename), Buffer.from(await download.arrayBuffer()));
+
+  return { name: filename, url: `/media/videos/${filename}`, source: "Pexels", sourceUrl: chosen.url };
 }
 
 app.post("/api/generate-ai-video", async (req, res) => {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) return res.status(400).json({ error: "Añade GEMINI_API_KEY en Render para activar Veo y Lyria." });
-  const prompt = req.body.prompt || "A peaceful cinematic landscape, slow camera movement, relaxing atmosphere, no people, no text.";
+  const key = process.env.PEXELS_API_KEY;
+  if (!key) return res.status(400).json({ error: "Añade PEXELS_API_KEY en Render. La API de Pexels es gratuita y permite buscar vídeos sin pagar." });
+  const prompt = req.body.prompt || "peaceful cinematic nature landscape, relaxing atmosphere, no people, no text";
   const aspectRatio = req.body.aspectRatio === "9:16" ? "9:16" : "16:9";
   try {
-    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/veo-3.1-generate-preview:predictLongRunning", {
-      method: "POST",
-      headers: geminiHeaders(key),
-      body: JSON.stringify({ instances: [{ prompt }], parameters: { aspectRatio, resolution: "720p" } })
-    });
-    const data = await r.json();
-    if (!r.ok) return res.status(r.status).json({ error: data.error?.message || "No se pudo iniciar Veo." });
-    if (!data.name) return res.status(500).json({ error: "Veo no devolvió una operación." });
-    const videoUri = await waitForVeo(data.name, key);
-    const videoResponse = await fetch(videoUri, { headers: { "x-goog-api-key": key } });
-    if (!videoResponse.ok) throw new Error("No se pudo descargar el vídeo generado.");
-    const filename = `ai-video-${Date.now()}.mp4`;
-    fs.writeFileSync(path.join(VIDEO_DIR, filename), Buffer.from(await videoResponse.arrayBuffer()));
-    res.json({ name: filename, url: `/media/videos/${filename}` });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+    const result = await generatePexelsVideo(prompt, aspectRatio, key);
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.post("/api/generate-ai-music", async (req, res) => {
