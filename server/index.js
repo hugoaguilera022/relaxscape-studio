@@ -168,7 +168,7 @@ app.post("/api/generate-image", async (req, res) => {
         input: prompt + ". Wide 16:9 landscape composition, suitable for a relaxing video, no text.",
         response_format: {
           type: "image",
-          mime_type: "image/png",
+          mime_type: "image/jpeg",
           aspect_ratio: "16:9",
           image_size: "2K"
         }
@@ -178,7 +178,7 @@ app.post("/api/generate-image", async (req, res) => {
     if (!r.ok) return res.status(r.status).json({ error: data.error?.message || JSON.stringify(data) });
     const imageData = data.output_image?.data;
     if (!imageData) return res.status(500).json({ error: "Gemini no devolvió output_image. Respuesta: " + JSON.stringify(data).slice(0, 500) });
-    const filename = `ai-${Date.now()}.png`;
+    const filename = `ai-${Date.now()}.jpg`;
     fs.writeFileSync(path.join(IMAGE_DIR, filename), Buffer.from(imageData, "base64"));
     res.json({ name: filename, url: `/media/images/${filename}` });
   } catch (e) {
@@ -217,11 +217,11 @@ async function generateGeminiImageFile(prompt, index) {
   const data = await callGoogleInteraction({
     model: "gemini-3.1-flash-image",
     input: prompt,
-    response_format: { type: "image", mime_type: "image/png", aspect_ratio: "16:9", image_size: "2K" }
+    response_format: { type: "image", mime_type: "image/jpeg", aspect_ratio: "16:9", image_size: "2K" }
   }, "Gemini imagen");
   const imageData = data.output_image?.data;
   if (!imageData) throw new Error("Gemini no devolvió output_image. Respuesta: " + JSON.stringify(data).slice(0, 800));
-  const filename = `ai-option-${Date.now()}-${index}.png`;
+  const filename = `ai-option-${Date.now()}-${index}.jpg`;
   fs.writeFileSync(path.join(IMAGE_DIR, filename), Buffer.from(imageData, "base64"));
   return { name: filename, url: `/media/images/${encodeURIComponent(filename)}`, ai: true };
 }
