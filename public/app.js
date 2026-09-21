@@ -113,11 +113,14 @@ $("#imageInput").onchange=async e=>{if(!e.target.files[0])return;const fd=new Fo
 $("#musicInput").onchange=async e=>{if(!e.target.files[0])return;const fd=new FormData();fd.append("music",e.target.files[0]);$("#builderStatus").textContent="Subiendo música…";try{S.music=await api("/api/upload/music",{method:"POST",body:fd});await load()}catch(x){$("#builderStatus").textContent=x.message}};
 $("#aiImage").onclick=async()=>{const p=$("#prompt").value||"Ultra-realistic cinematic peaceful landscape, natural light, no people, no text, photorealistic";$("#builderStatus").textContent="Generando paisaje IA…";try{S.image=await api("/api/generate-image",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt:p})});await load()}catch(x){$("#builderStatus").textContent=x.message}};
 $("#generate").onclick=async()=>{if(!S.image||!S.music){$("#builderStatus").textContent="Selecciona un paisaje y una pista.";return}$("#generate").disabled=true;$("#builderStatus").textContent="Generando vídeo…";try{const d=await api("/api/generate-video",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image:S.image.url,music:S.music.url,durationHours:1})});$("#video").src=d.url;$("#download").href=d.url;$("#download").setAttribute("download",d.name||"relaxscape-video.mp4");$("#result").classList.remove("hidden");$("#builderStatus").textContent="Vídeo terminado.";await load();}catch(x){$("#builderStatus").textContent=x.message}finally{$("#generate").disabled=false}};
-$("#aiLoadPhotos").onclick=async()=>{
-  S.aiReady=false;S.aiImages=[];S.aiMusic=[];S.image=null;S.music=null;
+async function searchAI(){
+  S.aiReady=false;S.aiLoading=false;S.aiImages=[];S.aiMusic=[];S.image=null;S.music=null;
+  renderAICreator();
   await ensureAIOptions();
-  if(!S.aiReady) setTimeout(()=>ensureAIOptions(),1500);
-};
+}
+$("#aiLoadPhotos").onclick=searchAI;
+$("#aiSearchImage").onclick=searchAI;
+$("#aiSearchMusic").onclick=searchAI;
 $("#aiGoMusic").onclick=()=>{$$(".nav").forEach(x=>x.classList.remove("active"));$(".tab").forEach(x=>x.classList.remove("active"));document.querySelector('[data-tab="music"]').classList.add("active");$("#music").classList.add("active");};
 $("#aiCreateHour").onclick=async()=>{
   if(!S.image||!S.music){$("#aiSelectionStatus").textContent="Selecciona primero una foto y una música.";return}
