@@ -1368,6 +1368,74 @@ app.get("/api/external-music-search", async (req,res)=>{
   }
 });
 
+app.post("/api/generate-freesound-ai-mix", async (req,res)=>{
+  const {tracks=[],query="",durationHours=1}=req.body||{};
+  const hours=Number(durationHours);
+  if(!Array.isArray(tracks)||!tracks.length) return res.status(400).json({error:"No hay resultados de Freesound para mezclar."});
+  if(![1,2].includes(hours)) return res.status(400).json({error:"La duración debe ser de 1 o 2 horas."});
+  const selected=tracks.slice(0,6).filter(x=>x?.preview);
+  if(!selected.length) return res.status(400).json({error:"Las previas seleccionadas no son válidas."});
+  const stamp=Date.now(),work=path.join(MUSIC_DIR,"freesound-ai-mix-"+stamp);
+  const finalName="relaxscape-ai-mix-"+stamp+".mp3",out=path.join(MUSIC_DIR,finalName);
+  fs.mkdirSync(work,{recursive:true});
+  const isAmbient=x=>{
+    const s=(String(x.name||"")+" "+(x.tags||[]).join(" ")).toLowerCase();
+    return /rain|river|water|stream|ocean|sea|forest|birds|fire|fireplace|nature|ambience|ambient|wind|rainforest|nature/.test(s);
+  };
+  const isInstrument=x=>{
+    const s=(String(x.name||"")+" "+(x.tags||[]).join(" ")).toLowerCase();
+    return /piano|flute|guitar|violin|strings|cello|harp|kalimba|melody|music|instrument|chord|synth|pad/.test(s);
+  };
+  try{
+    const downloaded=[];
+    for(let i=0;i<selected.length;i++){
+      const x=selected[i];
+      const r=await fetchWithTimeout(x.preview,{},15000);
+      if(!r.ok) continue;
+      const file=path.join(work,"source-"+i+".mp3");
+      fs.writeFileSync(file,Buffer.from(await r.arrayBuffer()));
+      downloaded.push({...x,file});
+    }
+    if(!downloaded.length) throw new Error("No se pudieron descargar las previas.");
+    const ambience=downloaded.find(isAmbient);
+    const instruments=downloaded.filter(isInstrument);
+    const musicTracks=(instruments.length?instruments:downloaded.filter(x=>x!==ambience)).slice(0,4);
+    const pool=musicTracks.length?musicTracks:downloaded.slice(0,4);
+    const sections=[];
+    for(let i=0;i<pool.length;i++){
+      const x=pool[i];
+      const section=path.join(work,"section-"+i+".mp3");
+      const vol=ambience&&ambience.id!==x.id ? "0.72" : "0.82";
+      await runFfmpeg(["-y","-stream_loop","-1","-i",x.file,"-t","45","-af","aresample=48000,highpass=f=35,lowpass=f=18000,volume="+vol+",afade=t=in:st=0:d=3,afade=t=out:st=41:d=4","-c:a","libmp3lame","-b:a","192k",section]);
+      sections.push(section);
+    }
+    const musicBase=path.join(work,"music-base.mp3");
+    if(sections.length===1){
+      fs.copyFileSync(sections[0],musicBase);
+    }else{
+      const inputs=[]; for(const s of sections) inputs.push("-i",s);
+      const filters=[]; let current="[0:a]";
+      for(let i=1;i<sections.length;i++){
+        const next="[m"+i+"]";
+        filters.push(current+"["+i+":a]acrossfade=d=4:c1=tri:c2=tri"+next);
+        current=next;
+      }
+      await runFfmpeg(["-y",...inputs,"-filter_complex",filters.join(";"),"-map",current,"-c:a","libmp3lame","-b:a","192k",musicBase]);
+    }
+    const finalBase=path.join(work,"final-base.mp3");
+    if(ambience){
+      await runFfmpeg(["-y","-stream_loop","-1","-i",musicBase,"-stream_loop","-1","-i",ambience.file,"-t","180","-filter_complex","[0:a]volume=0.92[m];[1:a]aresample=48000,lowpass=f=9000,volume=0.16,afade=t=in:st=0:d=5[amb];[m][amb]amix=inputs=2:duration=first:dropout_transition=5,loudnorm=I=-18:TP=-2:LRA=7[out]","-map","[out]","-c:a","libmp3lame","-b:a","192k",finalBase]);
+    }else{
+      fs.copyFileSync(musicBase,finalBase);
+    }
+    await runFfmpeg(["-y","-stream_loop","-1","-i",finalBase,"-t",String(hours*3600),"-c:a","copy",out]);
+    res.json({name:finalName,url:"/media/music/"+encodeURIComponent(finalName),hours,provider:"Freesound + RelaxScape AI Mix",generatedFromSearch:true,query,sourceTracks:downloaded.map(x=>({id:x.id,name:x.name,license:x.license,sourceUrl:x.sourceUrl}))});
+  }catch(e){
+    console.error("[Freesound AI Mix] ERROR",e.stack||e.message);
+    res.status(500).json({error:"No se pudo crear la mezcla: "+e.message});
+  }finally{fs.rmSync(work,{recursive:true,force:true});}
+});
+
 app.post("/api/import-external-music", async (req,res)=>{
   const {preview,name="Freesound preview",soundId,sourceUrl,username,license}=req.body||{};
   if(!preview || !/^https?:\/\//i.test(preview)) return res.status(400).json({error:"Previa externa no válida."});
