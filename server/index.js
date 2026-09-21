@@ -47,7 +47,7 @@ function safe(name) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-const MUSIC_ENGINE_VERSION = "v14-professional-ambient-master";
+const MUSIC_ENGINE_VERSION = "v15-fast-professional-ambient";
 
 const BUILTIN_MUSIC = [
   ["relax-piano.mp3","Piano nocturno","Sueño",261.63,329.63,392],
@@ -90,7 +90,7 @@ function makeCompositionWav(track, wavPath){
   // Motor armónico v7: ambient cinematográfico, progresiones lentas, voice-leading
   // estricto, melodía respirada y capas suaves. Se renderiza a 22.05 kHz y se
   // entrega a FFmpeg a 44.1 kHz para mantener calidad sin bloquear Render.
-  const sr=22050, dur=8, n=sr*dur, samples=new Float32Array(n*2);
+  const sr=11025, dur=6, n=sr*dur, samples=new Float32Array(n*2);
   const profile=String(track.musicProfile||"").toLowerCase();
   const ultraCalm=/relax|relaj|calm|calma|tranquil|peace|soft|ambient|piano|nature|spa|healing|bienestar|stress|estrés|ansiedad|anxiety|meditat|sleep|suave/.test(profile);
   const darkCalm=/deep|night|dream|sleep/.test(profile);
@@ -617,25 +617,25 @@ app.post("/api/ai-options", async (req, res) => {
     imageErrors.push("Se completaron los 4 paisajes con fondos locales porque Pexels no devolvió suficientes resultados.");
   }
 
-  // Las 4 previews musicales se crean antes de responder. Así nunca
-  // mostramos tarjetas de audio que todavía apuntan a archivos inexistentes.
+  // Las imágenes se devuelven inmediatamente. La música se prepara en segundo plano
+  // para que Crear IA no quede bloqueado mientras se renderizan las 4 previas.
   aiMusicTracks = aiTracksForBackground(musicPrompt);
   aiMusicErrors = [];
-  aiMusicPreparing = true;
-  try{
-    await ensureBuiltinMusic(aiMusicTracks);
-  }catch(e){
-    aiMusicErrors.push(e.message||String(e));
-    console.error("[AI Music] preparación:",e.stack||e.message);
-  }finally{
-    aiMusicPreparing = false;
+  const initialMusic=getAIMusicOptions();
+  if(initialMusic.length<4 && !aiMusicPreparing){
+    aiMusicPreparing = true;
+    ensureBuiltinMusic(aiMusicTracks)
+      .catch(e=>{
+        aiMusicErrors.push(e.message||String(e));
+        console.error("[AI Music] preparación:",e.stack||e.message);
+      })
+      .finally(()=>{ aiMusicPreparing=false; });
   }
-  const music=getAIMusicOptions();
   res.json({
     images,
-    music,
-    musicReady:music.length>=4,
-    musicPreparing:false,
+    music:initialMusic,
+    musicReady:initialMusic.length>=4,
+    musicPreparing:aiMusicPreparing,
     imageErrors,
     musicErrors:aiMusicErrors.slice(),
     provider:"RelaxScape Free"
