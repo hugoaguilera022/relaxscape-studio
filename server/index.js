@@ -369,7 +369,11 @@ function makeCompositionWav(track, wavPath){
 
 async function generateAIMusicFile(track, outPath){
   // Motor local gratuito: la búsqueda del usuario controla directamente la composición.
-  makeCompositionWav(track, outPath);
+  // Generamos WAV temporal y lo convertimos a MP3 real para que el navegador lo reproduzca.
+  const wavPath=outPath.replace(/\\.mp3$/i,".wav");
+  makeCompositionWav(track, wavPath);
+  await runFfmpeg(["-y","-i",wavPath,"-c:a","libmp3lame","-b:a","192k","-ar","48000",outPath]);
+  fs.rmSync(wavPath,{force:true});
   const stat=fs.statSync(outPath);
   if(!stat.size) throw new Error("El motor musical local no generó audio.");
   return stat.size;
@@ -743,8 +747,8 @@ function aiTracksForBackground(prompt="", generationId=0){
       ...BUILTIN_MUSIC[(variant-1)%BUILTIN_MUSIC.length],
       userSearch:originalSearch,
       originalMusicPrompt:originalSearch,
-      userMusicBrief:buildElevenMusicPrompt(originalSearch,variant),
-      musicProfile:buildElevenMusicPrompt(originalSearch,variant),
+      userMusicBrief:buildAIMusicPrompt(originalSearch,variant),
+      musicProfile:buildAIMusicPrompt(originalSearch,variant),
       file,
       label:"IA · "+variant,
       variant,
@@ -843,7 +847,7 @@ app.post("/api/generate-selected-long-music", async (req,res)=>{
   const selectedTrack=aiMusicTracks.find(t=>t.file===name);
   const basePrompt=String(selectedTrack?.originalMusicPrompt||musicPrompt||"").trim();
   if(!basePrompt) return res.status(400).json({error:"No se pudo recuperar la búsqueda que originó la música. Vuelve a generar las opciones IA."});
-  const stamp=Date.now(),work=path.join(MUSIC_DIR,"long-eleven-"+stamp);
+  const stamp=Date.now(),work=path.join(MUSIC_DIR,"long-music-"+stamp);
   const finalName="relaxscape-selected-"+hours+"h-"+stamp+".mp3",out=path.join(MUSIC_DIR,finalName);
   fs.mkdirSync(work,{recursive:true});
   try{
@@ -855,9 +859,9 @@ app.post("/api/generate-selected-long-music", async (req,res)=>{
     ];
     const segments=[];
     for(let i=0;i<4;i++){
-      const track={originalMusicPrompt:basePrompt,musicProfile:buildElevenMusicPrompt(basePrompt,(i%4)+1)+" "+directions[i],label:"Long "+(i+1),file:"segment-"+i+".mp3"};
+      const track={originalMusicPrompt:basePrompt,musicProfile:buildAIMusicPrompt(basePrompt,(i%4)+1)+" "+directions[i],label:"Long "+(i+1),file:"segment-"+i+".mp3"};
       const seg=path.join(work,track.file);
-      await generateElevenMusicFile(track,seg,180000);
+      await generateAIMusicFile(track,seg,180000);
       segments.push(seg);
     }
     const listFile=path.join(work,"concat.txt");
@@ -865,7 +869,7 @@ app.post("/api/generate-selected-long-music", async (req,res)=>{
     const base=path.join(work,"base.mp3");
     await runFfmpeg(["-y","-f","concat","-safe","0","-i",listFile,"-c:a","libmp3lame","-b:a","192k","-ar","48000",base]);
     await runFfmpeg(["-y","-stream_loop","-1","-i",base,"-t",String(hours*3600),"-c:a","copy",out]);
-    res.json({name:finalName,url:"/media/music/"+encodeURIComponent(finalName),hours,sourcePreview:name,provider:"ElevenLabs Music v2.5",generatedFromSearch:true});
+    res.json({name:finalName,url:"/media/music/"+encodeURIComponent(finalName),hours,sourcePreview:name,provider:"RelaxScape Free AI Music Engine",generatedFromSearch:true});
   }catch(e){
     console.error("[AI Music Long] ERROR",e.stack||e.message);
     res.status(500).json({error:"No se pudo crear la música larga: "+e.message});
