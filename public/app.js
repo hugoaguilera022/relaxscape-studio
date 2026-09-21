@@ -57,7 +57,7 @@ async function ensureAIOptions(){
   }finally{S.aiLoading=false;renderAICreator()}
 }
 async function waitForAIMusic(){
-  for(let attempt=0;attempt<24;attempt++){
+  for(let attempt=0;attempt<48;attempt++){
     await new Promise(r=>setTimeout(r,2500));
     try{
       const d=await api("/api/ai-options-status");
