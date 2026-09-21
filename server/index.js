@@ -24,7 +24,14 @@ app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 app.use(express.static(PUBLIC));
 app.use("/media/images", express.static(IMAGE_DIR));
-app.use("/media/music", express.static(MUSIC_DIR));
+// AI previews must never be browser-cached: each generation must play the exact MP3
+// returned by the current generation, not a previous preview with a stale cache entry.
+app.use("/media/music", (req,res,next)=>{
+  res.setHeader("Cache-Control","no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma","no-cache");
+  res.setHeader("Expires","0");
+  next();
+}, express.static(MUSIC_DIR, { etag:false, lastModified:false, maxAge:0 }));
 app.use("/media/videos", express.static(VIDEO_DIR));
 
 const imageUpload = multer({
