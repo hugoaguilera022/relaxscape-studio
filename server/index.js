@@ -299,54 +299,47 @@ app.post("/api/ai-options", async (req, res) => {
         theme + " misty forest"
       ];
 
-      const results = await Promise.allSettled(queries.map(async q => {
-        const r = await fetchWithTimeout(
-          "https://api.pexels.com/v1/search?query=" + encodeURIComponent(q) +
-          "&per_page=20&orientation=landscape&size=large&locale=en-US",
-          { headers: { Authorization: key } }, 9000
-        );
-        if (!r.ok) throw new Error("Pexels imágenes HTTP " + r.status);
-        return r.json();
-      }));
-
-      const photos = [];
-      for (const result of results) {
-        if (result.status !== "fulfilled") {
-          imageErrors.push(result.reason?.message || "Una búsqueda de Pexels falló.");
-          continue;
-        }
-        for (const p of (result.value.photos || [])) {
-          if ((p.src?.large2x || p.src?.large || p.src?.original) &&
-              p.width >= 1280 && p.height >= 720) {
-            photos.push(p);
+      // No bloqueamos toda la petición por una búsqueda lenta de Pexels.
+      // Tomamos la primera respuesta válida y descargamos hasta 4 fotos.
+      for (const q of queries) {
+        if (images.length >= 4) break;
+        try {
+          const r = await fetchWithTimeout(
+            "https://api.pexels.com/v1/search?query=" + encodeURIComponent(q) +
+            "&per_page=12&orientation=landscape&size=large&locale=en-US",
+            { headers: { Authorization: key } }, 12000
+          );
+          if (!r.ok) {
+            imageErrors.push("Pexels HTTP " + r.status);
+            continue;
           }
+          const data = await r.json();
+          for (const photo of (data.photos || [])) {
+            if (images.length >= 4) break;
+            const src = photo.src?.large2x || photo.src?.large;
+            if (!src || photo.width < 1280 || photo.height < 720) continue;
+            try {
+              const img = await fetchWithTimeout(src, {}, 12000);
+              if (!img.ok) continue;
+              const filename = "free-ai-option-" + Date.now() + "-" + (images.length + 1) + ".jpg";
+              fs.writeFileSync(path.join(IMAGE_DIR, filename), Buffer.from(await img.arrayBuffer()));
+              images.push({
+                name: filename,
+                url: "/media/images/" + encodeURIComponent(filename),
+                ai: false,
+                provider: "Pexels",
+                fallback: true,
+                label: "Paisaje gratuito " + (images.length + 1)
+              });
+            } catch {}
+          }
+        } catch (e) {
+          imageErrors.push(e.message || "Error de Pexels");
         }
-      }
-
-      const unique = [...new Map(photos.map(p => [p.id, p])).values()]
-        .sort(() => Math.random() - 0.5)
-        .slice(0, 4);
-
-      for (let i = 0; i < unique.length; i++) {
-        const photo = unique[i];
-        const src = photo.src?.large2x || photo.src?.large;
-        const img = await fetchWithTimeout(src, {}, 15000);
-        if (!img.ok) continue;
-        const filename = "free-ai-option-" + Date.now() + "-" + (i + 1) + ".jpg";
-        fs.writeFileSync(path.join(IMAGE_DIR, filename), Buffer.from(await img.arrayBuffer()));
-        images.push({
-          name: filename,
-          url: "/media/images/" + encodeURIComponent(filename),
-          ai: false,
-          provider: "Pexels",
-          fallback: true,
-          label: "Paisaje gratuito " + (i + 1)
-        });
       }
       if (!images.length) imageErrors.push("Pexels no devolvió imágenes.");
     } else {
       imageErrors.push("Falta PEXELS_API_KEY en Render.");
-    }
 
     // La música debe estar lista en la misma petición: antes se generaba en
     // segundo plano y el frontend recibía imágenes pero cero pistas.
