@@ -128,20 +128,37 @@ async function downloadExternalMusic(x){
 
 async function createFreesoundAIMix(){
   const status=$("#aiSelectionStatus");
-  if(!S.externalMusic.length){if(status)status.textContent="Primero realiza una búsqueda musical.";return}
+  const query=($("#aiMusicPrompt").value||"").trim();
+  if(!query){
+    if(status)status.textContent="Escribe primero el género, estilo o descripción musical.";
+    return;
+  }
   const btn=$("#createFreesoundMix");
   if(btn)btn.disabled=true;
-  if(status)status.textContent="🎼 La IA está organizando instrumentos y ambiente para crear una mezcla coherente…";
+  if(status)status.textContent="🎼 La IA está interpretando el género y preparando una composición original de hasta 10 minutos…";
   try{
-    const d=await api("/api/generate-freesound-ai-mix",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
-      tracks:S.externalMusic.slice(0,6),query:($("#aiMusicPrompt").value||"").trim(),durationHours:1
-    })});
-    S.music=d;
-    if(status)status.textContent="✓ Mezcla musical creada. Ya puedes escucharla y usarla en tu vídeo.";
+    const d=await api("/api/generate-freesound-ai-mix",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({query,durationHours:1})
+    });
+    if(!d.jobId)throw new Error("No se pudo iniciar la generación musical.");
+    let done=null;
+    for(let i=0;i<120;i++){
+      await new Promise(r=>setTimeout(r,i===0?1200:5000));
+      const s=await api("/api/generate-freesound-ai-mix-status?jobId="+encodeURIComponent(d.jobId));
+      if(s.status==="succeeded"){done=s.result;break}
+      if(status)status.textContent="🎼 IA generando: "+(i<4?"analizando género e instrumentos…":i<12?"componiendo y desarrollando la estructura…":"procesando y masterizando la pieza…");
+    }
+    if(!done)throw new Error("La generación musical está tardando demasiado. Puedes volver a intentarlo.");
+    S.music=done;
+    if(status)status.textContent="✓ Música IA creada siguiendo exactamente la búsqueda: "+query;
     renderAICreator();update();picker();
   }catch(e){
-    if(status)status.textContent="No se pudo crear la mezcla: "+e.message;
-  }finally{if(btn)btn.disabled=false}
+    if(status)status.textContent="No se pudo crear la música IA: "+e.message;
+  }finally{
+    const b=$("#createFreesoundMix"); if(b)b.disabled=false;
+  }
 }
 async function waitForAIMusic(){
   const started=Date.now();
