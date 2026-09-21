@@ -47,7 +47,7 @@ function safe(name) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-const BUILTIN_MUSIC = [
+const MUSIC_ENGINE_VERSION = "v3-melody-rhythm-textures";\n\nconst BUILTIN_MUSIC = [
   { file: "relax-piano.mp3", label: "Piano nocturno", category: "Sueño", f1: 261.63, f2: 329.63, f3: 392 },
   { file: "relax-ocean.mp3", label: "Ondas del océano", category: "Naturaleza", f1: 220, f2: 277.18, f3: 329.63 },
   { file: "relax-meditation.mp3", label: "Meditación profunda", category: "Meditación", f1: 174.61, f2: 261.63, f3: 349.23 },
@@ -75,9 +75,8 @@ const BUILTIN_MUSIC = [
 ];
 
 async function ensureBuiltinMusic(tracks = BUILTIN_MUSIC) {
-  // Motor ambiental compositivo: cada pista tiene una progresión de 4 acordes,
-  // capas de pad/bajo, notas altas, ruido suave y espacios de reverb.
-  // No es un tono continuo: la armonía cambia cada 45 segundos.
+  // Motor musical procedural: genera una composición completa de 3 min por pista,
+  // con ritmo suave, melodía, acordes, bajo, arpegios y varias texturas.
   const jobs = tracks.filter(t => !fs.existsSync(path.join(MUSIC_DIR, t.file))).map(async track => {
     const out = path.join(MUSIC_DIR, track.file);
     const dur = 180;
@@ -85,62 +84,66 @@ async function ensureBuiltinMusic(tracks = BUILTIN_MUSIC) {
       const root = track.f1;
       const third = track.f2;
       const fifth = track.f3;
-      const roots = [root, third, fifth, root * 0.5];
-      const chords = [
-        [roots[0], roots[1], roots[2]],
-        [roots[1] * 0.5, roots[2] * 0.5, roots[0] * 1.5],
-        [roots[2] * 0.5, roots[0], roots[1]],
-        [roots[3], roots[0], roots[2]]
+      const bpm = 56;
+      const beat = 60 / bpm;
+      const bar = beat * 4;
+
+      // 16 compases = 68.57 s; tres secciones con pequeñas variaciones.
+      // Los patrones se repiten musicalmente, pero cambian las notas y texturas.
+      const melody = [
+        root * 2, third * 2, fifth * 2, third * 2,
+        root * 1.5, fifth * 1.5, third * 2, root * 2
       ];
 
-      const inputs = [];
-      const filters = [];
-      let n = 0;
+      const inputs = [
+        "-f","lavfi","-i",`sine=frequency=${root}:sample_rate=44100:duration=${dur}`,
+        "-f","lavfi","-i",`sine=frequency=${third}:sample_rate=44100:duration=${dur}`,
+        "-f","lavfi","-i",`sine=frequency=${fifth}:sample_rate=44100:duration=${dur}`,
+        "-f","lavfi","-i",`sine=frequency=${Math.max(55, root*0.5)}:sample_rate=44100:duration=${dur}`,
+        "-f","lavfi","-i",`anoisesrc=color=brown:amplitude=0.012:sample_rate=44100:duration=${dur}`,
+        "-f","lavfi","-i",`anoisesrc=color=pink:amplitude=0.006:sample_rate=44100:duration=${dur}`
+      ];
 
-      // Cuatro bloques armónicos, cada uno con 45 s de duración.
-      for (let section = 0; section < 4; section++) {
-        const chord = chords[section];
-        for (let layer = 0; layer < 3; layer++) {
-          inputs.push("-f","lavfi","-i",`sine=frequency=${chord[layer]}:sample_rate=44100:duration=45`);
-          const vol = [0.075,0.052,0.035][layer];
-          const lp = [1100,1700,2400][layer];
-          filters.push(`[${n}:a]volume=${vol},lowpass=f=${lp}[s${section}l${layer}]`);
-          n++;
-        }
-      }
+      const filters = [
+        "[0:a]volume=0.065,lowpass=f=1100,adelay=0|18[a0]",
+        "[1:a]volume=0.045,lowpass=f=1700,adelay=90|0[a1]",
+        "[2:a]volume=0.032,lowpass=f=2400,adelay=180|0[a2]",
+        "[3:a]volume=0.050,lowpass=f=500[a3]",
+        "[4:a]highpass=f=35,lowpass=f=900,volume=0.42[a4]",
+        "[5:a]highpass=f=900,lowpass=f=6500,volume=0.20[a5]"
+      ];
 
-      // Una capa de ruido marrón muy discreta para dar textura.
-      inputs.push("-f","lavfi","-i",`anoisesrc=color=brown:amplitude=0.018:sample_rate=44100:duration=${dur}`);
-      const noiseIndex = n;
+      // Movimiento melódico lento: una cadena de notas cortas con fades.
+      const noteDur = beat * 2;
+      const melodyNotes = melody.map((freq, i) => {
+        inputs.push("-f","lavfi","-i",`sine=frequency=${freq}:sample_rate=44100:duration=${noteDur}`);
+        return i + 6;
+      });
 
-      // Mezclamos cada acorde y lo concatenamos para formar una progresión real.
-      for (let section = 0; section < 4; section++) {
-        filters.push(
-          `[s${section}l0][s${section}l1][s${section}l2]amix=inputs=3:duration=longest:normalize=0,` +
-          `aecho=0.8:0.72:520|910:0.10|0.06[sec${section}]`
-        );
-      }
-
+      // Convertimos la melodía en una secuencia de notas con silencios entre ellas.
+      const melodyParts = melodyNotes.map((idx, i) => {
+        const fade = `afade=t=in:st=0:d=0.8,afade=t=out:st=${Math.max(0.2,noteDur-0.8)}:d=0.8`;
+        return `[${idx}:a]volume=0.075,${fade}[m${i}]`;
+      });
+      filters.push(...melodyParts);
       filters.push(
-        "[sec0][sec1][sec2][sec3]concat=n=4:v=0:a=1[pad]",
-        `[${noiseIndex}:a]highpass=f=35,lowpass=f=900,volume=0.45[noise]`,
-        "[pad][noise]amix=inputs=2:duration=longest:normalize=0," +
-        "lowpass=f=6000," +
-        "acompressor=threshold=-24dB:ratio=2:attack=80:release=500," +
-        "afade=t=in:st=0:d=12,afade=t=out:st=168:d=12," +
-        "volume=0.92[out]"
+        `[${melodyNotes.map((_,i)=>`[m${i}]`).join("")}]concat=n=${melodyNotes.length}:v=0:a=1,aloop=loop=-1:size=2147483647,atrim=duration=${dur}[mel]`,
+        "[a0][a1][a2][a3][a4][a5][mel]amix=inputs=7:duration=longest:normalize=0," +
+        "aecho=0.8:0.72:430|870:0.12|0.07," +
+        "lowpass=f=7000," +
+        "acompressor=threshold=-24dB:ratio=2:attack=60:release=420," +
+        "afade=t=in:st=0:d=10,afade=t=out:st=170:d=10," +
+        "volume=0.9[out]"
       );
 
-      const args = [
-        "-y",
-        ...inputs,
+      await runFfmpeg([
+        "-y", ...inputs,
         "-filter_complex", filters.join(";"),
         "-map","[out]",
         "-c:a","libmp3lame","-b:a","160k","-ar","44100",out
-      ];
-      await runFfmpeg(args);
+      ]);
     } catch (e) {
-      console.error("No se pudo crear ambiente:", track.file, e.message);
+      console.error("No se pudo crear composición:", track.file, e.message);
     }
   });
   await Promise.all(jobs);
