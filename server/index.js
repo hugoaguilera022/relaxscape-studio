@@ -367,46 +367,47 @@ function makeCompositionWav(track, wavPath){
   writeWav(wavPath,samples,sr,2);
 }
 
-function generateFreeMusicFile(track, outPath) {
-  // Motor 100% local: no API key, no créditos y no proveedor de pago.
-  // La búsqueda del usuario controla escala, tempo, instrumentos, textura y ambiente.
-  makeCompositionWav(track, outPath);
-  const stat=fs.statSync(outPath);
-  if(!stat.size) throw new Error("El motor musical local generó un archivo vacío.");
-  return stat.size;
+async function generateElevenMusicFile(track, outPath, durationMs=120000){
+  const key=String(process.env.ELEVENLABS_API_KEY||"").trim();
+  if(!key) throw new Error("Falta ELEVENLABS_API_KEY en Render.");
+  const model=String(process.env.ELEVEN_MUSIC_MODEL||"music_v2_5").trim();
+  const prompt=String(track.musicProfile||track.userMusicBrief||track.originalMusicPrompt||"deep relaxation ambient music").slice(0,4100);
+  const response=await fetchWithTimeout("https://api.elevenlabs.io/v1/music?output_format=mp3_48000_192",{
+    method:"POST",
+    headers:{"Content-Type":"application/json","xi-api-key":key},
+    body:JSON.stringify({prompt,music_length_ms:Math.max(3000,Math.min(600000,Number(durationMs)||120000)),model_id:model,force_instrumental:true})
+  },240000);
+  if(!response.ok){
+    const raw=await response.text().catch(()=>"");
+    let message=raw;
+    try{const data=JSON.parse(raw);message=data.detail?.message||data.error?.message||data.message||raw}catch{}
+    throw new Error("Eleven Music HTTP "+response.status+": "+message);
+  }
+  const bytes=Buffer.from(await response.arrayBuffer());
+  if(!bytes.length) throw new Error("Eleven Music no devolvió audio.");
+  fs.writeFileSync(outPath,bytes);
+  return bytes.length;
 }
 
-async function ensureBuiltinMusic(tracks=[]) {
+async function ensureBuiltinMusic(tracks=[]){
   const results=[];
-  // MUY IMPORTANTE: no bloquear /api/ai-options antes de devolver las fotos.
-  // El motor musical es CPU-intensivo y síncrono, así que cedemos el control
-  // al event loop para que Express pueda responder primero con las 4 imágenes.
-  await new Promise(resolve => setImmediate(resolve));
-  for (const track of tracks) {
-    try {
-      // Permite que /api/ai-options-status y las peticiones del navegador
-      // tengan oportunidad de entrar entre generaciones.
-      await new Promise(resolve => setImmediate(resolve));
-      const out=path.join(MUSIC_DIR, track.file);
+  for(const track of tracks){
+    try{
+      const out=path.join(MUSIC_DIR,track.file);
       fs.rmSync(out,{force:true});
-      const basePrompt=String(track.musicProfile||track.userMusicBrief||"professional deep relaxation ambient music").trim();
-      if(!basePrompt) throw new Error("La búsqueda musical está vacía.");
-
-      console.log("[Free Music Engine] Generando", track.label, "desde:", track.userMusicBrief || basePrompt);
-      generateFreeMusicFile(track, out);
-      track.provider="RelaxScape Free Music Engine";
+      await generateElevenMusicFile(track,out,120000);
+      track.provider="ElevenLabs Music v2.5";
       track.generated=true;
       track.fallback=false;
-      track.musicPrompt=basePrompt;
-      console.log("[Free Music Engine] LISTA:", track.file, fs.statSync(out).size, "bytes");
+      track.musicPrompt=track.originalMusicPrompt;
+      console.log("[Eleven Music] LISTA:",track.file,fs.statSync(out).size,"bytes");
       results.push(true);
-    } catch(e) {
+    }catch(e){
       aiMusicErrors.push(track.label+": "+(e?.message||String(e)));
-      console.error("[Free Music Engine] ERROR",track.file,e?.stack||e?.message||e);
+      console.error("[Eleven Music] ERROR",track.file,e?.stack||e?.message||e);
       results.push(false);
     }
   }
-  console.log("[Free Music Engine] Terminadas:",results.filter(Boolean).length,"/",tracks.length);
   return results;
 }
 
@@ -625,19 +626,17 @@ app.post("/api/ai-images", async (req, res) => {
   }
 });
 
-app.post("/api/ai-music", async (req, res) => {
-  const musicPrompt = String(req.body?.musicPrompt || "deep relaxation ambient music").trim().slice(0, 220);
-  const generationId = ++aiMusicGenerationId;
-  aiMusicTracks = aiTracksForBackground(musicPrompt, generationId);
-  aiMusicTracks.forEach(t => { try { fs.rmSync(path.join(MUSIC_DIR, t.file), { force: true }); } catch {} });
-  aiMusicErrors = [];
-  aiMusicPreparing = true;
-  ensureBuiltinMusic(aiMusicTracks).catch(e => {
-    if (generationId === aiMusicGenerationId) aiMusicErrors.push(e.message || String(e));
-  }).finally(() => {
-    if (generationId === aiMusicGenerationId) aiMusicPreparing = false;
-  });
-  res.json({ music: getAIMusicOptions(), musicReady: false, musicPreparing: true });
+app.post("/api/ai-music", async (req,res)=>{
+  const musicPrompt=String(req.body?.musicPrompt||"deep relaxation ambient music").trim().slice(0,700);
+  const generationId=++aiMusicGenerationId;
+  aiMusicTracks=aiTracksForBackground(musicPrompt,generationId);
+  aiMusicTracks.forEach(t=>{try{fs.rmSync(path.join(MUSIC_DIR,t.file),{force:true});}catch{}});
+  aiMusicErrors=[];
+  aiMusicPreparing=true;
+  Promise.all(aiMusicTracks.map(track=>ensureBuiltinMusic([track])))
+    .catch(e=>{if(generationId===aiMusicGenerationId)aiMusicErrors.push(e?.message||String(e));})
+    .finally(()=>{if(generationId===aiMusicGenerationId)aiMusicPreparing=false;});
+  res.json({music:[],musicReady:false,musicPreparing:true,generationId,provider:"ElevenLabs Music v2.5"});
 });
 
 app.post("/api/ai-options", async (req, res) => {
@@ -701,90 +700,75 @@ app.post("/api/ai-options", async (req, res) => {
   });
 });
 
-function hashText(text){
-  let h=2166136261;
-  for(const ch of String(text)){h^=ch.charCodeAt(0);h=Math.imul(h,16777619)}
-  return (h>>>0).toString(36);
-}
 function musicIntentProfile(prompt=""){
   const p=String(prompt||"").toLowerCase();
   const has=(...words)=>words.some(w=>p.includes(w));
   const parts=[];
-  if(has("piano","piano suave","teclas","pianístico","pianistica")) parts.push("felt piano");
-  if(has("guitarra","acústica","acustica","nylon","guitar")) parts.push("professional nylon acoustic guitar");
-  if(has("violín","violin","cello","cuerdas","strings","orquesta","orchestral")) parts.push("warm cinematic strings");
+  if(has("piano","teclas","pianístico","pianistica")) parts.push("warm acoustic felt piano, intimate close-mic piano tone");
+  if(has("guitarra","acústica","acustica","nylon","guitar")) parts.push("professional nylon-string acoustic guitar");
+  if(has("violín","violin","cello","cuerdas","strings","orquesta","orchestral")) parts.push("warm expressive bowed strings");
   if(has("flauta","flute","bambú","bambu","viento","wind")) parts.push("airy bamboo flute");
-  if(has("agua","water","océano","oceano","mar","olas","waves","río","rio","lluvia","rain","cascada","waterfall")) parts.push("subtle natural water ambience");
-  if(has("bosque","forest","montaña","montana","naturaleza","nature","pájaros","pajaros","birds","jardín","jardin")) parts.push("organic forest nature ambience");
-  if(has("spa","meditación","meditacion","zen","yoga","respiración","respiracion")) parts.push("spa meditation atmosphere");
-  if(has("relajante","relajación","relajacion","relax","calma","calmado","tranquilo","tranquila","bienestar","stress","estrés","ansiedad","anxiety")) parts.push("deep relaxation genre, very slow tempo, soft sustained harmony, warm intimate ambience, spacious reverb, no drums, no percussion, no rhythmic pulse, no upbeat elements");
-  if(has("sueño","sueno","dormir","sleep","noche","night","luna","moon","estrellas","stars")) parts.push("deep sleep nocturnal atmosphere");
-  if(has("cinemático","cinematic","película","pelicula","film","emocional","emotional")) parts.push("cinematic evolving pads");
-  if(has("lofi","lo-fi","chill","chillout")) parts.push("soft lo-fi texture");
-  if(has("electrónica","electronica","synth","sintetizador","ambient")) parts.push("warm analog ambient synthesizers");
-  if(has("triste","melancólico","melancolico")) parts.push("gentle melancholic harmony");
-  if(has("alegre","luminoso","bright","sunrise","amanecer")) parts.push("warm luminous harmony");
-  const noPerc=has("sin batería","sin bateria","sin percusión","sin percusion","no drums","no percussion");
-  if(noPerc) parts.push("no drums, no percussion");
-  if(!parts.length) parts.push("deep relaxation genre, very slow tempo, soft sustained harmony, warm ambient pads, spacious reverb, no drums, no percussion, no rhythmic pulse");
-  if(!parts.some(x=>/relaxation genre|spa meditation|deep sleep|ambient texture/.test(x)) && has("música","musica","music")) parts.push("relaxing ambient foundation, very slow and gentle, no drums, no rhythmic pulse");
-  return parts.join(", ");
+  if(has("agua","water","océano","oceano","mar","olas","waves","río","rio","lluvia","rain","cascada","waterfall")) parts.push("subtle realistic flowing-water ambience, integrated naturally behind the music");
+  if(has("bosque","forest","montaña","montana","naturaleza","nature","pájaros","pajaros","birds","jardín","jardin")) parts.push("subtle organic nature ambience");
+  if(has("spa","meditación","meditacion","zen","yoga","respiración","respiracion")) parts.push("deep spa and meditation atmosphere");
+  if(has("sueño","sueno","dormir","sleep","noche","night","luna","moon","estrellas","stars")) parts.push("deep nocturnal sleep atmosphere");
+  if(has("cinemático","cinematic","película","pelicula","film","emocional","emotional")) parts.push("cinematic evolving harmonic texture");
+  if(has("lofi","lo-fi","chill","chillout")) parts.push("soft organic lo-fi texture");
+  if(has("electrónica","electronica","synth","sintetizador","ambient")) parts.push("warm analog ambient synthesis");
+  if(has("triste","melancólico","melancolico")) parts.push("gentle melancholic harmonic color");
+  if(has("alegre","luminoso","bright","sunrise","amanecer")) parts.push("warm luminous harmonic color");
+  if(has("relajante","relajación","relajacion","relax","calma","calmado","tranquilo","tranquila","bienestar","stress","estrés","ansiedad","anxiety")) parts.push("deep relaxation, very slow and gentle, soft sustained harmony, no aggressive rhythm, no abrupt changes");
+  if(has("sin batería","sin bateria","sin percusión","sin percusion","no drums","no percussion")) parts.push("absolutely no drums or percussion");
+  return parts.join(", ") || "deep relaxation ambient music, slow gentle pacing, warm sustained harmony";
 }
 
-const SONIC_PALETTES = [
-  { name:"Organic acoustic", brief:"premium organic acoustic palette: felt piano or intimate keys when compatible, nylon guitar, bowed strings, airy flute, warm room ambience, subtle natural textures, rich harmonic overtones, human-like phrasing" },
-  { name:"Cinematic strings", brief:"premium cinematic ambient palette: evolving string ensemble, cello warmth, soft piano only when compatible, deep harmonic pads, wide stereo image, slow orchestral swells, detailed dynamics and long-tail reverb" },
-  { name:"Ethereal electronic", brief:"premium ethereal electronic palette: warm analog synths, evolving pads, glassy high textures, soft sub bass, delicate plucks, granular atmosphere and slowly changing stereo movement, never harsh or dance-oriented" },
-  { name:"Dream acoustic", brief:"premium dreamlike palette: intimate guitar, felted keys when compatible, soft strings, breathy flute, harmonic shimmer, close room detail and spacious ambient tails, with a clearly developing motif" },
-  { name:"Nature cinematic", brief:"premium nature-cinematic palette: organic instrumental layers, warm strings, airy woodwind, subtle water/wind ambience when requested, deep environmental space and gradual harmonic evolution" },
-  { name:"Minimal piano", brief:"premium minimalist palette: expressive felt piano when compatible, soft low strings, distant pad, subtle harmonic resonance and very spacious room, with varied voicings and melodic development rather than repeated notes" },
-  { name:"Meditative world", brief:"premium meditative world palette: bamboo flute, nylon guitar, warm strings, soft resonant plucked textures, organic room tone and slow modal harmony, avoiding obvious rhythmic percussion unless requested" },
-  { name:"Ambient sound design", brief:"premium sound-design palette: evolving synth beds, tonal drones with harmonic movement, delicate bell-like overtones, filtered textures, deep spatial field and slow modulation, while keeping a real musical motif in the foreground" }
-];
+function buildElevenMusicPrompt(originalSearch="", variant=1){
+  const search=String(originalSearch||"deep relaxation ambient music").trim().slice(0,700);
+  const details=musicIntentProfile(search);
+  const variants=[
+    "Use a lyrical, memorable but very gentle main motif with spacious phrasing. Let the harmony evolve slowly through varied chord voicings.",
+    "Use a different melodic contour and register from the other versions. Favor subtle call-and-response phrases and slower harmonic movement.",
+    "Use a more textural arrangement with gradual layering, countermelody and delicate dynamic swells while keeping the requested subject and instruments clearly audible.",
+    "Use the most contrasting musical interpretation that still obeys the search: different opening, motif, voicings, register and texture evolution, without becoming energetic."
+  ];
+  const relaxationGuard=/relax|relaj|calma|tranquil|sueñ|sleep|medit|zen|spa/i.test(search)
+    ? "This is relaxation music: keep the energy low, dynamics smooth, attacks soft, and avoid drops, builds, tension or sudden transitions."
+    : "Keep the arrangement controlled and suitable for a relaxing visual landscape unless the user explicitly requests otherwise.";
+  return [
+    "Create an original professional instrumental ambient composition for RelaxScape.",
+    "USER SEARCH IS THE SOURCE OF TRUTH: ["+search+"].",
+    "Translate the exact subject, environment, weather, time of day, emotion and requested instruments into the music; do not replace the search with a generic relaxation preset.",
+    details+".",
+    relaxationGuard,
+    "Musical coherence is mandatory: establish a clear tonal center and compatible mode, a stable slow tempo and meter, intentional chord progression, consonant voice-leading, a recurring melodic idea with tasteful variation, and natural rhythmic phrasing.",
+    "Use professional acoustic/ambient production: realistic instrument timbres, controlled dynamics, warm low mids, clean high frequencies, depth, stereo space and tasteful reverb.",
+    "No vocals, no lyrics, no spoken word, no harsh distortion, no EDM drops, no aggressive drums or bass unless explicitly requested by the search.",
+    variants[(Math.max(1,Number(variant))-1)%4],
+    "The result must feel like a finished piece of music, not a static drone or a one-bar loop."
+  ].join(" ");
+}
 
 function aiTracksForBackground(prompt="", generationId=0){
-  const originalSearch=String(prompt||"").trim().slice(0,220);
-  const requestedDetails=musicIntentProfile(originalSearch);
-  const p="professional deep-relaxation ambient music based directly on this user search: ["+originalSearch+"]. Translate the subject, place, weather, time of day, emotion, instruments and atmosphere in the search into musical decisions. "+requestedDetails+". No drums, no percussion, no aggressive bass, no abrupt changes unless the user explicitly requests them.";
-  const seed=Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8);
-  const sessionNonce="session-"+generationId+"-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,10);
-  const paletteOrder=[...SONIC_PALETTES].sort(()=>Math.random()-0.5).slice(0,4);
-  const variants=[
-    "Version A: make the arrangement substantially different, with a distinct melodic motif, different chord voicings and a clearly different lead instrument or lead role.",
-    "Version B: reinterpret the same brief with a different musical structure, register, harmonic movement, rhythmic feel and instrumentation balance. Do not copy Version A.",
-    "Version C: create a different performance and production: change the lead voice, supporting layers, melodic contour, dynamics, stereo depth and ambience. Do not copy the other options.",
-    "Version D: create the most contrasting interpretation that still obeys the user's brief: different opening, motif, texture evolution, harmony and instrumental hierarchy."
-  ];
-  return variants.map((variation,i)=>{
-    const b=BUILTIN_MUSIC[i];
+  const originalSearch=String(prompt||"").trim().slice(0,700);
+  const sessionNonce="eleven-"+generationId+"-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,10);
+  return [1,2,3,4].map((variant)=>{
+    const file="ai-eleven-"+sessionNonce+"-"+variant+".mp3";
     return {
-      ...b,
+      ...BUILTIN_MUSIC[(variant-1)%BUILTIN_MUSIC.length],
       userSearch:originalSearch,
       originalMusicPrompt:originalSearch,
-      userMusicBrief:p,
-      file:"ai-freeform-"+seed+"-"+hashText(originalSearch)+"-"+(i+1)+".mp3",
-      label:"IA · "+(i+1),
-      variant:i+1,
+      userMusicBrief:buildElevenMusicPrompt(originalSearch,variant),
+      musicProfile:buildElevenMusicPrompt(originalSearch,variant),
+      file,
+      label:"IA · "+variant,
+      variant,
       forceRegenerate:true,
       generationSeed:sessionNonce,
-      sessionNonce,
-      musicProfile:[
-        "USER MUSIC BRIEF: "+p,
-        "This is a fresh generation. Do not reuse, imitate or follow the arrangement of any previous generation.",
-        "UNIQUE GENERATION NONCE: "+sessionNonce+". Treat this as a hard instruction to create a newly composed performance, not a cached or repeated result.",
-        "ORIGINAL USER SEARCH: ["+originalSearch+"]. This exact search is the source of truth. Musical decisions must respond to it; do not replace it with a generic relaxation preset.",
-        "Use the widest compatible professional sonic range: acoustic, orchestral, electronic, textural and environmental colors may be combined when they fit the brief.",
-        "Sonic palette for this option: "+paletteOrder[i].brief+". Treat this as a production palette, not a requirement to add instruments that conflict with the user brief.",
-        "Do not reduce the request to a generic relaxing preset.",
-        "If the user requests multiple instruments, make every requested instrument clearly audible and musically integrated.",
-        "Do not add piano unless the user asks for piano.",
-        variation,
-        "Generate a complete professional musical composition, not a static drone, generic pad or repeated one-bar loop.",
-        "The four options must be genuinely different musical compositions, not the same composition with a different mix."
-      ].join(". ")
+      sessionNonce
     };
   });
 }
+
 app.get("/api/ai-options-status", (_,res)=>{
   const music=getAIMusicOptions();
   res.json({music,musicReady:music.length>=4,musicPreparing:aiMusicPreparing,musicErrors:aiMusicErrors,generationId:aiMusicGenerationId});
@@ -863,76 +847,43 @@ app.post("/api/generate-relax-mix", async (req, res) => {
 });
 
 app.post("/api/generate-selected-long-music", async (req,res)=>{
-  const { music, durationHours=1, musicPrompt="" }=req.body||{};
+  const {music,durationHours=1,musicPrompt=""}=req.body||{};
   if(!music) return res.status(400).json({error:"Selecciona una música de previa."});
   const hours=Number(durationHours);
   if(![1,2].includes(hours)) return res.status(400).json({error:"La duración debe ser de 1 o 2 horas."});
-
   const name=decodeURIComponent(String(music).split("/").pop());
   const source=path.join(MUSIC_DIR,name);
-  if(!fs.existsSync(source)) return res.status(404).json({error:"No se encontró la previa musical seleccionada."});
-
+  if(!fs.existsSync(source)) return res.status(404).json({error:"No se encontró la música seleccionada."});
   const selectedTrack=aiMusicTracks.find(t=>t.file===name);
-  const basePrompt=String(selectedTrack?.musicProfile || selectedTrack?.userMusicBrief || musicPrompt || "").trim();
+  const basePrompt=String(selectedTrack?.originalMusicPrompt||musicPrompt||"").trim();
   if(!basePrompt) return res.status(400).json({error:"No se pudo recuperar la búsqueda que originó la música. Vuelve a generar las opciones IA."});
-
-  const stamp=Date.now();
-  const work=path.join(MUSIC_DIR,"long-"+stamp);
-  const finalName="relaxscape-selected-"+hours+"h-"+stamp+".mp3";
-  const out=path.join(MUSIC_DIR,finalName);
+  const stamp=Date.now(),work=path.join(MUSIC_DIR,"long-eleven-"+stamp);
+  const finalName="relaxscape-selected-"+hours+"h-"+stamp+".mp3",out=path.join(MUSIC_DIR,finalName);
   fs.mkdirSync(work,{recursive:true});
-
   try{
-    // Generamos 4 variaciones locales de la misma búsqueda y las concatenamos.
-    // Así la hora final no depende de un único clip repetido.
+    const directions=[
+      "fresh second movement, new melody and compatible chord voicings, same calm identity",
+      "fresh third movement, different motif and register, gradual texture development",
+      "fresh fourth movement, different melodic contour and harmony, same exact environment and instruments",
+      "gentle closing movement, spacious variation and resolved harmony, no energetic climax"
+    ];
     const segments=[];
     for(let i=0;i<4;i++){
-      const track={
-        ...(selectedTrack||{}),
-        userSearch:String(selectedTrack?.userSearch||selectedTrack?.originalMusicPrompt||basePrompt),
-        originalMusicPrompt:String(selectedTrack?.originalMusicPrompt||selectedTrack?.userSearch||basePrompt),
-        userMusicBrief:basePrompt,
-        musicProfile:basePrompt,
-        variant:i+1,
-        generationSeed: String(selectedTrack?.generationSeed||selectedTrack?.sessionNonce||basePrompt)+"-long-"+i+"-"+Date.now(),
-        sessionNonce: selectedTrack?.sessionNonce || "",
-        f1:selectedTrack?.f1||220,
-        f2:selectedTrack?.f2||330,
-        f3:selectedTrack?.f3||392
-      };
-      const seg=path.join(work,"segment-"+i+".wav");
-      generateFreeMusicFile(track,seg);
+      const track={originalMusicPrompt:basePrompt,musicProfile:buildElevenMusicPrompt(basePrompt,(i%4)+1)+" "+directions[i],label:"Long "+(i+1),file:"segment-"+i+".mp3"};
+      const seg=path.join(work,track.file);
+      await generateElevenMusicFile(track,seg,180000);
       segments.push(seg);
     }
-
     const listFile=path.join(work,"concat.txt");
     fs.writeFileSync(listFile,segments.map(f=>"file '"+f.replace(/'/g,"'\\''")+"'").join("\n"));
-
-    // Construye una base de ~72 s con las 4 variaciones y la repite hasta la duración elegida.
-    const base=path.join(work,"base.wav");
-    await runFfmpeg(["-y","-f","concat","-safe","0","-i",listFile,"-c:a","pcm_s16le",base]);
-
-    await runFfmpeg([
-      "-y","-stream_loop","-1","-i",base,
-      "-t",String(hours*3600),
-      "-c:a","libmp3lame","-b:a","192k","-ar","44100",out
-    ]);
-
-    res.json({
-      name:finalName,
-      url:"/media/music/"+encodeURIComponent(finalName),
-      hours,
-      sourcePreview:name,
-      provider:"RelaxScape Free Music Engine",
-      generatedFromSearch:true,
-      paidApi:false
-    });
+    const base=path.join(work,"base.mp3");
+    await runFfmpeg(["-y","-f","concat","-safe","0","-i",listFile,"-c:a","libmp3lame","-b:a","192k","-ar","48000",base]);
+    await runFfmpeg(["-y","-stream_loop","-1","-i",base,"-t",String(hours*3600),"-c:a","copy",out]);
+    res.json({name:finalName,url:"/media/music/"+encodeURIComponent(finalName),hours,sourcePreview:name,provider:"ElevenLabs Music v2.5",generatedFromSearch:true});
   }catch(e){
-    console.error("Error creando música larga gratuita:",e.stack||e.message);
-    res.status(500).json({error:"No se pudo crear la música larga gratuita: "+e.message});
-  }finally{
-    fs.rmSync(work,{recursive:true,force:true});
-  }
+    console.error("[Eleven Music Long] ERROR",e.stack||e.message);
+    res.status(500).json({error:"No se pudo crear la música larga: "+e.message});
+  }finally{fs.rmSync(work,{recursive:true,force:true});}
 });
 
 app.post("/api/generate-video", async (req, res) => {
