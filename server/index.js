@@ -47,81 +47,91 @@ function safe(name) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-const MUSIC_ENGINE_VERSION = "v5-safe-composer";
+const MUSIC_ENGINE_VERSION = "v6-pcm-composer";
 
 const BUILTIN_MUSIC = [
-  { file:"relax-piano.mp3",label:"Piano nocturno",category:"Sueño",f1:261.63,f2:329.63,f3:392 },
-  { file:"relax-ocean.mp3",label:"Ondas del océano",category:"Naturaleza",f1:220,f2:277.18,f3:329.63 },
-  { file:"relax-meditation.mp3",label:"Meditación profunda",category:"Meditación",f1:174.61,f2:261.63,f3:349.23 },
-  { file:"relax-dream.mp3",label:"Sueño tranquilo",category:"Sueño",f1:196,f2:246.94,f3:293.66 },
-  { file:"relax-rain.mp3",label:"Lluvia suave",category:"Naturaleza",f1:146.83,f2:220,f3:293.66 },
-  { file:"relax-forest.mp3",label:"Bosque sereno",category:"Naturaleza",f1:164.81,f2:246.94,f3:329.63 },
-  { file:"relax-mountains.mp3",label:"Montañas al amanecer",category:"Naturaleza",f1:196,f2:293.66,f3:392 },
-  { file:"relax-sunset.mp3",label:"Atardecer cálido",category:"Relax",f1:174.61,f2:220,f3:329.63 },
-  { file:"relax-night.mp3",label:"Noche estrellada",category:"Sueño",f1:130.81,f2:196,f3:261.63 },
-  { file:"relax-deep-sleep.mp3",label:"Sueño profundo",category:"Sueño",f1:110,f2:164.81,f3:220 },
-  { file:"relax-spa.mp3",label:"Spa y bienestar",category:"Relax",f1:220,f2:329.63,f3:440 },
-  { file:"relax-yoga.mp3",label:"Yoga tranquilo",category:"Meditación",f1:146.83,f2:220,f3:369.99 },
-  { file:"relax-focus.mp3",label:"Concentración",category:"Concentración",f1:261.63,f2:392,f3:523.25 },
-  { file:"relax-calm.mp3",label:"Calma absoluta",category:"Relax",f1:196,f2:246.94,f3:349.23 },
-  { file:"relax-fireplace.mp3",label:"Chimenea acogedora",category:"Relax",f1:130.81,f2:196,f3:293.66 },
-  { file:"relax-river.mp3",label:"Río tranquilo",category:"Naturaleza",f1:164.81,f2:220,f3:329.63 },
-  { file:"relax-piano-rain.mp3",label:"Piano y lluvia",category:"Sueño",f1:196,f2:246.94,f3:392 },
-  { file:"relax-ocean-night.mp3",label:"Océano nocturno",category:"Sueño",f1:164.81,f2:220,f3:329.63 },
-  { file:"relax-zen.mp3",label:"Zen oriental",category:"Meditación",f1:146.83,f2:220,f3:293.66 },
-  { file:"relax-breathing.mp3",label:"Respiración y calma",category:"Meditación",f1:130.81,f2:174.61,f3:261.63 },
-  { file:"relax-clouds.mp3",label:"Nubes suaves",category:"Relax",f1:196,f2:293.66,f3:440 },
-  { file:"relax-waterfall.mp3",label:"Cascada relajante",category:"Naturaleza",f1:174.61,f2:261.63,f3:349.23 },
-  { file:"relax-cafe.mp3",label:"Café tranquilo",category:"Relax",f1:220,f2:329.63,f3:392 },
-  { file:"relax-study.mp3",label:"Estudio profundo",category:"Concentración",f1:196,f2:293.66,f3:392 }
-];
+  ["relax-piano.mp3","Piano nocturno","Sueño",261.63,329.63,392],
+  ["relax-ocean.mp3","Ondas del océano","Naturaleza",220,277.18,329.63],
+  ["relax-meditation.mp3","Meditación profunda","Meditación",174.61,261.63,349.23],
+  ["relax-dream.mp3","Sueño tranquilo","Sueño",196,246.94,293.66],
+  ["relax-rain.mp3","Lluvia suave","Naturaleza",146.83,220,293.66],
+  ["relax-forest.mp3","Bosque sereno","Naturaleza",164.81,246.94,329.63],
+  ["relax-mountains.mp3","Montañas al amanecer","Naturaleza",196,293.66,392],
+  ["relax-sunset.mp3","Atardecer cálido","Relax",174.61,220,329.63],
+  ["relax-night.mp3","Noche estrellada","Sueño",130.81,196,261.63],
+  ["relax-deep-sleep.mp3","Sueño profundo","Sueño",110,164.81,220],
+  ["relax-spa.mp3","Spa y bienestar","Relax",220,329.63,440],
+  ["relax-yoga.mp3","Yoga tranquilo","Meditación",146.83,220,369.99],
+  ["relax-focus.mp3","Concentración","Concentración",261.63,392,523.25],
+  ["relax-calm.mp3","Calma absoluta","Relax",196,246.94,349.23],
+  ["relax-fireplace.mp3","Chimenea acogedora","Relax",130.81,196,293.66],
+  ["relax-river.mp3","Río tranquilo","Naturaleza",164.81,220,329.63],
+  ["relax-piano-rain.mp3","Piano y lluvia","Sueño",196,246.94,392],
+  ["relax-ocean-night.mp3","Océano nocturno","Sueño",164.81,220,329.63],
+  ["relax-zen.mp3","Zen oriental","Meditación",146.83,220,293.66],
+  ["relax-breathing.mp3","Respiración y calma","Meditación",130.81,174.61,261.63],
+  ["relax-clouds.mp3","Nubes suaves","Relax",196,293.66,440],
+  ["relax-waterfall.mp3","Cascada relajante","Naturaleza",174.61,261.63,349.23],
+  ["relax-cafe.mp3","Café tranquilo","Relax",220,329.63,392],
+  ["relax-study.mp3","Estudio profundo","Concentración",196,293.66,392]
+].map(([file,label,category,f1,f2,f3])=>({file,label,category,f1,f2,f3}));
+
+function writeWav(file, samples, sampleRate=44100, channels=2){
+  const dataSize=samples.length*2, b=Buffer.alloc(44+dataSize);
+  b.write("RIFF",0); b.writeUInt32LE(36+dataSize,4); b.write("WAVE",8); b.write("fmt ",12);
+  b.writeUInt32LE(16,16); b.writeUInt16LE(1,20); b.writeUInt16LE(channels,22);
+  b.writeUInt32LE(sampleRate,24); b.writeUInt32LE(sampleRate*channels*2,28);
+  b.writeUInt16LE(channels*2,32); b.writeUInt16LE(16,34); b.write("data",36); b.writeUInt32LE(dataSize,40);
+  for(let i=0;i<samples.length;i++) b.writeInt16LE(Math.max(-32767,Math.min(32767,Math.round(samples[i]*32767))),44+i*2);
+  fs.writeFileSync(file,b);
+}
+
+function makeCompositionWav(track, wavPath){
+  const sr=44100, dur=180, n=sr*dur, samples=new Float32Array(n*2);
+  const r=track.f1, m=track.f2, h=track.f3, bass=Math.max(55,r*.5), beat=60/56;
+  const melody=[r*2,m*2,h*2,m*2,r*2,h*2,m*2,r*1.5,m*2,h*2,r*2,m*2,h*2,m*2,r*2,h*1.5];
+  const arp=[r*2.5,m*2.5,h*2.5,m*3,r*3,h*3,m*2.5,r*2.5];
+  const seed=Math.floor(r*1000)%997;
+  for(let i=0;i<n;i++){
+    const t=i/sr, bar=Math.floor(t/(beat*16)), pos=t%(beat*16);
+    const mi=Math.floor(pos/beat)%melody.length, ai=Math.floor(pos/(beat/2))%arp.length;
+    const mf=melody[(mi+bar)%melody.length], af=arp[(ai+bar*2)%arp.length];
+    const mpos=(pos%beat)/beat, apos=(pos%(beat/2))/(beat/2);
+    const menv=Math.sin(Math.PI*Math.min(1,mpos))*Math.sin(Math.PI*Math.min(1,mpos*1.15));
+    const aenv=Math.sin(Math.PI*Math.min(1,apos))*0.7;
+    const swell=.65+.35*Math.sin(2*Math.PI*t/17);
+    const pad=(Math.sin(2*Math.PI*r*t)+.65*Math.sin(2*Math.PI*m*t)+.45*Math.sin(2*Math.PI*h*t))*0.035*swell;
+    const sub=Math.sin(2*Math.PI*bass*t)*0.055;
+    const melodyTone=Math.sin(2*Math.PI*mf*t)*.075*menv;
+    const harmonic=Math.sin(2*Math.PI*(mf*2)*t)*.018*menv;
+    const arptone=Math.sin(2*Math.PI*af*t)*.026*aenv;
+    const pulsePhase=(t%beat);
+    const pulse=Math.exp(-18*pulsePhase)*Math.sin(2*Math.PI*62*t)*.055;
+    const noise=(Math.sin((i+seed)*12.9898)*43758.5453%1)*.006;
+    const texture=.012*Math.sin(2*Math.PI*(r*1.01)*t)*Math.sin(2*Math.PI*t/9);
+    const x=Math.tanh((pad+sub+melodyTone+harmonic+arptone+pulse+noise+texture)*1.45);
+    const pan=.12*Math.sin(2*Math.PI*t/23);
+    samples[i*2]=x*(1-pan); samples[i*2+1]=x*(1+pan);
+  }
+  // Fade in/out para evitar clicks.
+  const fade=sr*6;
+  for(let i=0;i<fade;i++){const g=i/fade;samples[i*2]*=g;samples[i*2+1]*=g;const j=n-1-i;const q=i/fade;samples[j*2]*=q;samples[j*2+1]*=q;}
+  writeWav(wavPath,samples,sr,2);
+}
 
 async function ensureBuiltinMusic(tracks=BUILTIN_MUSIC){
-  const marker=path.join(MUSIC_DIR,".relaxscape-music-engine-v5");
+  const marker=path.join(MUSIC_DIR,".relaxscape-music-engine-v6");
   if(!fs.existsSync(marker)){
     for(const t of BUILTIN_MUSIC){try{fs.rmSync(path.join(MUSIC_DIR,t.file),{force:true})}catch{}}
     try{fs.writeFileSync(marker,MUSIC_ENGINE_VERSION)}catch{}
   }
-  const jobs=tracks.filter(t=>!fs.existsSync(path.join(MUSIC_DIR,t.file))).map(async t=>{
-    const out=path.join(MUSIC_DIR,t.file), dur=180, beat=60/56, note=(60/56)*2;
-    const r=t.f1,m=t.f2,h=t.f3,low=Math.max(55,r*.5);
+  const jobs=tracks.filter(t=>!fs.existsSync(path.join(MUSIC_DIR,t.file))).map(async track=>{
+    const out=path.join(MUSIC_DIR,track.file), wav=path.join(MUSIC_DIR,"."+track.file+".wav");
     try{
-      const args=["-y"], filters=[];
-      for(const [freq,vol,cut,label] of [[r,.045,1200,"p0"],[m,.032,1900,"p1"],[h,.022,2800,"p2"],[low,.05,500,"p3"]]){
-        args.push("-f","lavfi","-i",`sine=frequency=${freq}:sample_rate=44100:duration=${dur}`);
-        filters.push(`[${filters.length}:a]volume=${vol},lowpass=f=${cut}[${label}]`);
-      }
-      args.push("-f","lavfi","-i",`anoisesrc=color=brown:amplitude=0.008:sample_rate=44100:duration=${dur}`);
-      filters.push("[4:a]lowpass=f=1100,volume=.30[noise1]");
-      args.push("-f","lavfi","-i",`anoisesrc=color=pink:amplitude=0.0025:sample_rate=44100:duration=${dur}`);
-      filters.push("[5:a]highpass=f=900,lowpass=f=6500,volume=.10[noise2]");
-
-      const melody=[r*2,m*2,h*2,m*2,r*2,h*2,m*2,r*1.5,m*2,h*2,r*2,m*2,h*2,m*2,r*2,h*1.5];
-      const ml=[];
-      for(let i=0;i<melody.length;i++){
-        const idx=6+i, label="m"+i;
-        args.push("-f","lavfi","-i",`sine=frequency=${melody[i]}:sample_rate=44100:duration=${note}`);
-        ml.push(label);
-        filters.push(`[${idx}:a]volume=.060,afade=t=in:st=0:d=.10,afade=t=out:st=${Math.max(.2,note-.22)}:d=.22[${label}]`);
-      }
-      filters.push(ml.map(x=>`[${x}]`).join("")+`concat=n=${ml.length}:v=0:a=1,aloop=loop=-1:size=1512000,atrim=0:${dur},aecho=0.65:0.55:320:0.12[mel]`);
-
-      const arp=[r*2.5,m*2.5,h*2.5,m*3,r*3,h*3,m*2.5,r*2.5], al=[];
-      for(let i=0;i<arp.length;i++){
-        const idx=6+melody.length+i,label="a"+i;
-        args.push("-f","lavfi","-i",`sine=frequency=${arp[i]}:sample_rate=44100:duration=${beat}`);
-        al.push(label);
-        filters.push(`[${idx}:a]volume=.020,afade=t=in:st=0:d=.08,afade=t=out:st=${Math.max(.1,beat-.12)}:d=.12[${label}]`);
-      }
-      filters.push(al.map(x=>`[${x}]`).join("")+`concat=n=${al.length}:v=0:a=1,aloop=loop=-1:size=302400,atrim=0:${dur},aecho=0.6:0.5:220:0.08[arp]`);
-
-      args.push("-f","lavfi","-i",`aevalsrc=0.12*sin(2*PI*62*t)*exp(-12*mod(t,${beat})):s=44100:d=${dur}`);
-      const pulse=6+melody.length+arp.length;
-      filters.push(`[${pulse}:a]lowpass=f=180,volume=.42[pulse]`);
-      filters.push("[p0][p1][p2][p3][noise1][noise2][mel][arp][pulse]amix=inputs=9:duration=longest:normalize=0,lowpass=f=8000,acompressor=threshold=-28dB:ratio=2:attack=35:release=450,volume=.92,afade=t=in:st=0:d=8,afade=t=out:st=172:d=8[out]");
-
-      await runFfmpeg([...args,"-filter_complex",filters.join(";"),"-map","[out]","-t",String(dur),"-c:a","libmp3lame","-b:a","160k","-ar","44100",out]);
-    }catch(e){console.error("No se pudo crear composición:",t.file,e.message)}
+      makeCompositionWav(track,wav);
+      await runFfmpeg(["-y","-i",wav,"-c:a","libmp3lame","-b:a","160k","-ar","44100",out]);
+    }catch(e){console.error("No se pudo crear composición:",track.file,e.message)}
+    finally{try{fs.rmSync(wav,{force:true})}catch{}}
   });
   await Promise.all(jobs);
 }
