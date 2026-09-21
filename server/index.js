@@ -47,7 +47,7 @@ function safe(name) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-const MUSIC_ENGINE_VERSION = "v18-helios-style-relaxation-profile";
+const MUSIC_ENGINE_VERSION = "v19-lyria-clean-relaxation";
 
 const BUILTIN_MUSIC = [
   ["relax-piano.mp3","Piano nocturno","Sueño",261.63,329.63,392],
@@ -387,9 +387,14 @@ async function ensureBuiltinMusic(tracks=BUILTIN_MUSIC){
     }
   };
 
+  // Generamos dos en paralelo: Lyria puede tardar, pero así las 4 previas
+  // aparecen mucho antes que con una cola estrictamente secuencial.
   const results=[];
-  for(const track of pending){ results.push(await generateOne(track)); }
-  console.log("[Music v11] Terminadas:",results.filter(Boolean).length,"/",pending.length);
+  for(let i=0;i<pending.length;i+=2){
+    const batch=pending.slice(i,i+2);
+    results.push(...await Promise.all(batch.map(generateOne)));
+  }
+  console.log("[Music v19] Terminadas:",results.filter(Boolean).length,"/",pending.length);
 }
 function listFiles(dir, base) {
   return fs.readdirSync(dir)
