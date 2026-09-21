@@ -370,7 +370,7 @@ async function ensureBuiltinMusic(tracks=BUILTIN_MUSIC){
     const p=path.join(MUSIC_DIR,t.file);
     try{return fs.existsSync(p)&&fs.statSync(p).size>4096}catch{return false}
   };
-  const pending=tracks.filter(t=>!valid(t));
+  const pending=tracks.filter(t=>!valid(t) || t.forceRegenerate);
   console.log("[Music v13] Pendientes:",pending.length);
   if(!pending.length) return;
 
@@ -716,7 +716,10 @@ app.post("/api/ai-options", async (req, res) => {
 
   // Las imágenes se devuelven inmediatamente. La música se prepara en segundo plano
   // para que Crear IA no quede bloqueado mientras se renderizan las 4 previas.
+  // Cada pulsación de búsqueda debe crear 4 archivos NUEVOS.
+  // Nunca reutilizamos una generación anterior aunque la descripción sea igual.
   aiMusicTracks = aiTracksForBackground(musicPrompt);
+  aiMusicTracks.forEach(t => { try { fs.rmSync(path.join(MUSIC_DIR,t.file), {force:true}); } catch {} });
   aiMusicErrors = [];
   const initialMusic=getAIMusicOptions();
   if(initialMusic.length<4 && !aiMusicPreparing){
@@ -770,30 +773,32 @@ function musicIntentProfile(prompt=""){
 }
 
 function aiTracksForBackground(prompt=""){
-  const p=String(prompt||"deep relaxation ambient music").trim().slice(0,220);
-  const intent=musicIntentProfile(p);
-  const seed=hashText(p);
+  const p=String(prompt||"deep relaxation ambient music").trim().slice(0,700);
+  const seed=Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8);
   const variants=[
-    "minimal version: one clear lead instrument, almost no accompaniment, very long pauses",
-    "organic version: lead instrument plus one subtle natural texture, wider room",
-    "harmonic version: lead instrument plus soft sustained harmony, gentle chord movement",
-    "immersive version: same requested palette with slow evolving ambience and spacious depth"
+    "Version A: make the arrangement substantially different, with a distinct melodic motif, different chord voicings and a clearly different lead instrument or lead role.",
+    "Version B: reinterpret the same brief with a different musical structure, register, harmonic movement, rhythmic feel and instrumentation balance. Do not copy Version A.",
+    "Version C: create a different performance and production: change the lead voice, supporting layers, melodic contour, dynamics, stereo depth and ambience. Do not copy the other options.",
+    "Version D: create the most contrasting interpretation that still obeys the user's brief: different opening, motif, texture evolution, harmony and instrumental hierarchy."
   ];
   return variants.map((variation,i)=>{
     const b=BUILTIN_MUSIC[i];
     return {
       ...b,
-      file:"ai-prompt-"+seed+"-v15-"+(i+1)+".mp3",
+      file:"ai-freeform-"+seed+"-"+(i+1)+".mp3",
       label:"IA · "+(i+1),
       variant:i+1,
-      f1:b.f1,f2:b.f2,f3:b.f3,
+      forceRegenerate:true,
       musicProfile:[
-        "USER SEARCH: "+p,
-        "STRICT SOUND INTENT: "+intent,
-        "IMPORTANT: the user's requested instrument/texture must be the dominant audible element.",
-        "Do not default to piano unless piano was explicitly requested.",
+        "USER MUSIC BRIEF: "+p,
+        "This is a fresh generation. Do not reuse, imitate or follow the arrangement of any previous generation.",
+        "The user's description is the source of truth. Follow its genre, instruments, melody, harmony, rhythm, structure, production and atmosphere.",
+        "Do not reduce the request to a generic relaxing preset.",
+        "If the user requests multiple instruments, make every requested instrument clearly audible and musically integrated.",
+        "Do not add piano unless the user asks for piano.",
         variation,
-        "The four options must sound noticeably different from each other while remaining faithful to the same search."
+        "Generate a complete professional musical composition, not a static drone, generic pad or repeated one-bar loop.",
+        "The four options must be genuinely different musical compositions, not the same composition with a different mix."
       ].join(". ")
     };
   });
