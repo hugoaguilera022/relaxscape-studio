@@ -1406,7 +1406,7 @@ app.post("/api/generate-freesound-ai-mix", async (req,res)=>{
       const x=pool[i];
       const section=path.join(work,"section-"+i+".mp3");
       const vol=ambience&&ambience.id!==x.id ? "0.72" : "0.82";
-      await runFfmpeg(["-y","-stream_loop","-1","-i",x.file,"-t","45","-af","aresample=48000,highpass=f=35,lowpass=f=18000,volume="+vol+",afade=t=in:st=0:d=3,afade=t=out:st=41:d=4","-c:a","libmp3lame","-b:a","192k",section]);
+      await runFfmpeg(["-y","-stream_loop","-1","-i",x.file,"-t","45","-af","aresample=48000,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,highpass=f=35,lowpass=f=18000,volume="+vol+",afade=t=in:st=0:d=3,afade=t=out:st=41:d=4","-ac","2","-ar","48000","-c:a","libmp3lame","-b:a","192k",section]);
       sections.push(section);
     }
     const musicBase=path.join(work,"music-base.mp3");
@@ -1420,11 +1420,11 @@ app.post("/api/generate-freesound-ai-mix", async (req,res)=>{
         filters.push(current+"["+i+":a]acrossfade=d=4:c1=tri:c2=tri"+next);
         current=next;
       }
-      await runFfmpeg(["-y",...inputs,"-filter_complex",filters.join(";"),"-map",current,"-c:a","libmp3lame","-b:a","192k",musicBase]);
+      await runFfmpeg(["-y",...inputs,"-filter_complex",filters.join(";"),"-map",current,"-ac","2","-ar","48000","-c:a","libmp3lame","-b:a","192k",musicBase]);
     }
     const finalBase=path.join(work,"final-base.mp3");
     if(ambience){
-      await runFfmpeg(["-y","-stream_loop","-1","-i",musicBase,"-stream_loop","-1","-i",ambience.file,"-t","180","-filter_complex","[0:a]volume=0.92[m];[1:a]aresample=48000,lowpass=f=9000,volume=0.16,afade=t=in:st=0:d=5[amb];[m][amb]amix=inputs=2:duration=first:dropout_transition=5,loudnorm=I=-18:TP=-2:LRA=7[out]","-map","[out]","-c:a","libmp3lame","-b:a","192k",finalBase]);
+      await runFfmpeg(["-y","-stream_loop","-1","-i",musicBase,"-stream_loop","-1","-i",ambience.file,"-t","180","-filter_complex","[0:a]aresample=48000,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,volume=0.92[m];[1:a]aresample=48000,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,lowpass=f=9000,volume=0.16,afade=t=in:st=0:d=5[amb];[m][amb]amix=inputs=2:duration=first:dropout_transition=5:weights=1 0.18,loudnorm=I=-18:TP=-2:LRA=7[out]","-map","[out]","-c:a","libmp3lame","-b:a","192k",finalBase]);
     }else{
       fs.copyFileSync(musicBase,finalBase);
     }
