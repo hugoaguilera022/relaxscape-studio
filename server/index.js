@@ -538,82 +538,74 @@ async function generateLyriaMusicFile(prompt, index=1) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("GEMINI_API_KEY no configurada");
 
+  const p = String(prompt || "relajación ambiental profunda").toLowerCase();
+  const has = (...words) => words.some(w => p.includes(w));
+
+  // No fijamos siempre el piano: el instrumento y la textura salen de la búsqueda.
+  let soundProfile;
+  if (has("guitarra","acústica","acustica","nylon","guitar")) {
+    soundProfile = "realistic warm nylon acoustic guitar as the main instrument, fingerpicked slowly, intimate close microphone, soft finger noise, natural wood resonance, sparse arpeggios";
+  } else if (has("flauta","flute","bambú","bambu","wind")) {
+    soundProfile = "realistic airy bamboo flute as the main instrument, breathy natural tone, very sparse long notes, gentle expressive phrasing, soft room ambience";
+  } else if (has("violín","violin","cello","cuerdas","strings","orquesta","orchestral")) {
+    soundProfile = "realistic warm legato strings as the main sound, intimate chamber ensemble, very soft bow texture, long sustained consonant chords, subtle evolving harmony";
+  } else if (has("agua","water","océano","oceano","mar","olas","waves","lluvia","rain","río","rio","cascada","waterfall")) {
+    soundProfile = "deep natural water ambience as the main texture, soft distant waves or flowing water, with only sparse atmospheric musical tones, no obvious piano";
+  } else if (has("sintetizador","synth","electrónica","electronica","ambient")) {
+    soundProfile = "premium analog ambient synthesizers, warm evolving pads, soft granular air, slowly changing harmonies, wide clean stereo field";
+  } else if (has("piano","pianístico","pianistica","teclas","felt")) {
+    soundProfile = "real professionally recorded felt piano as the main instrument, close intimate microphone, sparse slow notes, long natural decay, warm pedal resonance";
+  } else {
+    soundProfile = "deep relaxation ambient ensemble with soft felt piano, warm sustained pads and subtle organic textures, with the instruments clearly separated and never dominant";
+  }
+
   const variants = [
-    "clean felt piano, intimate close-mic piano tone, very sparse slow notes, long natural decay, warm soft pedal resonance, extremely gentle dynamics",
-    "clean felt piano with an almost inaudible warm air pad, sparse slow piano phrases, long sustained harmony, soft pedal resonance, wide but clean stereo space",
-    "clean felt piano with very soft legato string ambience underneath, sparse notes, long decay, warm consonant chords, no dramatic swells, transparent mix",
-    "clean felt piano with extremely subtle water-like air texture, sparse slow notes, long decay, warm consonant harmony, natural room and spacious reverb"
+    "version A: closest and most minimal interpretation, very sparse arrangement",
+    "version B: slightly deeper harmony, longer sustained notes and wider room",
+    "version C: gentle melodic movement with the same requested sound palette",
+    "version D: subtle evolving texture and a very soft final resolution"
   ];
-  const detail = variants[(Math.max(1, Number(index)) - 1) % variants.length];
+  const detail = variants[(Math.max(1, Number(index))-1)%variants.length];
 
   const finalPrompt = [
-    String(prompt || "deep relaxation piano ambience"),
-    "Professional high-end relaxation ambient instrumental.",
+    "Instrumental deep relaxation music for a long meditation and nature video.",
+    soundProfile + ".",
     detail + ".",
-    "The piano must sound like a real professionally recorded acoustic felt piano, clean, soft, detailed and natural.",
-    "Continuous background meditation music, not a pop song.",
-    "No verse, no chorus, no hook, no dramatic build, no cinematic impact, no rhythmic groove.",
-    "Very slow 40-55 BPM feel, mostly sustained consonant harmony, gentle voice leading, large spaces between notes.",
-    "Natural stereo image, low noise, smooth transients, no distortion, no harsh highs, no muddy low end, no clipping.",
-    "No drums, no percussion, no bass pulse, no vocals, no lyrics.",
-    "Do not reproduce any existing melody or recording."
+    "Reference aesthetic: premium long-form relaxation music, calm, spacious, organic and continuous, designed as background rather than a song.",
+    "Very slow 40-55 BPM feel, consonant harmony, gentle voice leading, long phrases, low dynamic range and no sudden changes.",
+    "Clean professional recording and mix: natural stereo depth, detailed transients, controlled low end, smooth high frequencies, no hiss, no clipping, no distortion, no harshness.",
+    "No vocals, no lyrics, no drums, no percussion, no EDM, no pop structure, no hook, no dramatic cinematic impacts, no rhythmic groove.",
+    "Create an original composition; do not reproduce any existing melody or recording."
   ].join(" ");
 
   const r = await fetchWithTimeout("https://generativelanguage.googleapis.com/v1beta/interactions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-    body: JSON.stringify({
-      model: "lyria-3.5",
-      input: finalPrompt,
-      response_format: { type: "audio" }
-    })
-  }, 180000);
+    method:"POST",
+    headers:{"Content-Type":"application/json","x-goog-api-key":key},
+    body:JSON.stringify({model:"lyria-3.5",input:finalPrompt,response_format:{type:"audio"}})
+  },180000);
 
-  const data = await r.json();
-  if (!r.ok) throw new Error(data.error?.message || ("Lyria 3.5 HTTP " + r.status));
+  const data=await r.json();
+  if(!r.ok) throw new Error(data.error?.message || ("Lyria 3.5 HTTP "+r.status));
+  const b64=data.output_audio?.data || data.steps?.flatMap(s=>s.content||[]).find(x=>x.type==="audio")?.data;
+  if(!b64) throw new Error("Lyria 3.5 no devolvió audio.");
 
-  const b64 =
-    data.output_audio?.data ||
-    data.steps?.flatMap(s => s.content || []).find(x => x.type === "audio")?.data;
+  const rawName="ai-lyria35-raw-"+Date.now()+"-"+index+".bin";
+  const rawPath=path.join(MUSIC_DIR,rawName);
+  fs.writeFileSync(rawPath,Buffer.from(b64,"base64"));
 
-  if (!b64) throw new Error("Lyria 3.5 no devolvió audio.");
-
-  const filename = "ai-lyria35-clean-relax-" + Date.now() + "-" + index + ".mp3";
-  const rawPath = path.join(MUSIC_DIR, filename);
-  fs.writeFileSync(rawPath, Buffer.from(b64, "base64"));
-
-  // Limpieza final: conservamos el detalle del piano y evitamos graves/altos
-  // agresivos. Lyria ya entrega 44.1 kHz estéreo de alta calidad.
-  const cleanName = "ai-lyria35-clean-master-" + Date.now() + "-" + index + ".mp3";
-  const cleanPath = path.join(MUSIC_DIR, cleanName);
-  try {
-    await runFfmpeg([
-      "-y", "-i", rawPath,
-      "-af", "highpass=f=32,lowpass=f=17000,acompressor=threshold=-26dB:ratio=1.5:attack=25:release=300:makeup=1,alimiter=limit=0.95",
-      "-ar", "44100", "-ac", "2", "-c:a", "libmp3lame", "-b:a", "320k",
-      cleanPath
-    ]);
-    fs.rmSync(rawPath, {force:true});
-    return {
-      name: cleanName,
-      url: "/media/music/" + encodeURIComponent(cleanName),
-      ai: true,
-      provider: "Google Lyria 3.5",
-      generated: true,
-      fallback: false
-    };
-  } catch (e) {
-    return {
-      name: filename,
-      url: "/media/music/" + encodeURIComponent(filename),
-      ai: true,
-      provider: "Google Lyria 3.5",
-      generated: true,
-      fallback: false
-    };
+  const cleanName="ai-lyria35-"+hashText(finalPrompt)+"-"+index+".mp3";
+  const cleanPath=path.join(MUSIC_DIR,cleanName);
+  try{
+    await runFfmpeg(["-y","-i",rawPath,
+      "-af","highpass=f=28,lowpass=f=18000,acompressor=threshold=-28dB:ratio=1.4:attack=30:release=350:makeup=1,alimiter=limit=0.95",
+      "-ar","44100","-ac","2","-c:a","libmp3lame","-b:a","320k",cleanPath]);
+    fs.rmSync(rawPath,{force:true});
+    return {name:cleanName,url:"/media/music/"+encodeURIComponent(cleanName),ai:true,provider:"Google Lyria 3.5",generated:true,fallback:false};
+  }catch(e){
+    fs.rmSync(rawPath,{force:true});
+    throw new Error("No se pudo convertir el audio de Lyria: "+e.message);
   }
 }
-
 function makeFallbackLandscape(filename, theme="nature") {
   const safeTheme = String(theme).replace(/[&<>"]/g, "");
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
