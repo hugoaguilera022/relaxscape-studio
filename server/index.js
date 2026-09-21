@@ -328,14 +328,15 @@ async function ensureBuiltinMusic(tracks=BUILTIN_MUSIC){
         }catch(lyriaError){
           // Fallback gratuito local: nunca dejamos Crear IA sin música.
           // Cada opción recibe una identidad instrumental y armónica diferente.
+          const userBrief = String(track.userMusicBrief || track.musicProfile || track.label || "relaxing ambient music");
           const fallbackProfiles = [
-            "felt piano, nylon acoustic guitar, intimate cello, airy flute, warm wooden room, organic acoustic ambient, rich major 7/9 harmony, slow expressive melody, no drums, no percussion",
-            "cinematic strings, cello, viola, layered legato violins, deep spacious hall, suspended minor 9 harmony, long orchestral swells, low register movement, no guitar lead, no flute lead, no piano lead, no drums",
-            "warm analog synthesizer, evolving granular pads, glassy high textures, soft sub bass, stereo modulation, ethereal electronic ambient, changing harmonic layers, modern spacious production, no piano lead, no orchestral wall, no drums",
-            "bamboo flute, nylon guitar, resonant plucked textures, light bowed strings, organic outdoor ambience, modal world ambient, long melodic breaths, subtle rubato, natural room detail, no synth lead, no piano lead, no drums"
+            "USER BRIEF: "+userBrief+". Preserve its genre, mood, instruments, environment and tempo. Local timbral engine: felt piano with nylon guitar and cello colors. Do not turn the request into a generic relaxation preset.",
+            "USER BRIEF: "+userBrief+". Preserve its genre, mood, instruments, environment and tempo. Local timbral engine: bowed strings and cello dominate, with sustained orchestral phrasing. Do not turn the request into a generic relaxation preset.",
+            "USER BRIEF: "+userBrief+". Preserve its genre, mood, instruments, environment and tempo. Local timbral engine: warm analog synthesizer, evolving electronic layers and soft sub movement. Do not turn the request into a generic relaxation preset.",
+            "USER BRIEF: "+userBrief+". Preserve its genre, mood, instruments, environment and tempo. Local timbral engine: airy bamboo/woodwind, nylon guitar and organic environmental texture. Do not turn the request into a generic relaxation preset."
           ];
           const fallbackProfile = fallbackProfiles[(Number(track.variant || 1) - 1) % fallbackProfiles.length];
-          const fallbackTrack = { ...track, musicProfile: fallbackProfile };
+          const fallbackTrack = { ...track, userMusicBrief: userBrief, musicProfile: fallbackProfile };
           await new Promise(resolve => setImmediate(resolve));
           makeCompositionWav(fallbackTrack, wav);
           await runFfmpeg([
@@ -796,6 +797,7 @@ function aiTracksForBackground(prompt="", generationId=0){
     const b=BUILTIN_MUSIC[i];
     return {
       ...b,
+      userMusicBrief:p,
       file:"ai-freeform-"+seed+"-"+(i+1)+".mp3",
       label:"IA · "+(i+1),
       variant:i+1,
