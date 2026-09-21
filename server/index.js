@@ -432,30 +432,38 @@ app.post("/api/upload/image", imageUpload.single("image"), (req, res) => {
 });
 
 app.get("/api/pexels-landscapes", async (req, res) => {
-  const key = process.env.PEXELS_API_KEY;
+  const key = String(process.env.PEXELS_API_KEY || "").trim();
   if (!key) return res.status(400).json({ error: "Falta PEXELS_API_KEY en Render." });
-  const query = String(req.query.query || "peaceful nature landscape").slice(0, 100);
+  const query = String(req.query.query || "peaceful nature landscape").slice(0, 120);
   try {
-    const search = await fetch(`https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=40&page=${1 + Math.floor(Math.random() * 5)}&orientation=landscape&size=large&locale=en-US`, { headers: { Authorization: key } });
-    const data = await search.json();
-    if (!search.ok) return res.status(search.status).json({ error: "Pexels: " + (data.error || data.message || ("HTTP " + search.status)) });
+    const search = await fetchWithTimeout(
+      "https://api.pexels.com/v1/search?query=" + encodeURIComponent(query) +
+      "&per_page=24&page=" + (1 + Math.floor(Math.random() * 5)) +
+      "&orientation=landscape&size=large&locale=es-ES",
+      { headers: { Authorization: key } }, 8000
+    );
+    const data = await search.json().catch(() => ({}));
+    if (!search.ok) return res.status(search.status).json({ error: "Pexels HTTP " + search.status + ": " + (data.error || data.message || "error") });
     const photos = (data.photos || [])
-      .filter(p => p.width >= 1920 && p.height >= 1080 && (p.src?.large2x || p.src?.large))
-      .sort((a,b) => (b.width*b.height) - (a.width*a.height))
+      .filter(p => p.src?.large2x || p.src?.large)
+      .sort(() => Math.random() - 0.5)
       .slice(0, 8);
-    if (!photos.length) return res.status(404).json({ error: "Pexels no encontró suficientes fotos Full HD para este paisaje." });
-    const saved = [];
-    for (const photo of photos) {
-      const url = photo.src?.large2x || photo.src?.large;
-      const r = await fetch(url);
-      if (!r.ok) continue;
-      const filename = `pexels-${photo.id}-${Date.now()}.jpg`;
-      fs.writeFileSync(path.join(IMAGE_DIR, filename), Buffer.from(await r.arrayBuffer()));
-      saved.push({ name: filename, url: `/media/images/${encodeURIComponent(filename)}`, photographer: photo.photographer || "Pexels", sourceUrl: photo.url });
-    }
-    if (!saved.length) return res.status(502).json({ error: "No se pudieron descargar las fotos de Pexels." });
-    res.json({ images: saved });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+    if (!photos.length) return res.status(404).json({ error: "Pexels no encontró paisajes para esta búsqueda." });
+    res.json({
+      images: photos.map((photo, i) => ({
+        name: "pexels-" + photo.id + ".jpg",
+        url: photo.src?.large2x || photo.src?.large || photo.src?.original,
+        photographer: photo.photographer || "Pexels",
+        sourceUrl: photo.url,
+        provider: "Pexels",
+        width: photo.width || 0,
+        height: photo.height || 0,
+        label: "Paisaje " + (i + 1)
+      })),
+      provider: "Pexels",
+      query
+    });
+  } catch (e) { res.status(502).json({ error: "Error buscando paisajes: " + (e.message || e) }); }
 });
 
 app.post("/api/upload/music", musicUpload.single("music"), (req, res) => {
@@ -573,44 +581,44 @@ async function generateAIImage(prompt, index=0) {
 }
 
 app.post("/api/ai-images", async (req, res) => {
-  const theme = String(req.body?.theme || "peaceful nature landscape").trim().slice(0, 100);
+  const theme = String(req.body?.theme || "peaceful nature landscape").trim().slice(0, 120);
   const key = String(process.env.PEXELS_API_KEY || "").trim();
   if (!key) {
     return res.status(503).json({
-      error: "Falta PEXELS_API_KEY en Render. Añádela para buscar paisajes rápidamente.",
-      hint: "Pexels es la fuente rápida de imágenes; la generación IA queda separada y es opcional."
+      error: "Falta PEXELS_API_KEY en Render.",
+      hint: "La búsqueda de paisajes usa Pexels y necesita la clave configurada en Environment."
     });
   }
   try {
+    // IMPORTANTE: aquí solo buscamos y devolvemos URLs de Pexels.
+    // No descargamos 8 imágenes una por una: eso hacía que la búsqueda tardara
+    // demasiado y además descartaba resultados válidos por exigir 1920x1080 exactos.
     const page = 1 + Math.floor(Math.random() * 8);
     const url = "https://api.pexels.com/v1/search?query=" + encodeURIComponent(theme) +
       "&per_page=24&page=" + page + "&orientation=landscape&size=large&locale=es-ES";
     const r = await fetchWithTimeout(url, { headers: { Authorization: key } }, 8000);
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error("Pexels HTTP " + r.status + ": " + (data.error || data.message || "error de búsqueda"));
+
     const photos = (data.photos || [])
-      .filter(p => p.width >= 1920 && p.height >= 1080 && (p.src?.large2x || p.src?.large))
+      .filter(p => p.src?.large2x || p.src?.large)
       .sort(() => Math.random() - 0.5)
       .slice(0, 8);
-    if (!photos.length) throw new Error("Pexels no encontró suficientes paisajes Full HD para esa búsqueda.");
-    const images = [];
-    for (const photo of photos) {
-      const imageUrl = photo.src?.large2x || photo.src?.large;
-      const imageResponse = await fetchWithTimeout(imageUrl, {}, 10000);
-      if (!imageResponse.ok) continue;
-      const filename = `pexels-${photo.id}-${Date.now()}-${images.length}.jpg`;
-      fs.writeFileSync(path.join(IMAGE_DIR, filename), Buffer.from(await imageResponse.arrayBuffer()));
-      images.push({
-        name: filename,
-        url: "/media/images/" + encodeURIComponent(filename),
-        photographer: photo.photographer || "Pexels",
-        sourceUrl: photo.url,
-        provider: "Pexels"
-      });
-      if (images.length >= 8) break;
-    }
-    if (!images.length) throw new Error("No se pudieron descargar los paisajes de Pexels.");
-    res.json({ images, provider: "Pexels" });
+
+    if (!photos.length) throw new Error("Pexels no encontró paisajes para esa búsqueda.");
+
+    const images = photos.map((photo, index) => ({
+      name: "pexels-" + photo.id + ".jpg",
+      url: photo.src?.large2x || photo.src?.large || photo.src?.original,
+      photographer: photo.photographer || "Pexels",
+      sourceUrl: photo.url,
+      provider: "Pexels",
+      width: photo.width || 0,
+      height: photo.height || 0,
+      label: "Paisaje " + (index + 1)
+    }));
+
+    res.json({ images, provider: "Pexels", query: theme });
   } catch (e) {
     console.error("[Landscape Search] ERROR", e);
     res.status(502).json({ error: "Error buscando paisajes: " + (e.message || e) });
