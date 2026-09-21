@@ -192,14 +192,16 @@ app.post("/api/generate-ai-music", async (req, res) => {
 
 
 app.post("/api/mux-video-audio", async (req, res) => {
-  const { video, music } = req.body || {};
+  const { video, music, durationHours = 1 } = req.body || {};
   if (!video || !music) return res.status(400).json({ error: "Faltan el vídeo o la música." });
   const videoName = decodeURIComponent(video.split("/").pop());
   const musicName = decodeURIComponent(music.split("/").pop());
   const videoPath = path.join(VIDEO_DIR, videoName);
   const musicPath = path.join(MUSIC_DIR, musicName);
   if (!fs.existsSync(videoPath) || !fs.existsSync(musicPath)) return res.status(404).json({ error: "No se encontró el archivo para mezclar." });
-  const filename = `ai-relax-${Date.now()}.mp4`;
+  const hours = Number(durationHours);
+  if (![1, 2].includes(hours)) return res.status(400).json({ error: "La duración debe ser de 1 o 2 horas." });
+  const filename = `ai-relax-${Date.now()}-${hours}h.mp4`;
   const out = path.join(VIDEO_DIR, filename);
   try {
     await runFfmpeg([
