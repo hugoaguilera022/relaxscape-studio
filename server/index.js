@@ -218,47 +218,104 @@ function makeCompositionWav(track, wavPath){
   const beat=60/bpm, bar=beat*4;
   const degree=(d,o=0)=>root+scale[((d%scale.length)+scale.length)%scale.length]+12*o;
 
-  // -------------------- 3. TIMBRE --------------------
+  // -------------------- 3. TIMBRES INSTRUMENTALES --------------------
+  // Cada instrumento usa un modelo físico simplificado diferente.
+  // No son ondas genéricas: ataque, parciales, envolvente y ruido mecánico
+  // cambian según el instrumento solicitado.
+  const sat=(x)=>Math.tanh(x);
+  const hammerNoise=(t,seed)=>{
+    const q=Math.sin((t*173.17+seed*19.37)*12.9898)*43758.5453;
+    return (q-Math.floor(q))*2-1;
+  };
+
   const piano=(f,t,v=1)=>{
-    if(t<0||t>7)return 0;
-    const a=1-Math.exp(-t/.006), hammer=Math.exp(-t/.045), body=Math.exp(-t/3.2);
-    const brightness=semantic.warm?.88:1;
-    return v*a*(.52*hammer+.48*body)*(
-      .76*Math.sin(2*Math.PI*f*t)+
-      .16*Math.sin(2*Math.PI*f*2.01*t)*brightness+
-      .055*Math.sin(2*Math.PI*f*3.02*t)+
-      .018*Math.sin(2*Math.PI*f*4.05*t)
-    );
+    if(t<0||t>8)return 0;
+    const attack=1-Math.exp(-t/.0028);
+    const hammer=Math.exp(-t/.030)*(.030*hammerNoise(t,7));
+    const body=Math.exp(-t/3.8);
+    const modes=
+      .72*Math.sin(2*Math.PI*f*t)+
+      .18*Math.sin(2*Math.PI*f*2.003*t)+
+      .060*Math.sin(2*Math.PI*f*3.009*t)+
+      .025*Math.sin(2*Math.PI*f*4.018*t)+
+      .010*Math.sin(2*Math.PI*f*5.03*t);
+    return v*attack*(body*modes+hammer);
   };
   const pianoPedal=(f,t,v=1)=>{
     if(t<0||t>8)return 0;
-    return v*(1-Math.exp(-t/.04))*Math.exp(-t/6.2)*(
-      .48*Math.sin(2*Math.PI*f*t)+.10*Math.sin(2*Math.PI*2.01*f*t)+.025*Math.sin(2*Math.PI*3.02*f*t)
+    const body=Math.exp(-t/7.5);
+    return v*body*(.42*Math.sin(2*Math.PI*f*t)+.12*Math.sin(2*Math.PI*f*2.003*t)+.035*Math.sin(2*Math.PI*f*3.009*t));
+  };
+
+  const guitar=(f,t,v=1)=>{
+    if(t<0||t>5)return 0;
+    const pluck=1-Math.exp(-t/.0018);
+    const decay=Math.exp(-t/(1.05+1.8/(1+f/220)));
+    const pick=Math.exp(-t/.018)*(.11*hammerNoise(t,13));
+    const modes=.62*Math.sin(2*Math.PI*f*t)+.27*Math.sin(2*Math.PI*f*2.01*t)+.09*Math.sin(2*Math.PI*f*3.03*t);
+    const body=.82+.18*Math.sin(2*Math.PI*.7*t);
+    return v*pluck*decay*(body*modes+pick);
+  };
+
+  const strings=(f,t,v=1)=>{
+    if(t<0||t>9)return 0;
+    const attack=1-Math.exp(-t/.42);
+    const bow=1+.035*hammerNoise(t*2.2,23);
+    const body=Math.exp(-t/9.5);
+    return v*attack*body*bow*(
+      .50*Math.sin(2*Math.PI*f*t)+
+      .25*Math.sin(2*Math.PI*f*2*t)+
+      .13*Math.sin(2*Math.PI*f*3*t)+
+      .06*Math.sin(2*Math.PI*f*4*t)+
+      .025*Math.sin(2*Math.PI*f*5*t)
     );
   };
-  const guitar=(f,t,v=1)=>t<0||t>4?0:v*(1-Math.exp(-t/.007))*Math.exp(-t/1.65)*(
-    .66*Math.sin(2*Math.PI*f*t)+.23*Math.sin(4*Math.PI*f*t)+.08*Math.sin(6*Math.PI*f*t)
-  );
-  const strings=(f,t,v=1)=>t<0?0:v*(1-Math.exp(-t/.75))*Math.exp(-t/8.5)*(
-    .48*Math.sin(2*Math.PI*f*t)+.30*Math.sin(4*Math.PI*f*t)+.14*Math.sin(6*Math.PI*f*t)+.05*Math.sin(8*Math.PI*f*t)
-  );
+
   const flute=(f,t,v=1)=>{
-    if(t<0||t>7)return 0;
-    const attack=1-Math.exp(-t/.16), body=Math.exp(-t/4.8);
-    const vib=1+.0045*Math.sin(2*Math.PI*5.1*t);
-    const breath=(Math.sin(2*Math.PI*37*t)+.55*Math.sin(2*Math.PI*61*t+.7)+.25*Math.sin(2*Math.PI*89*t+1.4))/1.8;
-    const airEnv=Math.exp(-t/1.7)*(0.018+0.010*Math.sin(2*Math.PI*.7*t));
-    return v*attack*body*(.91*Math.sin(2*Math.PI*f*vib*t)+.065*Math.sin(2*Math.PI*2*f*vib*t)+.018*Math.sin(2*Math.PI*3*f*vib*t)+breath*airEnv);
+    if(t<0||t>8)return 0;
+    const attack=1-Math.exp(-t/.14);
+    const body=Math.exp(-t/5.2);
+    const vib=1+.0048*Math.sin(2*Math.PI*5.2*t);
+    const breath=(.75*hammerNoise(t*1.7,31)+.20*Math.sin(2*Math.PI*43*t)+.10*Math.sin(2*Math.PI*71*t));
+    const air=Math.exp(-t/1.4)*.025;
+    return v*attack*body*(.90*Math.sin(2*Math.PI*f*vib*t)+.075*Math.sin(2*Math.PI*2*f*vib*t)+.018*Math.sin(2*Math.PI*3*f*vib*t)+breath*air);
   };
-  const synth=(f,t,v=1)=>t<0?0:v*(1-Math.exp(-t/.8))*Math.exp(-t/11)*(
-    .42*Math.sin(2*Math.PI*f*t)+.22*Math.sin(2*Math.PI*f*1.006*t)+.16*Math.sin(2*Math.PI*f*.994*t)+.08*Math.sin(2*Math.PI*f/2*t)
-  );
-  const harp=(f,t,v=1)=>t<0||t>4?0:v*(1-Math.exp(-t/.004))*Math.exp(-t/2.2)*(
-    .70*Math.sin(2*Math.PI*f*t)+.20*Math.sin(2*Math.PI*2.99*f*t)+.06*Math.sin(2*Math.PI*5*f*t)
-  );
-  const kalimba=(f,t,v=1)=>t<0||t>3?0:v*(1-Math.exp(-t/.003))*Math.exp(-t/1.9)*(
-    .55*Math.sin(2*Math.PI*f*t)+.30*Math.sin(2*Math.PI*2.7*f*t)+.12*Math.sin(2*Math.PI*5.1*f*t)
-  );
+
+  const synth=(f,t,v=1)=>{
+    if(t<0||t>12)return 0;
+    const a=1-Math.exp(-t/.65);
+    return v*a*Math.exp(-t/10.5)*(
+      .34*Math.sin(2*Math.PI*f*t)+
+      .24*Math.sin(2*Math.PI*f*1.006*t)+
+      .18*Math.sin(2*Math.PI*f*.994*t)+
+      .12*Math.sin(2*Math.PI*f*2*t)
+    );
+  };
+
+  const harp=(f,t,v=1)=>{
+    if(t<0||t>5)return 0;
+    const pluck=1-Math.exp(-t/.0012);
+    const decay=Math.exp(-t/2.35);
+    const transient=Math.exp(-t/.012)*.055*hammerNoise(t,47);
+    return v*pluck*decay*(
+      .66*Math.sin(2*Math.PI*f*t)+
+      .22*Math.sin(2*Math.PI*f*2.98*t)+
+      .075*Math.sin(2*Math.PI*f*5.01*t)+
+      transient
+    );
+  };
+
+  const kalimba=(f,t,v=1)=>{
+    if(t<0||t>3.5)return 0;
+    const pluck=1-Math.exp(-t/.0009);
+    const decay=Math.exp(-t/1.55);
+    return v*pluck*decay*(
+      .45*Math.sin(2*Math.PI*f*t)+
+      .30*Math.sin(2*Math.PI*f*2.71*t)+
+      .16*Math.sin(2*Math.PI*f*5.17*t)+
+      .06*Math.sin(2*Math.PI*f*7.83*t)
+    );
+  };
   const renderers={piano,guitar,strings,flute,synth,harp,kalimba};
 
   // -------------------- 4. SECUENCIA MUSICAL --------------------
