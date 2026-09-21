@@ -189,6 +189,27 @@ app.post("/api/generate-ai-music", async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+
+
+app.post("/api/mux-video-audio", async (req, res) => {
+  const { video, music } = req.body || {};
+  if (!video || !music) return res.status(400).json({ error: "Faltan el vídeo o la música." });
+  const videoName = decodeURIComponent(video.split("/").pop());
+  const musicName = decodeURIComponent(music.split("/").pop());
+  const videoPath = path.join(VIDEO_DIR, videoName);
+  const musicPath = path.join(MUSIC_DIR, musicName);
+  if (!fs.existsSync(videoPath) || !fs.existsSync(musicPath)) return res.status(404).json({ error: "No se encontró el archivo para mezclar." });
+  const filename = `ai-relax-${Date.now()}.mp4`;
+  const out = path.join(VIDEO_DIR, filename);
+  try {
+    await runFfmpeg([
+      "-y","-i",videoPath,"-stream_loop","-1","-i",musicPath,
+      "-map","0:v:0","-map","1:a:0","-c:v","copy","-c:a","aac","-b:a","192k","-shortest",out
+    ]);
+    res.json({ name: filename, url: `/media/videos/${filename}` });
+  } catch (e) { res.status(500).json({ error: "No se pudo mezclar vídeo y música: " + e.message }); }
+});
+
 async function generateDaily() {
   const images = listFiles(IMAGE_DIR, "/media/images");
   const music = listFiles(MUSIC_DIR, "/media/music");
