@@ -74,14 +74,27 @@ async function generateAIMusicOnly(){
   if(status)status.textContent="🔎 Buscando audios reales en Freesound según tu búsqueda…";
   if(mg)mg.innerHTML='<div class="empty">🔎 Buscando grabaciones reales de los instrumentos y ambientes solicitados…</div>';
   try{
-    const d=await api("/api/external-music-search?q="+encodeURIComponent(prompt));
+    const started=await api("/api/external-music-search",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({q:prompt})
+    });
+    let d=null;
+    for(let i=0;i<30;i++){
+      await new Promise(r=>setTimeout(r,700));
+      d=await api("/api/external-music-search-status?jobId="+encodeURIComponent(started.jobId));
+      if(d.status==="succeeded")break;
+      if(d.status==="failed")throw Error(d.error||"Freesound no respondió correctamente.");
+      if(status)status.textContent="🔎 Buscando en Freesound…";
+    }
+    if(!d||d.status!=="succeeded")throw Error("La búsqueda de Freesound está tardando demasiado.");
     S.externalMusic=d.results||[];
     if(!S.externalMusic.length)throw Error("No se encontraron audios que coincidan con la búsqueda.");
     if(status)status.textContent="✓ "+S.externalMusic.length+" previas reales encontradas. Escucha y elige una.";
     renderAICreator();
   }catch(e){
     if(status)status.textContent="Error de búsqueda: "+e.message;
-    if(mg)mg.innerHTML='<div class="empty">No se pudo buscar audio externo.<br><small>'+e.message+'</small></div>';
+    if(mg)mg.innerHTML='<div class="empty">No se pudo buscar audio externo.<br><small>'+e.message+"</small></div>";
   }finally{S.aiLoading=false;renderAICreator()}
 }
 
