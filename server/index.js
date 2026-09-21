@@ -268,7 +268,8 @@ app.post("/api/ai-options", async (req, res) => {
       catch (e) { musicErrors.push(e.message); }
     }
     if(!images.length&&!music.length) {
-      return res.status(502).json({error:"Google no ha podido generar ningún recurso.",imageErrors,musicErrors});
+      const detail = [...imageErrors, ...musicErrors].filter(Boolean)[0] || "Sin detalle devuelto por Google.";
+      return res.status(502).json({error:"Google no ha podido generar ningún recurso. " + detail,imageErrors,musicErrors});
     }
     res.json({images,music,imageErrors,musicErrors});
   } catch(e) { res.status(500).json({error:"Error de generación IA: "+e.message}); }
