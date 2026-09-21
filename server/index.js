@@ -1506,6 +1506,71 @@ function createFreesoundAiJob(query){
   return jobId;
 }
 
+
+// -------------------- FREESOUND SELECTED MIX --------------------
+// The user chooses the individual Freesound sources first. This endpoint only
+// mixes those selected previews; it does not alter image generation or search.
+app.post("/api/mix-selected-freesound", async (req,res)=>{
+  const tracks=Array.isArray(req.body?.tracks)?req.body.tracks.slice(0,6):[];
+  if(tracks.length<2) return res.status(400).json({error:"Selecciona al menos 2 sonidos para crear la mezcla."});
+  const work=path.join(MUSIC_DIR,"selected-mix-"+Date.now()+"-"+Math.random().toString(36).slice(2,7));
+  fs.mkdirSync(work,{recursive:true});
+  try{
+    const local=[];
+    for(let i=0;i<tracks.length;i++){
+      const t=tracks[i]||{};
+      if(!t.preview || !/^https?:\\/\\//i.test(t.preview)) throw new Error("Una de las previas seleccionadas no es válida.");
+      const rr=await fetchWithTimeout(t.preview,{headers:{Accept:"audio/mpeg,audio/*"}},20000);
+      if(!rr.ok) throw new Error("Freesound preview HTTP "+rr.status);
+      const file=path.join(work,"source-"+i+".mp3");
+      fs.writeFileSync(file,Buffer.from(await rr.arrayBuffer()));
+      if(!fs.statSync(file).size) throw new Error("Una de las previas seleccionadas llegó vacía.");
+      local.push(file);
+    }
+
+    // First create a 10-minute soundscape. Each selected source is looped and
+    // balanced as a layer; then the finished soundscape is looped to one hour.
+    const inputs=[];
+    const filters=[];
+    const layerVolume=(0.78/local.length).toFixed(5);
+    for(let i=0;i<local.length;i++){
+      inputs.push("-stream_loop","-1","-i",local[i]);
+      filters.push("["+i+":a]aresample=48000,volume="+layerVolume+"[a"+i+"]");
+    }
+    const joined=local.map((_,i)=>"[a"+i+"]").join("");
+    filters.push(joined+"amix=inputs="+local.length+":duration=longest:dropout_transition=5:normalize=0[mix]");
+    filters.push("[mix]alimiter=limit=0.96:attack=5:release=50[out]");
+    const base=path.join(work,"mix-10m.mp3");
+    await runFfmpeg([
+      "-y",...inputs,
+      "-filter_complex",filters.join(";"),
+      "-map","[out]","-t","600",
+      "-c:a","libmp3lame","-b:a","192k","-ar","48000",base
+    ]);
+
+    const finalName="selected-freesound-mix-"+Date.now()+".mp3";
+    const finalPath=path.join(MUSIC_DIR,finalName);
+    await runFfmpeg(["-y","-stream_loop","-1","-i",base,"-t","3600","-c:a","copy",finalPath]);
+
+    res.json({
+      name:finalName,
+      url:"/media/music/"+encodeURIComponent(finalName),
+      label:"Mezcla · "+local.length+" sonidos Freesound",
+      provider:"Freesound selected mix",
+      source:"Freesound",
+      isFreesoundMix:true,
+      generatedFromSearch:false,
+      durationHours:1,
+      tracks:tracks.map(t=>({id:t.id,name:t.name,sourceUrl:t.sourceUrl,username:t.username,license:t.license}))
+    });
+  }catch(e){
+    console.error("[Selected Freesound Mix] ERROR",e?.stack||e?.message||e);
+    res.status(500).json({error:"No se pudo crear la mezcla: "+e.message});
+  }finally{
+    fs.rmSync(work,{recursive:true,force:true});
+  }
+});
+
 app.post("/api/generate-freesound-ai-mix", (req,res)=>{
   try{
     const query=String(req.body?.query||"").trim();
