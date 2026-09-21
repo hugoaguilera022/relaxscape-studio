@@ -75,30 +75,68 @@ const BUILTIN_MUSIC = [
 ];
 
 async function ensureBuiltinMusic(tracks = BUILTIN_MUSIC) {
-  // Generador ambiental local: varias capas, movimiento lento, ruido suave,
-  // reverb y automatizaciones. No son simples tonos individuales.
+  // Motor ambiental compositivo: cada pista tiene una progresión de 4 acordes,
+  // capas de pad/bajo, notas altas, ruido suave y espacios de reverb.
+  // No es un tono continuo: la armonía cambia cada 45 segundos.
   const jobs = tracks.filter(t => !fs.existsSync(path.join(MUSIC_DIR, t.file))).map(async track => {
     const out = path.join(MUSIC_DIR, track.file);
     const dur = 180;
     try {
+      const root = track.f1;
+      const third = track.f2;
+      const fifth = track.f3;
+      const roots = [root, third, fifth, root * 0.5];
+      const chords = [
+        [roots[0], roots[1], roots[2]],
+        [roots[1] * 0.5, roots[2] * 0.5, roots[0] * 1.5],
+        [roots[2] * 0.5, roots[0], roots[1]],
+        [roots[3], roots[0], roots[2]]
+      ];
+
+      const inputs = [];
+      const filters = [];
+      let n = 0;
+
+      // Cuatro bloques armónicos, cada uno con 45 s de duración.
+      for (let section = 0; section < 4; section++) {
+        const chord = chords[section];
+        for (let layer = 0; layer < 3; layer++) {
+          inputs.push("-f","lavfi","-i",`sine=frequency=${chord[layer]}:sample_rate=44100:duration=45`);
+          const vol = [0.075,0.052,0.035][layer];
+          const lp = [1100,1700,2400][layer];
+          filters.push(`[${n}:a]volume=${vol},lowpass=f=${lp}[s${section}l${layer}]`);
+          n++;
+        }
+      }
+
+      // Una capa de ruido marrón muy discreta para dar textura.
+      inputs.push("-f","lavfi","-i",`anoisesrc=color=brown:amplitude=0.018:sample_rate=44100:duration=${dur}`);
+      const noiseIndex = n;
+
+      // Mezclamos cada acorde y lo concatenamos para formar una progresión real.
+      for (let section = 0; section < 4; section++) {
+        filters.push(
+          `[s${section}l0][s${section}l1][s${section}l2]amix=inputs=3:duration=longest:normalize=0,` +
+          `aecho=0.8:0.72:520|910:0.10|0.06[sec${section}]`
+        );
+      }
+
+      filters.push(
+        "[sec0][sec1][sec2][sec3]concat=n=4:v=0:a=1[pad]",
+        `[${noiseIndex}:a]highpass=f=35,lowpass=f=900,volume=0.45[noise]`,
+        "[pad][noise]amix=inputs=2:duration=longest:normalize=0," +
+        "lowpass=f=6000," +
+        "acompressor=threshold=-24dB:ratio=2:attack=80:release=500," +
+        "afade=t=in:st=0:d=12,afade=t=out:st=168:d=12," +
+        "volume=0.92[out]"
+      );
+
       const args = [
         "-y",
-        "-f","lavfi","-i",`sine=frequency=${track.f1}:sample_rate=44100:duration=${dur}`,
-        "-f","lavfi","-i",`sine=frequency=${track.f2}:sample_rate=44100:duration=${dur}`,
-        "-f","lavfi","-i",`sine=frequency=${track.f3}:sample_rate=44100:duration=${dur}`,
-        "-f","lavfi","-i",`anoisesrc=color=brown:amplitude=0.025:sample_rate=44100:duration=${dur}`,
-        "-filter_complex",
-        "[0:a]volume=0.075,lowpass=f=900[a0];" +
-        "[1:a]volume=0.055,lowpass=f=1400[a1];" +
-        "[2:a]volume=0.040,lowpass=f=1900[a2];" +
-        "[3:a]highpass=f=35,lowpass=f=700,volume=0.55[a3];" +
-        "[a0][a1][a2][a3]amix=inputs=4:duration=longest:normalize=0," +
-        "aecho=0.8:0.72:850|1350:0.14|0.09," +
-        "lowpass=f=5200," +
-        "acompressor=threshold=-22dB:ratio=2:attack=80:release=500," +
-        "afade=t=in:st=0:d=18,afade=t=out:st=162:d=18," +
-        "volume=0.9[out]",
-        "-map","[out]","-c:a","libmp3lame","-b:a","160k","-ar","44100",out
+        ...inputs,
+        "-filter_complex", filters.join(";"),
+        "-map","[out]",
+        "-c:a","libmp3lame","-b:a","160k","-ar","44100",out
       ];
       await runFfmpeg(args);
     } catch (e) {
@@ -107,7 +145,6 @@ async function ensureBuiltinMusic(tracks = BUILTIN_MUSIC) {
   });
   await Promise.all(jobs);
 }
-
 function listFiles(dir, base) {
   return fs.readdirSync(dir)
     .filter(f => !f.startsWith("."))
