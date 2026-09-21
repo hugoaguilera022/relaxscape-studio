@@ -478,68 +478,61 @@ async function generatePollinationsAIImage(prompt, index=0) {
 
 app.post("/api/ai-options", async (req, res) => {
   const theme = String(req.body?.theme || "peaceful lake, misty mountains, soft dawn light").trim().slice(0, 500);
-  const musicPrompt = String(req.body?.musicPrompt || "very slow deep relaxation ambient music, warm pads, spacious reverb, no drums, no percussion, no vocals").trim().slice(0, 220);
+  const musicPrompt = String(req.body?.musicPrompt || theme).trim().slice(0, 220);
   const images = [];
   const imageErrors = [];
 
-  // Generamos las 4 imágenes EN PARALELO y con límite de tiempo.
-  // Antes se hacían una detrás de otra: si Pollinations tardaba, /api/ai-options
-  // no respondía y el navegador se quedaba mostrando "no aparece nada".
-  const pollinationsKey = process.env.POLLINATIONS_API_KEY;
-  if (pollinationsKey) {
-    const jobs = Array.from({ length: 4 }, (_, i) =>
-      Promise.race([
+  // 1) Primero buscamos fotos reales relacionadas con la búsqueda.
+  // Esto debe ser rápido y no depender de la generación IA.
+  try {
+    const key = process.env.PEXELS_API_KEY;
+    if (!key) throw new Error("Falta PEXELS_API_KEY en Render.");
+    const r = await fetchWithTimeout(
+      "https://api.pexels.com/v1/search?query=" + encodeURIComponent(theme + " peaceful nature") +
+      "&per_page=40&orientation=landscape&size=large&locale=en-US",
+      { headers: { Authorization: key } }, 10000
+    );
+    if (!r.ok) throw new Error("Pexels HTTP " + r.status);
+    const data = await r.json();
+    const pool = (data.photos || []).filter(p => p.src?.large2x || p.src?.large).sort(() => Math.random() - 0.5);
+    for (const photo of pool) {
+      if (images.length >= 4) break;
+      const src = photo.src?.large2x || photo.src?.large;
+      if (!src) continue;
+      images.push({
+        name: "pexels-" + photo.id,
+        url: src,
+        sourceUrl: photo.url || src,
+        ai: false,
+        provider: "Pexels",
+        fallback: true,
+        label: "Foto " + (images.length + 1)
+      });
+    }
+  } catch (e) {
+    imageErrors.push("Pexels: " + e.message);
+  }
+
+  // 2) Si Pexels no está disponible, intentamos Pollinations.
+  // Tiene timeout individual para no dejar la interfaz esperando indefinidamente.
+  if (images.length < 4 && process.env.POLLINATIONS_API_KEY) {
+    const needed = 4 - images.length;
+    const jobs = Array.from({ length: needed }, (_, j) => {
+      const i = images.length + j;
+      return Promise.race([
         generatePollinationsAIImage(theme, i),
         new Promise((_, reject) => setTimeout(() => reject(new Error("timeout 15s")), 15000))
       ]).then(item => ({ ok: true, item, index: i }))
-        .catch(error => ({ ok: false, error, index: i }))
-    );
+        .catch(error => ({ ok: false, error, index: i }));
+    });
     const results = await Promise.all(jobs);
     for (const result of results) {
       if (result.ok) images.push(result.item);
       else imageErrors.push("Imagen IA " + (result.index + 1) + ": " + result.error.message);
     }
-  } else {
-    imageErrors.push("Falta POLLINATIONS_API_KEY en Render.");
   }
 
-  if (images.length < 4) {
-    try {
-      const key = process.env.PEXELS_API_KEY;
-      if (!key) throw new Error("Falta PEXELS_API_KEY en Render.");
-      const r = await fetchWithTimeout(
-        "https://api.pexels.com/v1/search?query=" + encodeURIComponent(theme + " peaceful nature") +
-        "&per_page=40&orientation=landscape&size=large&locale=en-US",
-        { headers: { Authorization: key } }, 10000
-      );
-      if (!r.ok) throw new Error("Pexels HTTP " + r.status);
-      const data = await r.json();
-      const pool = (data.photos || [])
-        .filter(p => p.src?.large2x || p.src?.large)
-        .sort(() => Math.random() - 0.5);
-
-      // No descargamos las fotos aquí. Devolvemos la URL de Pexels directamente
-      // para que la respuesta sea inmediata. /api/generate-video ya sabe descargar
-      // una URL externa cuando el usuario selecciona una foto.
-      for (let i = 0; i < pool.length && images.length < 4; i++) {
-        const photo = pool[i];
-        const src = photo.src?.large2x || photo.src?.large;
-        if (!src) continue;
-        images.push({
-          name: "pexels-" + photo.id,
-          url: src,
-          sourceUrl: photo.url || src,
-          ai: false,
-          provider: "Pexels",
-          fallback: true,
-          label: "Foto " + (images.length + 1)
-        });
-      }
-    } catch (e) {
-      imageErrors.push("Pexels fallback: " + e.message);
-    }
-  }
-
+  // 3) Último respaldo: imágenes SVG locales basadas en la búsqueda.
   if (images.length < 4) {
     const needed = 4 - images.length;
     for (let i = 0; i < needed; i++) {
@@ -549,9 +542,13 @@ app.post("/api/ai-options", async (req, res) => {
     imageErrors.push("Se completaron las opciones restantes con un fondo local.");
   }
 
+  // 4) Preparamos la generación musical en segundo plano.
+  // No esperamos a que termine para responder con las fotos.
   const generationId = ++aiMusicGenerationId;
   aiMusicTracks = aiTracksForBackground(musicPrompt, generationId);
-  aiMusicTracks.forEach(t => { try { fs.rmSync(path.join(MUSIC_DIR, t.file), { force:true }); } catch {} });
+  aiMusicTracks.forEach(t => {
+    try { fs.rmSync(path.join(MUSIC_DIR, t.file), { force: true }); } catch {}
+  });
   aiMusicErrors = [];
   aiMusicPreparing = true;
   const currentTracks = aiMusicTracks;
@@ -571,10 +568,10 @@ app.post("/api/ai-options", async (req, res) => {
     images,
     music: initialMusic,
     musicReady: initialMusic.length >= 4,
-    musicPreparing: aiMusicPreparing,
+    musicPreparing: true,
     imageErrors,
     musicErrors: aiMusicErrors.slice(),
-    provider: "Pollinations Images + RelaxScape Free Music Engine"
+    provider: "Pexels search + Pollinations Images + RelaxScape Free Music Engine"
   });
 });
 
