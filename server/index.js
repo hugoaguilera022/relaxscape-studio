@@ -472,16 +472,22 @@ app.post("/api/ai-options", async (req, res) => {
   const images = [];
   const imageErrors = [];
 
-  // Las 4 imágenes de esta sección son imágenes IA nuevas basadas en la búsqueda.
-  // Pexels queda únicamente como respaldo si Pollinations no está configurado o falla.
+  // Generamos las 4 imágenes EN PARALELO y con límite de tiempo.
+  // Antes se hacían una detrás de otra: si Pollinations tardaba, /api/ai-options
+  // no respondía y el navegador se quedaba mostrando "no aparece nada".
   const pollinationsKey = process.env.POLLINATIONS_API_KEY;
   if (pollinationsKey) {
-    for (let i = 0; i < 4; i++) {
-      try {
-        images.push(await generatePollinationsAIImage(theme, i));
-      } catch (e) {
-        imageErrors.push("Imagen IA " + (i + 1) + ": " + e.message);
-      }
+    const jobs = Array.from({ length: 4 }, (_, i) =>
+      Promise.race([
+        generatePollinationsAIImage(theme, i),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout 15s")), 15000))
+      ]).then(item => ({ ok: true, item, index: i }))
+        .catch(error => ({ ok: false, error, index: i }))
+    );
+    const results = await Promise.all(jobs);
+    for (const result of results) {
+      if (result.ok) images.push(result.item);
+      else imageErrors.push("Imagen IA " + (result.index + 1) + ": " + result.error.message);
     }
   } else {
     imageErrors.push("Falta POLLINATIONS_API_KEY en Render.");
