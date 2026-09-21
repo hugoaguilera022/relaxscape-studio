@@ -568,8 +568,10 @@ async function generateLyriaMusicFile(prompt,index=1){
     "Keep the same creative brief, but make the most immersive version: introduce instruments and textures gradually, create subtle variation and a memorable musical motif without becoming repetitive."
   ];
 
+  const requestNonce="lyria-fresh-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,12)+"-v"+(n+1);
   const finalPrompt=[
     "Create an original professional instrumental music track from the user's description below.",
+    "FRESH REQUEST TOKEN: "+requestNonce+". This is a new composition request. Do not return or imitate a previous generation even if the user description is identical.",
     "THIS IS A FREE-FORM MUSIC BRIEF, NOT A KEYWORD SEARCH.",
     "Treat the user's entire description as the source of truth for genre, mood, instruments, textures, tempo, rhythm, harmony, structure, production, era, atmosphere and any other musical details they mention.",
     "Do not replace the user's idea with a generic relaxation preset.",
@@ -641,6 +643,7 @@ function makeFallbackLandscape(filename, theme="nature") {
 let aiMusicPreparing = false;
 let aiMusicTracks = [];
 let aiMusicErrors = [];
+let aiMusicGenerationId = 0;
 
 function getAIMusicOptions(){
   // IMPORTANTE: cuando el usuario ha pedido una nueva música, NO mostramos
@@ -718,19 +721,23 @@ app.post("/api/ai-options", async (req, res) => {
   // para que Crear IA no quede bloqueado mientras se renderizan las 4 previas.
   // Cada pulsación de búsqueda debe crear 4 archivos NUEVOS.
   // Nunca reutilizamos una generación anterior aunque la descripción sea igual.
-  aiMusicTracks = aiTracksForBackground(musicPrompt);
+  const generationId = ++aiMusicGenerationId;
+  aiMusicTracks = aiTracksForBackground(musicPrompt, generationId);
   aiMusicTracks.forEach(t => { try { fs.rmSync(path.join(MUSIC_DIR,t.file), {force:true}); } catch {} });
   aiMusicErrors = [];
-  const initialMusic=getAIMusicOptions();
-  if(initialMusic.length<4 && !aiMusicPreparing){
-    aiMusicPreparing = true;
-    ensureBuiltinMusic(aiMusicTracks)
-      .catch(e=>{
+  aiMusicPreparing = true;
+  const currentTracks = aiMusicTracks;
+  ensureBuiltinMusic(currentTracks)
+    .catch(e=>{
+      if (generationId === aiMusicGenerationId) {
         aiMusicErrors.push(e.message||String(e));
         console.error("[AI Music] preparación:",e.stack||e.message);
-      })
-      .finally(()=>{ aiMusicPreparing=false; });
-  }
+      }
+    })
+    .finally(()=>{
+      if (generationId === aiMusicGenerationId) aiMusicPreparing=false;
+    });
+  const initialMusic=getAIMusicOptions();
   res.json({
     images,
     music:initialMusic,
@@ -772,9 +779,10 @@ function musicIntentProfile(prompt=""){
   return parts.join(", ");
 }
 
-function aiTracksForBackground(prompt=""){
+function aiTracksForBackground(prompt="", generationId=0){
   const p=String(prompt||"deep relaxation ambient music").trim().slice(0,700);
   const seed=Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8);
+  const sessionNonce="session-"+generationId+"-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,10);
   const variants=[
     "Version A: make the arrangement substantially different, with a distinct melodic motif, different chord voicings and a clearly different lead instrument or lead role.",
     "Version B: reinterpret the same brief with a different musical structure, register, harmonic movement, rhythmic feel and instrumentation balance. Do not copy Version A.",
@@ -792,6 +800,7 @@ function aiTracksForBackground(prompt=""){
       musicProfile:[
         "USER MUSIC BRIEF: "+p,
         "This is a fresh generation. Do not reuse, imitate or follow the arrangement of any previous generation.",
+        "UNIQUE GENERATION NONCE: "+sessionNonce+". Treat this as a hard instruction to create a newly composed performance, not a cached or repeated result.",
         "The user's description is the source of truth. Follow its genre, instruments, melody, harmony, rhythm, structure, production and atmosphere.",
         "Do not reduce the request to a generic relaxing preset.",
         "If the user requests multiple instruments, make every requested instrument clearly audible and musically integrated.",
@@ -805,7 +814,7 @@ function aiTracksForBackground(prompt=""){
 }
 app.get("/api/ai-options-status", (_,res)=>{
   const music=getAIMusicOptions();
-  res.json({music,musicReady:music.length>=4,musicPreparing:aiMusicPreparing,musicErrors:aiMusicErrors});
+  res.json({music,musicReady:music.length>=4,musicPreparing:aiMusicPreparing,musicErrors:aiMusicErrors,generationId:aiMusicGenerationId});
 });
 
 function runFfmpeg(args) {
