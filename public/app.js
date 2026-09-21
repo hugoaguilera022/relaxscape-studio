@@ -22,20 +22,22 @@ $("#aiBoth").onclick=()=>generateAI("both");
 async function generateAI(type){
   const prompt=$("#aiPrompt").value.trim()||"A peaceful cinematic mountain lake at sunrise, gentle mist over the water, slow camera movement, calming atmosphere, no people, no text.";
   const status=$("#aiStatus"); const buttons=["#aiVideo","#aiMusic","#aiBoth"]; buttons.forEach(x=>$(x).disabled=true); status.classList.add("busy");
+  const durationHours=Number($("#aiDuration").value);
+  let v=null,m=null;
   try{
     if(type==="video"||type==="both"){
       status.textContent="Generando vídeo con Veo 3.1… puede tardar unos minutos.";
-      const v=await api("/api/generate-ai-video",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt,aspectRatio:$("#aiAspect").value})});
+      v=await api("/api/generate-ai-video",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt,aspectRatio:$("#aiAspect").value})});
       $("#video").src=v.url;$("#download").href=v.url;$("#result").classList.remove("hidden");
     }
     if(type==="music"||type==="both"){
       status.textContent="Generando música con Lyria 3.5…";
-      const m=await api("/api/generate-ai-music",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt,mode:$("#musicMode").value})});
+      m=await api("/api/generate-ai-music",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt:`${prompt}. Instrumental ambient relaxation for sleep and meditation, very slow tempo, soft piano, warm pads, subtle atmosphere, no vocals, no lyrics, no drums.`,mode:"instrumental"})});
       S.music={name:m.name,url:m.url};
       await load();
       if(type==="both"){
         status.textContent="Mezclando vídeo + música…";
-        const mixed=await api("/api/mux-video-audio",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({video:v.url,music:m.url})});
+        const mixed=await api("/api/mux-video-audio",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({video:v.url,music:m.url,durationHours})});
         $("#video").src=mixed.url;$("#download").href=mixed.url;
       }
     }
