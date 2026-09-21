@@ -1,4 +1,4 @@
-const S={images:[],music:[],aiImages:[],aiMusic:[],videos:[],image:null,music:null,hours:1,schedule:true,musicCategory:"Todas",aiReady:false,aiLoading:false};
+const S={images:[],music:[],aiImages:[],aiMusic:[],externalMusic:[],videos:[],image:null,music:null,hours:1,schedule:true,musicCategory:"Todas",aiReady:false,aiLoading:false};
 const $=s=>document.querySelector(s), $$=s=>document.querySelectorAll(s);
 async function api(url,opt){const r=await fetch(url,opt);let d={};let raw="";try{raw=await r.text();d=raw?JSON.parse(raw):{}}catch{};if(!r.ok)throw Error(d.error||`Error ${r.status}${raw?`: ${raw.slice(0,180)}`:""}`);return d}
 async function load(){
@@ -68,20 +68,36 @@ function bindAIButtons(){
 }
 
 async function generateAIMusicOnly(){
-  const prompt=(($( "#aiMusicPrompt").value||"").trim()||"deep relaxation ambient music");
-  S.aiLoading=true; S.aiMusic=[]; S.music=null;
+  const prompt=(($( "#aiMusicPrompt").value||"").trim()||"piano relaxing ambient");
+  S.aiLoading=true; S.aiMusic=[]; S.externalMusic=[]; S.music=null;
   const status=$( "#aiSelectionStatus"), mg=$( "#aiMusicList");
-  if(status)status.textContent="♫ Analizando tu búsqueda y generando 4 versiones profesionales con IA…";
-  if(mg)mg.innerHTML='<div class="empty">♫ La IA local está componiendo 4 versiones distintas a partir de tu búsqueda…</div>';
+  if(status)status.textContent="🔎 Buscando audios reales en Freesound según tu búsqueda…";
+  if(mg)mg.innerHTML='<div class="empty">🔎 Buscando grabaciones reales de los instrumentos y ambientes solicitados…</div>';
   try{
-    await api("/api/ai-music",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({musicPrompt:prompt})});
-    await waitForAIMusic();
-    if(!S.aiMusic.length)throw Error("La IA no devolvió ninguna versión musical.");
-    if(status)status.textContent="✓ 4 versiones musicales generadas. Escucha las previas y elige una.";
+    const d=await api("/api/external-music-search?q="+encodeURIComponent(prompt));
+    S.externalMusic=d.results||[];
+    if(!S.externalMusic.length)throw Error("No se encontraron audios que coincidan con la búsqueda.");
+    if(status)status.textContent="✓ "+S.externalMusic.length+" previas reales encontradas. Escucha y elige una.";
+    renderAICreator();
   }catch(e){
-    if(status)status.textContent="Error de música: "+e.message;
-    if(mg)mg.innerHTML='<div class="empty">No se pudo generar la música.<br><small>'+e.message+'</small><br><small>La música IA funciona con el motor gratuito integrado; no necesita ElevenLabs.</small></div>';
+    if(status)status.textContent="Error de búsqueda: "+e.message;
+    if(mg)mg.innerHTML='<div class="empty">No se pudo buscar audio externo.<br><small>'+e.message+'</small></div>';
   }finally{S.aiLoading=false;renderAICreator()}
+}
+
+async function selectExternalMusic(x){
+  const status=$("#aiSelectionStatus");
+  if(status)status.textContent="Importando la previa para poder usarla en tu vídeo…";
+  try{
+    const local=await api("/api/import-external-music",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+      preview:x.preview,name:x.name,soundId:x.id,sourceUrl:x.sourceUrl,username:x.username,license:x.license
+    })});
+    S.music=local;
+    if(status)status.textContent="✓ Previa seleccionada. Ya puedes usarla para crear el vídeo.";
+    renderAICreator(); update(); picker();
+  }catch(e){
+    if(status)status.textContent="No se pudo seleccionar la previa: "+e.message;
+  }
 }
 
 async function waitForAIMusic(){
@@ -110,6 +126,8 @@ async function waitForAIMusic(){
   throw Error("La generación musical tardó demasiado. Vuelve a intentarlo.");
 }
 
+function escapeHtml(v){return String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]))}
+function formatDuration(sec){const s=Math.max(0,Math.round(Number(sec)||0));return Math.floor(s/60)+":"+String(s%60).padStart(2,"0")}
 function renderAICreator(){
   const ig=$("#aiImageGrid"),mg=$("#aiMusicList");
   if(ig){
@@ -117,8 +135,18 @@ function renderAICreator(){
     $$("#aiImageGrid .ai-photo").forEach(e=>e.onclick=()=>{S.image={url:e.dataset.url,name:e.dataset.name};renderAICreator()});
   }
   if(mg){
-    mg.innerHTML=S.aiMusic.length?S.aiMusic.map((x,i)=>'<div class="ai-track '+(S.music?.url===x.url?"selected":"")+'" data-url="'+x.url+'" data-name="'+x.name+'"><div><b>♫ Música original '+(i+1)+'</b><small>Previa · melodía · ambiente · texturas</small></div><div class="ai-track-actions"><audio controls preload="metadata" src="'+x.url+(x.url.includes("?")?"&":"?")+"fresh="+encodeURIComponent(x.name+"-"+Date.now())+'"></audio><a class="preview-download" href="'+x.url+'" download>↓ Descargar previa</a></div></div>').join(""):'<div class="empty">♫ Generando opciones IA…</div>';
-    $$("#aiMusicList .ai-track").forEach(e=>e.onclick=ev=>{if(ev.target.tagName==="AUDIO")return;S.music={url:e.dataset.url,name:e.dataset.name};renderAICreator()});
+    if(S.externalMusic.length){
+      mg.innerHTML=S.externalMusic.map((x,i)=>'<div class="ai-track '+(S.music?.externalId===x.id?"selected":"")+'" data-external-id="'+x.id+'"><div><b>♫ '+escapeHtml(x.name)+'</b><small>Freesound · '+escapeHtml(x.username||"")+' · '+escapeHtml(x.license||"")+' · '+formatDuration(x.duration)+'</small></div><div class="ai-track-actions"><audio controls preload="metadata" src="'+x.preview+'"></audio><a class="preview-download" href="'+x.sourceUrl+'" target="_blank" rel="noopener">↗ Ver fuente</a></div></div>').join("");
+      $$("#aiMusicList .ai-track").forEach(e=>e.onclick=()=>{
+        const x=S.externalMusic.find(v=>String(v.id)===String(e.dataset.externalId));
+        if(x)selectExternalMusic(x);
+      });
+    }else if(S.aiMusic.length){
+      mg.innerHTML=S.aiMusic.map((x,i)=>'<div class="ai-track '+(S.music?.url===x.url?"selected":"")+'" data-url="'+x.url+'" data-name="'+x.name+'"><div><b>♫ Música original '+(i+1)+'</b><small>Previa · melodía · ambiente · texturas</small></div><div class="ai-track-actions"><audio controls preload="metadata" src="'+x.url+(x.url.includes("?")?"&":"?")+"fresh="+encodeURIComponent(x.name+"-"+Date.now())+'"></audio><a class="preview-download" href="'+x.url+'" download>↓ Descargar previa</a></div></div>').join("");
+      $$("#aiMusicList .ai-track").forEach(e=>e.onclick=ev=>{if(ev.target.tagName==="AUDIO")return;S.music={url:e.dataset.url,name:e.dataset.name};renderAICreator()});
+    }else{
+      mg.innerHTML='<div class="empty">♫ Busca una música para escuchar previas reales de Freesound.</div>';
+    }
   }
   if($("#aiSelectedPhoto"))$("#aiSelectedPhoto").textContent=S.image?prettyImageName(S.image.name):"Sin foto";
   if($("#aiSelectedMusic"))$("#aiSelectedMusic").textContent=S.music?prettyMusicName(S.music.name):"Sin música";
