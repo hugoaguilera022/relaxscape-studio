@@ -47,7 +47,7 @@ function safe(name) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-const MUSIC_ENGINE_VERSION = "v20-composition-variety";
+const MUSIC_ENGINE_VERSION = "v21-instrument-family-variety";
 
 const BUILTIN_MUSIC = [
   ["relax-piano.mp3","Piano nocturno","Sueño",261.63,329.63,392],
@@ -541,41 +541,55 @@ async function generateLyriaMusicFile(prompt,index=1){
   const atmosphere=String(prompt||"deep relaxation ambient music").slice(0,260);
   const p=atmosphere.toLowerCase();
   const has=(...w)=>w.some(x=>p.includes(x));
+  const n=Math.max(1,Number(index))-1;
+
+  // Cada previa tiene una familia tímbrica claramente distinta.
+  // Si el usuario pide un instrumento concreto, se respeta; si no, repartimos el espectro.
+  const families=[
+    "warm concert grand piano / felt piano, close natural recording, rich pedal resonance",
+    "airy bamboo flute and breathy woodwind, intimate natural room, soft sustained notes",
+    "warm nylon-string acoustic guitar, fingerpicked, woody body resonance, intimate close microphone",
+    "soft legato cello and small string ensemble, warm bow texture, spacious natural room"
+  ];
+  const family=families[n%families.length];
+
   const requested=[];
-  if(has("guitarra","acústica","acustica","nylon","guitar")) requested.push("warm nylon acoustic guitar");
+  if(has("piano","pianístico","pianistica","teclas","piano de cola","grand piano")) requested.push("warm concert grand piano");
+  if(has("guitarra","acústica","acustica","nylon","guitar")) requested.push("warm nylon-string acoustic guitar");
   if(has("violín","violin","cello","cuerdas","strings")) requested.push("soft legato strings");
   if(has("flauta","flute","bambú","bambu","wind")) requested.push("airy bamboo flute");
-  if(has("sintetizador","synth","electrónica","electronica","ambient")) requested.push("warm analog synth textures");
-  if(has("piano","pianístico","pianistica","teclas")) requested.push("felt acoustic piano");
-  if(has("agua","water","océano","oceano","mar","olas","waves","lluvia","rain","cascada","waterfall")) requested.push("subtle natural water texture");
+  if(has("sintetizador","synth","electrónica","electronica")) requested.push("warm analog synthesizer");
+  if(has("agua","water","océano","oceano","mar","olas","waves","lluvia","rain","cascada","waterfall")) requested.push("subtle clean water ambience");
   if(has("bosque","forest","naturaleza","nature","pájaros","pajaros","birds")) requested.push("organic forest ambience");
-  if(!requested.length) requested.push("felt acoustic piano");
 
-  const palettes=[
-    "intimate piano-led meditation, sparse motif with gentle answering phrases",
-    "piano and soft string-bed, slow harmonic bloom, wider stereo depth",
-    "piano with delicate natural texture, subtle evolving ambience and long tails",
-    "piano-led nocturnal atmosphere, lower register, suspended chords and very soft high harmonics"
+  const explicit=requested.length>0 ? requested.join(", ") : family;
+  const arrangements=[
+    "piano-led motif with gentle answering phrases and long pedal resonance",
+    "breathy flute melody over very soft sustained harmony, with pauses between phrases",
+    "fingerpicked guitar motif with subtle counter-melody and slowly changing open chords",
+    "legato string theme with cello counterline, slow harmonic bloom and gentle resolution"
   ];
   const structures=[
-    "A-B-A' structure: establish a motif, develop it with a new chord color, then return transformed",
-    "four-section arc: introduction, gentle harmonic expansion, emotional peak without volume increase, peaceful resolution",
-    "through-composed ambient flow with two contrasting harmonic centers and recurring melodic motif",
-    "slow rondo-like meditation: recurring theme separated by spacious harmonic interludes"
+    "A-B-A' structure with a recognizable motif, harmonic development and transformed return",
+    "four-part arc: intimate opening, gradual harmonic expansion, quiet emotional peak, peaceful release",
+    "through-composed ambient flow with recurring motif and two gently contrasting harmonic areas",
+    "slow theme-and-variation form with three variations, each changing register and texture subtly"
   ];
-  const variant=Math.max(1,Number(index))-1;
+
   const finalPrompt=[
-    "Create an original instrumental deep-relaxation ambient composition.",
-    "Use the user's requested sound as the dominant audible identity: "+requested.join(", ")+".",
-    palettes[variant%palettes.length]+".",
-    structures[variant%structures.length]+".",
-    "Musically developed composition, not a static loop: clear motif, counter-phrase, harmonic movement, voice leading, cadential breathing points and subtle variation.",
+    "Create an original professional instrumental deep-relaxation ambient composition.",
+    "PRIMARY TIMBRE FOR THIS OPTION: "+family+".",
+    "USER REQUESTED SOUND: "+explicit+".",
+    "Do not default to piano if this option's primary family is flute, guitar or strings.",
+    arrangements[n%arrangements.length]+".",
+    structures[n%structures.length]+".",
+    "The four options must be audibly different: different lead instrument, register, articulation, harmonic texture and room character.",
+    "Musically developed rather than a static loop: memorable but understated motif, counter-phrase, voice leading, harmonic movement, cadential breathing points and subtle variation every 8-16 bars.",
     "Very slow 40-55 BPM feel, long phrases, natural dynamics, consonant extended harmony such as maj7, add9, sus2 and gentle minor colors.",
-    "Allow the arrangement to evolve every 8-16 bars while remaining calm and suitable for meditation.",
-    "Professional acoustic/ambient recording aesthetic, clean stereo image, realistic transients, warm low mids, silky highs, controlled sub-bass, natural room and reverb tails.",
     "No drums, no percussion, no bass groove, no pop drop, no aggressive rhythm, no vocals, no lyrics, no sudden impacts.",
-    "Relaxation reference aesthetic: long-form therapeutic-style piano ambience, peaceful, spacious, warm and continuous, but completely original.",
-    "User search and atmosphere: "+atmosphere+".",
+    "Clean high-end stereo recording aesthetic: realistic acoustic transients, warm low mids, silky highs, controlled sub-bass, natural room and spacious reverb.",
+    "Long-form meditation ambience similar in peaceful mood and sonic spaciousness to the supplied relaxation reference, but completely original.",
+    "User atmosphere: "+atmosphere+".",
     "Do not reproduce any existing melody, recording or distinctive musical phrase."
   ].join(" ");
 
@@ -591,15 +605,15 @@ async function generateLyriaMusicFile(prompt,index=1){
 
   const raw=path.join(MUSIC_DIR,".lyria-"+Date.now()+"-"+index+".bin");
   fs.writeFileSync(raw,Buffer.from(b64,"base64"));
-  const outName="ai-reference-relax-v20-"+hashText(finalPrompt)+"-"+index+".mp3";
+  const outName="ai-reference-relax-v21-"+hashText(finalPrompt)+"-"+index+".mp3";
   const out=path.join(MUSIC_DIR,outName);
   try{
     await runFfmpeg(["-y","-i",raw,
-      "-af","highpass=f=28,lowpass=f=18500,acompressor=threshold=-28dB:ratio=1.4:attack=30:release=350:makeup=1,alimiter=limit=0.94",
+      "-af","highpass=f=28,lowpass=f=18500,acompressor=threshold=-28dB:ratio=1.35:attack=30:release=350:makeup=1,alimiter=limit=0.94",
       "-ar","44100","-ac","2","-c:a","libmp3lame","-b:a","320k",out]);
   }finally{fs.rmSync(raw,{force:true})}
   if(!fs.existsSync(out)||fs.statSync(out).size<4096) throw new Error("El audio generado no es válido.");
-  return {name:outName,url:"/media/music/"+encodeURIComponent(outName),ai:true,provider:"Google Lyria 3.5",generated:true,fallback:false};
+  return {name:outName,url:"/media/music/"+encodeURIComponent(outName),ai:true,provider:"Google Lyria 3.5",generated:true,fallback:false,label:"IA · "+(n+1)};
 }
 function makeFallbackLandscape(filename, theme="nature") {
   const safeTheme = String(theme).replace(/[&<>"]/g, "");
