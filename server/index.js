@@ -1324,17 +1324,39 @@ app.get("/api/external-music-search", async (req,res)=>{
   try{
     const queries=buildFreesoundQueries(input);
     const all=[];
+    // Freesound can occasionally respond slowly from Render. Do not abort a
+    // valid search after 10 seconds; retry timed-out requests once and then
+    // continue with the other query variants so one slow variant cannot kill
+    // the whole search.
     for(const query of queries){
       const url=new URL("https://freesound.org/apiv2/search/");
       url.searchParams.set("query",query);
       url.searchParams.set("page_size","8");
       url.searchParams.set("sort","score");
       url.searchParams.set("fields","id,name,tags,username,license,url,duration,previews,description,avg_rating,num_downloads");
-      const r=await fetchWithTimeout(url.toString(),{
-        headers:{Authorization:"Token "+key,Accept:"application/json"}
-      },10000);
+      let r=null;
+      let lastError=null;
+      for(let attempt=0;attempt<2;attempt++){
+        try{
+          r=await fetchWithTimeout(url.toString(),{
+            headers:{Authorization:"Token "+key,Accept:"application/json"}
+          },30000);
+          lastError=null;
+          break;
+        }catch(err){
+          lastError=err;
+          if(attempt===0) await new Promise(resolve=>setTimeout(resolve,800));
+        }
+      }
+      if(lastError){
+        console.warn("[Freesound Search] Query timed out:",query,lastError.message);
+        continue;
+      }
       const data=await r.json().catch(()=>({}));
-      if(!r.ok) throw new Error(data.detail||data.error||("Freesound HTTP "+r.status));
+      if(!r.ok){
+        console.warn("[Freesound Search] Query failed:",query,data.detail||data.error||("HTTP "+r.status));
+        continue;
+      }
       for(const x of (data.results||[])){
         const preview=x.previews?.["preview-hq-mp3"]||x.previews?.["preview-lq-mp3"];
         if(!preview) continue;
