@@ -211,57 +211,45 @@ async function generateGeminiImageFile(prompt, index) {
 async function generateLyriaMusicFile(prompt, imageFile, index) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("Falta GEMINI_API_KEY en Render.");
-  const imagePath = path.join(IMAGE_DIR, imageFile.name);
-  const imageB64 = fs.readFileSync(imagePath).toString("base64");
   const r = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-    body: JSON.stringify({
-      model: "lyria-3.5",
-      input: [
-        { type: "text", text: prompt },
-        { type: "image", mime_type: "image/png", data: imageB64 }
-      ],
-      response_format: { type: "audio" }
-    })
+    body: JSON.stringify({ model: "lyria-3.5", input: prompt, response_format: { type: "audio" } })
   });
   const data = await r.json();
-  if (!r.ok) throw new Error(data.error?.message || JSON.stringify(data));
+  if (!r.ok) throw new Error("Lyria " + r.status + ": " + (data.error?.message || JSON.stringify(data)));
   const audioData = data.output_audio?.data;
-  if (!audioData) throw new Error("Lyria no devolvió audio.");
-  const filename = `ai-music-option-${Date.now()}-${index}.mp3`;
+  if (!audioData) throw new Error("Lyria no devolvió output_audio.");
+  const filename = "ai-music-option-" + Date.now() + "-" + index + ".mp3";
   fs.writeFileSync(path.join(MUSIC_DIR, filename), Buffer.from(audioData, "base64"));
-  return { name: filename, url: `/media/music/${filename}`, ai: true };
+  return { name: filename, url: "/media/music/" + encodeURIComponent(filename), ai: true };
 }
 
 app.post("/api/ai-options", async (req, res) => {
   const key = process.env.GEMINI_API_KEY;
-  if (!key) return res.status(400).json({ error: "Falta GEMINI_API_KEY en Render." });
+  if (!key) return res.status(400).json({ error: "Falta GEMINI_API_KEY en Render. Añade la clave de Gemini en Environment." });
   const imagePrompts = [
-    "Ultra-realistic cinematic alpine lake at sunrise, crystal clear water, mist over mountains, soft golden light, peaceful luxury wellness atmosphere, no people, no buildings, no text, photorealistic, 16:9 composition.",
-    "Ultra-realistic cinematic tropical beach at sunset, calm turquoise ocean, gentle waves, warm sky, peaceful meditation atmosphere, no people, no buildings, no text, photorealistic, 16:9 composition.",
-    "Ultra-realistic cinematic misty pine forest after light rain, soft volumetric light, deep green tones, tranquil mindfulness atmosphere, no people, no buildings, no text, photorealistic, 16:9 composition.",
-    "Ultra-realistic cinematic mountain valley under a starry night sky, subtle moonlight, calm lake reflections, deep blue tones, peaceful sleep atmosphere, no people, no buildings, no text, photorealistic, 16:9 composition."
+    "Create an ultra-realistic cinematic 16:9 landscape for a premium relaxation video: alpine lake at sunrise, crystal clear water, mist over mountains, soft golden light, no people, no buildings, no text, photorealistic.",
+    "Create an ultra-realistic cinematic 16:9 landscape for a premium relaxation video: tropical beach at sunset, calm turquoise ocean, gentle waves, warm sky, no people, no buildings, no text, photorealistic.",
+    "Create an ultra-realistic cinematic 16:9 landscape for a premium relaxation video: misty pine forest after light rain, soft volumetric light, deep green tones, no people, no buildings, no text, photorealistic.",
+    "Create an ultra-realistic cinematic 16:9 landscape for a premium relaxation video: moonlit mountain valley with a calm lake, subtle stars, deep blue tones, no people, no buildings, no text, photorealistic."
   ];
   const musicPrompts = [
-    "Create a 2-3 minute instrumental ambient relaxation track inspired by this alpine sunrise. Soft piano, warm pads, subtle nature-like texture, very slow tempo, no vocals, no drums, seamless-feeling ending, suitable for sleep and meditation.",
-    "Create a 2-3 minute instrumental ocean relaxation track inspired by this sunset beach. Gentle piano, airy pads, soft chimes, very slow tempo, no vocals, no strong percussion, calm and spacious, suitable for meditation and sleep.",
-    "Create a 2-3 minute instrumental forest meditation track inspired by this misty rainy forest. Warm sustained pads, delicate piano, subtle bells, very slow tempo, no vocals, no beat, peaceful and unobtrusive, suitable for relaxation.",
-    "Create a 2-3 minute deep sleep ambient track inspired by this moonlit mountain valley. Very soft low pads, sparse piano notes, subtle harmonic movement, extremely slow, no vocals, no drums, dark and calming, suitable for sleeping."
+    "Create a 2-3 minute instrumental ambient relaxation track. Soft piano, warm pads, very slow tempo, subtle natural texture, no vocals, no drums, spacious and peaceful, inspired by an alpine sunrise.",
+    "Create a 2-3 minute instrumental ocean relaxation track. Gentle piano, airy pads, soft chimes, very slow tempo, no vocals, no strong percussion, calm and spacious, inspired by a sunset beach.",
+    "Create a 2-3 minute instrumental forest meditation track. Warm sustained pads, delicate piano, subtle bells, very slow tempo, no vocals, no beat, peaceful and unobtrusive, inspired by a misty rainy forest.",
+    "Create a 2-3 minute deep sleep ambient track. Very soft low pads, sparse piano notes, extremely slow, no vocals, no drums, dark and calming, inspired by a moonlit mountain valley."
   ];
   try {
-    const images = [];
-    for (let i = 0; i < imagePrompts.length; i++) {
-      images.push(await generateGeminiImageFile(imagePrompts[i], i + 1));
-    }
-    const musicResults = [];
-    for (let i = 0; i < musicPrompts.length; i++) {
-      musicResults.push(await generateLyriaMusicFile(musicPrompts[i], images[i], i + 1));
-    }
-    res.json({ images, music: musicResults });
-  } catch (e) {
-    res.status(500).json({ error: "No se pudieron generar las opciones IA: " + e.message });
-  }
+    const ir = await Promise.allSettled(imagePrompts.map((p,i)=>generateGeminiImageFile(p,i+1)));
+    const mr = await Promise.allSettled(musicPrompts.map((p,i)=>generateLyriaMusicFile(p,null,i+1)));
+    const images=ir.filter(x=>x.status==="fulfilled").map(x=>x.value);
+    const music=mr.filter(x=>x.status==="fulfilled").map(x=>x.value);
+    const imageErrors=ir.filter(x=>x.status==="rejected").map(x=>x.reason?.message||String(x.reason));
+    const musicErrors=mr.filter(x=>x.status==="rejected").map(x=>x.reason?.message||String(x.reason));
+    if(!images.length&&!music.length) return res.status(502).json({error:"Google no ha podido generar ningún recurso.",images:imageErrors,music:musicErrors});
+    res.json({images,music,imageErrors,musicErrors});
+  } catch(e) { res.status(500).json({error:"Error de generación IA: "+e.message}); }
 });
 
 function runFfmpeg(args) {
