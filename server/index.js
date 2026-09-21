@@ -272,120 +272,39 @@ function makeCompositionWav(track, wavPath){
   writeWav(wavPath,samples,sr,2);
 }
 
-async function generateReplicateMusic(prompt, durationSeconds=60) {
-  const key = process.env.REPLICATE_API_TOKEN;
-  if (!key) {
-    throw new Error("Falta REPLICATE_API_TOKEN en Render. Añade un token de Replicate para generar música IA.");
-  }
-
-  const duration = Math.max(1, Math.min(190, Math.round(Number(durationSeconds) || 60)));
-  const body = {
-    input: {
-      steps: 8,
-      prompt: String(prompt || "").slice(0, 2000),
-      duration,
-      cfg_scale: 3
-    }
-  };
-
-  const create = await fetch("https://api.replicate.com/v1/models/stability-ai/stable-audio-2.5/predictions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": "Bearer " + key,
-      "Prefer": "wait=60"
-    },
-    body: JSON.stringify(body)
-  });
-
-  const raw = await create.text();
-  let data = {};
-  try { data = raw ? JSON.parse(raw) : {}; } catch {}
-
-  if (!create.ok) {
-    const detail = data.detail || data.error || data.message || raw;
-    throw new Error("Replicate Music HTTP " + create.status + ": " + String(detail).slice(0, 500));
-  }
-
-  let prediction = data;
-  const getPrediction = async (id) => {
-    const r = await fetch("https://api.replicate.com/v1/predictions/" + encodeURIComponent(id), {
-      headers: { "Authorization": "Bearer " + key }
-    });
-    const txt = await r.text();
-    let d = {};
-    try { d = txt ? JSON.parse(txt) : {}; } catch {}
-    if (!r.ok) throw new Error("Replicate Music status HTTP " + r.status + ": " + txt.slice(0, 400));
-    return d;
-  };
-
-  // Si el modelo no termina dentro de Prefer: wait=60, seguimos consultando.
-  if (prediction.status !== "succeeded" && prediction.status !== "failed" && prediction.status !== "canceled") {
-    for (let attempt = 0; attempt < 90; attempt++) {
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      prediction = await getPrediction(prediction.id);
-      if (prediction.status === "succeeded" || prediction.status === "failed" || prediction.status === "canceled") break;
-    }
-  }
-
-  if (prediction.status !== "succeeded") {
-    throw new Error("Replicate Music terminó con estado " + (prediction.status || "desconocido") + ": " + String(prediction.error || "").slice(0, 500));
-  }
-
-  let outputUrl = null;
-  if (typeof prediction.output === "string") outputUrl = prediction.output;
-  else if (Array.isArray(prediction.output)) outputUrl = prediction.output[0];
-  else if (prediction.output?.url) outputUrl = prediction.output.url;
-
-  if (!outputUrl) throw new Error("Replicate terminó correctamente pero no devolvió una URL de audio.");
-
-  const audioResponse = await fetch(outputUrl);
-  if (!audioResponse.ok) {
-    throw new Error("No se pudo descargar el audio generado por Replicate (HTTP " + audioResponse.status + ").");
-  }
-
-  const buffer = Buffer.from(await audioResponse.arrayBuffer());
-  if (!buffer.length) throw new Error("Replicate devolvió un audio vacío.");
-  return buffer;
+function generateFreeMusicFile(track, outPath) {
+  // Motor 100% local: no API key, no créditos y no proveedor de pago.
+  // La búsqueda del usuario controla escala, tempo, instrumentos, textura y ambiente.
+  makeCompositionWav(track, outPath);
+  const stat=fs.statSync(outPath);
+  if(!stat.size) throw new Error("El motor musical local generó un archivo vacío.");
+  return stat.size;
 }
 
 async function ensureBuiltinMusic(tracks=[]) {
-  const generateOne = async (track) => {
-    const out = path.join(MUSIC_DIR, track.file);
+  const results=[];
+  for (const track of tracks) {
     try {
-      fs.rmSync(out, { force:true });
-      const basePrompt = String(track.musicProfile || track.userMusicBrief || "").trim();
-      if (!basePrompt) throw new Error("La búsqueda musical está vacía.");
+      const out=path.join(MUSIC_DIR, track.file);
+      fs.rmSync(out,{force:true});
+      const basePrompt=String(track.musicProfile||track.userMusicBrief||"professional deep relaxation ambient music").trim();
+      if(!basePrompt) throw new Error("La búsqueda musical está vacía.");
 
-      const prompt = [
-        basePrompt,
-        "Create a completely original instrumental composition for RelaxScape.",
-        "The user's search is the source of truth: preserve its requested environment, instruments, mood and atmosphere.",
-        "Professional studio-quality production, detailed melody and harmony, evolving arrangement, natural dynamics and spacious stereo depth.",
-        "No vocals, no lyrics, no speech, no abrupt transitions, no aggressive elements.",
-        "This must be a real musical composition, not a static drone, generic preset or one-bar loop.",
-        "Create a fresh performance that is different from previous generations."
-      ].join(" ");
-
-      console.log("[Replicate Stable Audio] Generando", track.label, "con búsqueda:", track.userMusicBrief || basePrompt);
-      const audio = await generateReplicateMusic(prompt, 60);
-      fs.writeFileSync(out, audio);
-      track.provider = "Replicate · Stable Audio 2.5";
-      track.generated = true;
-      track.fallback = false;
-      track.musicPrompt = basePrompt;
-      console.log("[Replicate Stable Audio] LISTA:", track.file, audio.length, "bytes");
-      return true;
-    } catch (e) {
-      aiMusicErrors.push(track.label + ": " + (e?.message || String(e)));
-      console.error("[Replicate Stable Audio] ERROR", track.file, e?.stack || e?.message || e);
-      return false;
+      console.log("[Free Music Engine] Generando", track.label, "desde:", track.userMusicBrief || basePrompt);
+      generateFreeMusicFile(track, out);
+      track.provider="RelaxScape Free Music Engine";
+      track.generated=true;
+      track.fallback=false;
+      track.musicPrompt=basePrompt;
+      console.log("[Free Music Engine] LISTA:", track.file, fs.statSync(out).size, "bytes");
+      results.push(true);
+    } catch(e) {
+      aiMusicErrors.push(track.label+": "+(e?.message||String(e)));
+      console.error("[Free Music Engine] ERROR",track.file,e?.stack||e?.message||e);
+      results.push(false);
     }
-  };
-
-  const results = [];
-  for (const track of tracks) results.push(await generateOne(track));
-  console.log("[Replicate Stable Audio] Terminadas:", results.filter(Boolean).length, "/", tracks.length);
+  }
+  console.log("[Free Music Engine] Terminadas:",results.filter(Boolean).length,"/",tracks.length);
   return results;
 }
 
@@ -625,7 +544,7 @@ app.post("/api/ai-options", async (req, res) => {
     musicPreparing: aiMusicPreparing,
     imageErrors,
     musicErrors: aiMusicErrors.slice(),
-    provider: "Pollinations Images + Replicate Stable Audio 2.5"
+    provider: "Pollinations Images + RelaxScape Free Music Engine"
   });
 });
 
@@ -801,28 +720,40 @@ app.post("/api/generate-selected-long-music", async (req,res)=>{
 
   const stamp=Date.now();
   const work=path.join(MUSIC_DIR,"long-"+stamp);
-  const base=path.join(work,"base.mp3");
   const finalName="relaxscape-selected-"+hours+"h-"+stamp+".mp3";
   const out=path.join(MUSIC_DIR,finalName);
   fs.mkdirSync(work,{recursive:true});
 
   try{
-    const longPrompt=[
-      basePrompt,
-      "Create a long-form instrumental relaxation composition of exactly 10 minutes.",
-      "Develop several distinct sections with smooth musical continuity, evolving melody, harmony, instrumentation and texture.",
-      "Keep the same musical identity throughout, but do not repeat the same short phrase or loop.",
-      "Very smooth transitions, gentle dynamics, no vocals, no speech, no abrupt changes, no aggressive percussion.",
-      "The result will be used as the musical bed for a one-hour relaxing landscape video."
-    ].join(" ");
+    // Generamos 4 variaciones locales de la misma búsqueda y las concatenamos.
+    // Así la hora final no depende de un único clip repetido.
+    const segments=[];
+    for(let i=0;i<4;i++){
+      const track={
+        ...(selectedTrack||{}),
+        userMusicBrief:basePrompt,
+        musicProfile:basePrompt,
+        variant:i+1,
+        f1:selectedTrack?.f1||220,
+        f2:selectedTrack?.f2||330,
+        f3:selectedTrack?.f3||392
+      };
+      const seg=path.join(work,"segment-"+i+".wav");
+      generateFreeMusicFile(track,seg);
+      segments.push(seg);
+    }
 
-    const audio=await generateReplicateMusic(longPrompt,190);
-    fs.writeFileSync(base,audio);
+    const listFile=path.join(work,"concat.txt");
+    fs.writeFileSync(listFile,segments.map(f=>"file '"+f.replace(/'/g,"'\\''")+"'").join("\n"));
+
+    // Construye una base de ~72 s con las 4 variaciones y la repite hasta la duración elegida.
+    const base=path.join(work,"base.wav");
+    await runFfmpeg(["-y","-f","concat","-safe","0","-i",listFile,"-c:a","pcm_s16le",base]);
 
     await runFfmpeg([
       "-y","-stream_loop","-1","-i",base,
       "-t",String(hours*3600),
-      "-c:a","libmp3lame","-b:a","192k","-ar","48000",out
+      "-c:a","libmp3lame","-b:a","192k","-ar","44100",out
     ]);
 
     res.json({
@@ -830,12 +761,13 @@ app.post("/api/generate-selected-long-music", async (req,res)=>{
       url:"/media/music/"+encodeURIComponent(finalName),
       hours,
       sourcePreview:name,
-      provider:"Replicate · Stable Audio 2.5",
-      generatedFromSearch:true
+      provider:"RelaxScape Free Music Engine",
+      generatedFromSearch:true,
+      paidApi:false
     });
   }catch(e){
-    console.error("Error creando música larga IA:",e.stack||e.message);
-    res.status(500).json({error:"No se pudo crear la música larga con IA: "+e.message});
+    console.error("Error creando música larga gratuita:",e.stack||e.message);
+    res.status(500).json({error:"No se pudo crear la música larga gratuita: "+e.message});
   }finally{
     fs.rmSync(work,{recursive:true,force:true});
   }
