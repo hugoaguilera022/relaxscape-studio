@@ -47,121 +47,81 @@ function safe(name) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-const MUSIC_ENGINE_VERSION = "v4-melody-rhythm-textures";\n\nconst BUILTIN_MUSIC = [
-  { file: "relax-piano.mp3", label: "Piano nocturno", category: "Sueño", f1: 261.63, f2: 329.63, f3: 392 },
-  { file: "relax-ocean.mp3", label: "Ondas del océano", category: "Naturaleza", f1: 220, f2: 277.18, f3: 329.63 },
-  { file: "relax-meditation.mp3", label: "Meditación profunda", category: "Meditación", f1: 174.61, f2: 261.63, f3: 349.23 },
-  { file: "relax-dream.mp3", label: "Sueño tranquilo", category: "Sueño", f1: 196, f2: 246.94, f3: 293.66 },
-  { file: "relax-rain.mp3", label: "Lluvia suave", category: "Naturaleza", f1: 146.83, f2: 220, f3: 293.66 },
-  { file: "relax-forest.mp3", label: "Bosque sereno", category: "Naturaleza", f1: 164.81, f2: 246.94, f3: 329.63 },
-  { file: "relax-mountains.mp3", label: "Montañas al amanecer", category: "Naturaleza", f1: 196, f2: 293.66, f3: 392 },
-  { file: "relax-sunset.mp3", label: "Atardecer cálido", category: "Relax", f1: 174.61, f2: 220, f3: 329.63 },
-  { file: "relax-night.mp3", label: "Noche estrellada", category: "Sueño", f1: 130.81, f2: 196, f3: 261.63 },
-  { file: "relax-deep-sleep.mp3", label: "Sueño profundo", category: "Sueño", f1: 110, f2: 164.81, f3: 220 },
-  { file: "relax-spa.mp3", label: "Spa y bienestar", category: "Relax", f1: 220, f2: 329.63, f3: 440 },
-  { file: "relax-yoga.mp3", label: "Yoga tranquilo", category: "Meditación", f1: 146.83, f2: 220, f3: 369.99 },
-  { file: "relax-focus.mp3", label: "Concentración", category: "Concentración", f1: 261.63, f2: 392, f3: 523.25 },
-  { file: "relax-calm.mp3", label: "Calma absoluta", category: "Relax", f1: 196, f2: 246.94, f3: 349.23 },
-  { file: "relax-fireplace.mp3", label: "Chimenea acogedora", category: "Relax", f1: 130.81, f2: 196, f3: 293.66 },
-  { file: "relax-river.mp3", label: "Río tranquilo", category: "Naturaleza", f1: 164.81, f2: 220, f3: 329.63 },
-  { file: "relax-piano-rain.mp3", label: "Piano y lluvia", category: "Sueño", f1: 196, f2: 246.94, f3: 392 },
-  { file: "relax-ocean-night.mp3", label: "Océano nocturno", category: "Sueño", f1: 164.81, f2: 220, f3: 329.63 },
-  { file: "relax-zen.mp3", label: "Zen oriental", category: "Meditación", f1: 146.83, f2: 220, f3: 293.66 },
-  { file: "relax-breathing.mp3", label: "Respiración y calma", category: "Meditación", f1: 130.81, f2: 174.61, f3: 261.63 },
-  { file: "relax-clouds.mp3", label: "Nubes suaves", category: "Relax", f1: 196, f2: 293.66, f3: 440 },
-  { file: "relax-waterfall.mp3", label: "Cascada relajante", category: "Naturaleza", f1: 174.61, f2: 261.63, f3: 349.23 },
-  { file: "relax-cafe.mp3", label: "Café tranquilo", category: "Relax", f1: 220, f2: 329.63, f3: 392 },
-  { file: "relax-study.mp3", label: "Estudio profundo", category: "Concentración", f1: 196, f2: 293.66, f3: 392 }
+const MUSIC_ENGINE_VERSION = "v5-safe-composer";
+
+const BUILTIN_MUSIC = [
+  { file:"relax-piano.mp3",label:"Piano nocturno",category:"Sueño",f1:261.63,f2:329.63,f3:392 },
+  { file:"relax-ocean.mp3",label:"Ondas del océano",category:"Naturaleza",f1:220,f2:277.18,f3:329.63 },
+  { file:"relax-meditation.mp3",label:"Meditación profunda",category:"Meditación",f1:174.61,f2:261.63,f3:349.23 },
+  { file:"relax-dream.mp3",label:"Sueño tranquilo",category:"Sueño",f1:196,f2:246.94,f3:293.66 },
+  { file:"relax-rain.mp3",label:"Lluvia suave",category:"Naturaleza",f1:146.83,f2:220,f3:293.66 },
+  { file:"relax-forest.mp3",label:"Bosque sereno",category:"Naturaleza",f1:164.81,f2:246.94,f3:329.63 },
+  { file:"relax-mountains.mp3",label:"Montañas al amanecer",category:"Naturaleza",f1:196,f2:293.66,f3:392 },
+  { file:"relax-sunset.mp3",label:"Atardecer cálido",category:"Relax",f1:174.61,f2:220,f3:329.63 },
+  { file:"relax-night.mp3",label:"Noche estrellada",category:"Sueño",f1:130.81,f2:196,f3:261.63 },
+  { file:"relax-deep-sleep.mp3",label:"Sueño profundo",category:"Sueño",f1:110,f2:164.81,f3:220 },
+  { file:"relax-spa.mp3",label:"Spa y bienestar",category:"Relax",f1:220,f2:329.63,f3:440 },
+  { file:"relax-yoga.mp3",label:"Yoga tranquilo",category:"Meditación",f1:146.83,f2:220,f3:369.99 },
+  { file:"relax-focus.mp3",label:"Concentración",category:"Concentración",f1:261.63,f2:392,f3:523.25 },
+  { file:"relax-calm.mp3",label:"Calma absoluta",category:"Relax",f1:196,f2:246.94,f3:349.23 },
+  { file:"relax-fireplace.mp3",label:"Chimenea acogedora",category:"Relax",f1:130.81,f2:196,f3:293.66 },
+  { file:"relax-river.mp3",label:"Río tranquilo",category:"Naturaleza",f1:164.81,f2:220,f3:329.63 },
+  { file:"relax-piano-rain.mp3",label:"Piano y lluvia",category:"Sueño",f1:196,f2:246.94,f3:392 },
+  { file:"relax-ocean-night.mp3",label:"Océano nocturno",category:"Sueño",f1:164.81,f2:220,f3:329.63 },
+  { file:"relax-zen.mp3",label:"Zen oriental",category:"Meditación",f1:146.83,f2:220,f3:293.66 },
+  { file:"relax-breathing.mp3",label:"Respiración y calma",category:"Meditación",f1:130.81,f2:174.61,f3:261.63 },
+  { file:"relax-clouds.mp3",label:"Nubes suaves",category:"Relax",f1:196,f2:293.66,f3:440 },
+  { file:"relax-waterfall.mp3",label:"Cascada relajante",category:"Naturaleza",f1:174.61,f2:261.63,f3:349.23 },
+  { file:"relax-cafe.mp3",label:"Café tranquilo",category:"Relax",f1:220,f2:329.63,f3:392 },
+  { file:"relax-study.mp3",label:"Estudio profundo",category:"Concentración",f1:196,f2:293.66,f3:392 }
 ];
 
-async function ensureBuiltinMusic(tracks = BUILTIN_MUSIC) {
-  // Motor musical compositivo local:
-  // melodía + arpegio + pulso rítmico + bajo + dos texturas ambientales.
-  // Cada pista dura 3 minutos y sirve como PREVIEW. El mix de 1/2 h la repite
-  // con transiciones para crear el archivo largo.
-  const marker = path.join(MUSIC_DIR, ".relaxscape-music-engine-v4");
-  if (!fs.existsSync(marker)) {
-    for (const t of BUILTIN_MUSIC) {
-      try { fs.rmSync(path.join(MUSIC_DIR, t.file), { force: true }); } catch {}
-    }
-    try { fs.writeFileSync(marker, MUSIC_ENGINE_VERSION); } catch {}
+async function ensureBuiltinMusic(tracks=BUILTIN_MUSIC){
+  const marker=path.join(MUSIC_DIR,".relaxscape-music-engine-v5");
+  if(!fs.existsSync(marker)){
+    for(const t of BUILTIN_MUSIC){try{fs.rmSync(path.join(MUSIC_DIR,t.file),{force:true})}catch{}}
+    try{fs.writeFileSync(marker,MUSIC_ENGINE_VERSION)}catch{}
   }
-
-  const jobs = tracks.filter(t => !fs.existsSync(path.join(MUSIC_DIR, t.file))).map(async track => {
-    const out = path.join(MUSIC_DIR, track.file);
-    const dur = 180;
-    try {
-      const r = track.f1;
-      const m = track.f2;
-      const h = track.f3;
-      const low = Math.max(55, r * 0.5);
-      const beat = 60 / 56;
-      const note = beat * 2;
-
-      // Capas armónicas largas.
-      const inputs = [
-        "-f","lavfi","-i",`sine=frequency=${r}:sample_rate=44100:duration=${dur}`,
-        "-f","lavfi","-i",`sine=frequency=${m}:sample_rate=44100:duration=${dur}`,
-        "-f","lavfi","-i",`sine=frequency=${h}:sample_rate=44100:duration=${dur}`,
-        "-f","lavfi","-i",`sine=frequency=${low}:sample_rate=44100:duration=${dur}`,
-        "-f","lavfi","-i",`anoisesrc=color=brown:amplitude=0.010:sample_rate=44100:duration=${dur}`,
-        "-f","lavfi","-i",`anoisesrc=color=pink:amplitude=0.004:sample_rate=44100:duration=${dur}`,
-        // Pulso grave suave cada negra.
-        "-f","lavfi","-i",`aevalsrc=0.16*sin(2*PI*58*t)*exp(-9*mod(t,${beat})):s=mono:c=stereo:sample_rate=44100:d=${dur}`
-      ];
-
-      const filters = [
-        "[0:a]volume=0.050,lowpass=f=1000,apulsator=hz=0.075:width=0.35[a0]",
-        "[1:a]volume=0.035,lowpass=f=1700,apulsator=hz=0.055:width=0.45[a1]",
-        "[2:a]volume=0.025,lowpass=f=2600,apulsator=hz=0.035:width=0.55[a2]",
-        "[3:a]volume=0.045,lowpass=f=420[a3]",
-        "[4:a]highpass=f=30,lowpass=f=1000,volume=0.42[a4]",
-        "[5:a]highpass=f=700,lowpass=f=7000,volume=0.16,apulsator=hz=0.11:width=0.7[a5]",
-        "[6:a]lowpass=f=260,volume=0.55[a6]"
-      ];
-
-      // Melodía principal: 16 notas con contorno musical, no una nota repetida.
-      const melody = [r*2,m*2,h*2,m*2,r*2,h*2,m*2,r*1.5,m*2,h*2,r*2,m*2,h*2,m*2,r*2,h*1.5];
-      const melodyLabels = [];
-      for (let i=0;i<melody.length;i++) {
-        inputs.push("-f","lavfi","-i",`sine=frequency=${melody[i]}:sample_rate=44100:duration=${note}`);
-        const idx = i + 7;
-        const label = "mel" + i;
-        melodyLabels.push(label);
-        filters.push(`[${idx}:a]volume=0.070,afade=t=in:st=0:d=0.35,afade=t=out:st=${Math.max(0.5,note-0.55)}:d=0.55[${label}]`);
+  const jobs=tracks.filter(t=>!fs.existsSync(path.join(MUSIC_DIR,t.file))).map(async t=>{
+    const out=path.join(MUSIC_DIR,t.file), dur=180, beat=60/56, note=(60/56)*2;
+    const r=t.f1,m=t.f2,h=t.f3,low=Math.max(55,r*.5);
+    try{
+      const args=["-y"], filters=[];
+      for(const [freq,vol,cut,label] of [[r,.045,1200,"p0"],[m,.032,1900,"p1"],[h,.022,2800,"p2"],[low,.05,500,"p3"]]){
+        args.push("-f","lavfi","-i",`sine=frequency=${freq}:sample_rate=44100:duration=${dur}`);
+        filters.push(`[${filters.length}:a]volume=${vol},lowpass=f=${cut}[${label}]`);
       }
-      filters.push(
-        melodyLabels.map(x => "["+x+"]").join("") + `concat=n=${melody.length}:v=0:a=1,aloop=loop=-1:size=2147483647,atrim=0:${dur},aecho=0.75:0.65:380|760:0.14|0.07[mel]`,
-        // Arpegio más rápido para dar movimiento musical.
-        `sine=frequency=${r*2}:sample_rate=44100:duration=${dur}`,
-        "[mel]volume=1[mel2]"
-      );
+      args.push("-f","lavfi","-i",`anoisesrc=color=brown:amplitude=0.008:sample_rate=44100:duration=${dur}`);
+      filters.push("[4:a]lowpass=f=1100,volume=.30[noise1]");
+      args.push("-f","lavfi","-i",`anoisesrc=color=pink:amplitude=0.0025:sample_rate=44100:duration=${dur}`);
+      filters.push("[5:a]highpass=f=900,lowpass=f=6500,volume=.10[noise2]");
 
-      // El arpegio usa una segunda cadena de notas más aguda.
-      const arp = [r*2.5,m*2.5,h*2.5,m*3,r*3,h*3,m*2.5,r*2.5];
-      const arpLabels=[];
+      const melody=[r*2,m*2,h*2,m*2,r*2,h*2,m*2,r*1.5,m*2,h*2,r*2,m*2,h*2,m*2,r*2,h*1.5];
+      const ml=[];
+      for(let i=0;i<melody.length;i++){
+        const idx=6+i, label="m"+i;
+        args.push("-f","lavfi","-i",`sine=frequency=${melody[i]}:sample_rate=44100:duration=${note}`);
+        ml.push(label);
+        filters.push(`[${idx}:a]volume=.060,afade=t=in:st=0:d=.10,afade=t=out:st=${Math.max(.2,note-.22)}:d=.22[${label}]`);
+      }
+      filters.push(ml.map(x=>`[${x}]`).join("")+`concat=n=${ml.length}:v=0:a=1,aloop=loop=-1:size=1512000,atrim=0:${dur},aecho=0.65:0.55:320:0.12[mel]`);
+
+      const arp=[r*2.5,m*2.5,h*2.5,m*3,r*3,h*3,m*2.5,r*2.5], al=[];
       for(let i=0;i<arp.length;i++){
-        inputs.push("-f","lavfi","-i",`sine=frequency=${arp[i]}:sample_rate=44100:duration=${beat}`);
-        const idx=inputs.length/2-1;
-        const label="arp"+i;
-        arpLabels.push(label);
-        filters.push(`[${idx}:a]volume=0.028,afade=t=in:st=0:d=0.18,afade=t=out:st=${Math.max(0.2,beat-0.22)}:d=0.22[${label}]`);
+        const idx=6+melody.length+i,label="a"+i;
+        args.push("-f","lavfi","-i",`sine=frequency=${arp[i]}:sample_rate=44100:duration=${beat}`);
+        al.push(label);
+        filters.push(`[${idx}:a]volume=.020,afade=t=in:st=0:d=.08,afade=t=out:st=${Math.max(.1,beat-.12)}:d=.12[${label}]`);
       }
-      filters.push(
-        arpLabels.map(x=>"["+x+"]").join("")+`concat=n=${arp.length}:v=0:a=1,aloop=loop=-1:size=2147483647,atrim=0:${dur},aecho=0.7:0.6:250|500:0.10|0.05[arp]`,
-        "[a0][a1][a2][a3][a4][a5][a6][mel2][arp]amix=inputs=9:duration=longest:normalize=0,"+
-        "lowpass=f=7500,acompressor=threshold=-24dB:ratio=2:attack=50:release=380,"+
-        "afade=t=in:st=0:d=10,afade=t=out:st=170:d=10,volume=0.9[out]"
-      );
+      filters.push(al.map(x=>`[${x}]`).join("")+`concat=n=${al.length}:v=0:a=1,aloop=loop=-1:size=302400,atrim=0:${dur},aecho=0.6:0.5:220:0.08[arp]`);
 
-      await runFfmpeg([
-        "-y", ...inputs,
-        "-filter_complex", filters.join(";"),
-        "-map","[out]","-c:a","libmp3lame","-b:a","160k","-ar","44100",out
-      ]);
-    } catch (e) {
-      console.error("No se pudo crear composición:", track.file, e.message);
-    }
+      args.push("-f","lavfi","-i",`aevalsrc=0.12*sin(2*PI*62*t)*exp(-12*mod(t,${beat})):s=44100:d=${dur}`);
+      const pulse=6+melody.length+arp.length;
+      filters.push(`[${pulse}:a]lowpass=f=180,volume=.42[pulse]`);
+      filters.push("[p0][p1][p2][p3][noise1][noise2][mel][arp][pulse]amix=inputs=9:duration=longest:normalize=0,lowpass=f=8000,acompressor=threshold=-28dB:ratio=2:attack=35:release=450,volume=.92,afade=t=in:st=0:d=8,afade=t=out:st=172:d=8[out]");
+
+      await runFfmpeg([...args,"-filter_complex",filters.join(";"),"-map","[out]","-t",String(dur),"-c:a","libmp3lame","-b:a","160k","-ar","44100",out]);
+    }catch(e){console.error("No se pudo crear composición:",t.file,e.message)}
   });
   await Promise.all(jobs);
 }
