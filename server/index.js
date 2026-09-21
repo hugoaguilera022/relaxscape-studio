@@ -279,15 +279,6 @@ function makeCompositionWav(track, wavPath){
         left+=v*(1-ep); right+=v*(1+ep);
       }
     }
-    for(const ev of previousEvents){
-      const nt=t-ev.t;
-      if(nt>=0 && nt<3.8){
-        const v=piano(ev.f,nt,ev.v);
-        const ep=.06*Math.sin(2*Math.PI*(ev.t+t)/23);
-        left+=v*(1-ep); right+=v*(1+ep);
-      }
-    }
-
     // Aire alto muy sutil, siempre basado en la 9ª del acorde.
     const air=padVoice(hz(ch.notes[4]+12),chordT,ultraCalm ? .009 : (variant===2?.012:.006));
     left+=air*.88; right+=air*1.05;
