@@ -462,22 +462,6 @@ async function generateDaily() {
   }
 }
 
-  const images = listFiles(IMAGE_DIR, "/media/images");
-  const music = listFiles(MUSIC_DIR, "/media/music");
-  if (!images.length || !music.length) return console.log("Daily render omitido: faltan imagen o música.");
-  const imagePath = path.join(IMAGE_DIR, images[0].name);
-  const musicPath = path.join(MUSIC_DIR, music[0].name);
-  const filename = `daily-${new Date().toISOString().slice(0,10)}.mp4`;
-  const out = path.join(VIDEO_DIR, filename);
-  try {
-    await runFfmpeg([
-      "-y","-loop","1","-i",imagePath,"-stream_loop","-1","-i",musicPath,"-t","3600",
-      "-vf","scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
-      "-c:v","libx264","-preset","veryfast","-crf","23","-c:a","aac","-b:a","160k","-shortest",out
-    ]);
-    console.log("Daily video creado:", filename);
-  } catch (e) { console.error("Daily render error:", e.message); }
-}
 
 await ensureBuiltinMusic();
 
