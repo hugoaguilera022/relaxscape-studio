@@ -138,7 +138,13 @@ function makeCompositionWav(track, wavPath){
   let bpm=semantic.sleep?34:semantic.meditation?38:semantic.focus?48:semantic.cinematic?42:semantic.ocean?40:44;
   if(semantic.synth) bpm+=4;
   const beat=60/bpm, bar=beat*4;
-  const seed=Math.abs(Math.floor((Number(track.f1)||220)*7+(Number(track.f2)||330)*3+(Number(track.f3)||392)+variant*997))%997;
+  // La semilla NO puede depender solo de f1/f2/f3: eso hacía que una nueva búsqueda
+  // pudiera producir exactamente el mismo audio que una generación anterior.
+  // Ahora cada búsqueda/sesión aporta una semilla única y cada variante la transforma.
+  const seedText=String(track.generationSeed||track.sessionNonce||track.musicProfile||track.userMusicBrief||"relaxscape");
+  let seedHash=2166136261;
+  for(const ch of seedText){ seedHash^=ch.charCodeAt(0); seedHash=Math.imul(seedHash,16777619); }
+  const seed=Math.abs((seedHash>>>0)+variant*997+Math.floor((Number(track.f1)||220)*7+(Number(track.f2)||330)*3+(Number(track.f3)||392)))%997;
   const scaleNote=(m,d,oct=0)=>m+scale[((d%scale.length)+scale.length)%scale.length]+12*oct;
 
   // Cuatro arreglos diferentes dentro del mismo briefing:
@@ -610,6 +616,8 @@ function aiTracksForBackground(prompt="", generationId=0){
       label:"IA · "+(i+1),
       variant:i+1,
       forceRegenerate:true,
+      generationSeed:sessionNonce,
+      sessionNonce,
       musicProfile:[
         "USER MUSIC BRIEF: "+p,
         "This is a fresh generation. Do not reuse, imitate or follow the arrangement of any previous generation.",
@@ -734,6 +742,8 @@ app.post("/api/generate-selected-long-music", async (req,res)=>{
         userMusicBrief:basePrompt,
         musicProfile:basePrompt,
         variant:i+1,
+        generationSeed: String(selectedTrack?.generationSeed||selectedTrack?.sessionNonce||basePrompt)+"-long-"+i+"-"+Date.now(),
+        sessionNonce: selectedTrack?.sessionNonce || "",
         f1:selectedTrack?.f1||220,
         f2:selectedTrack?.f2||330,
         f3:selectedTrack?.f3||392
