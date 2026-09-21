@@ -75,26 +75,37 @@ const BUILTIN_MUSIC = [
 ];
 
 async function ensureBuiltinMusic(tracks = BUILTIN_MUSIC) {
-  for (const track of tracks) {
+  // Generador ambiental local: varias capas, movimiento lento, ruido suave,
+  // reverb y automatizaciones. No son simples tonos individuales.
+  const jobs = tracks.filter(t => !fs.existsSync(path.join(MUSIC_DIR, t.file))).map(async track => {
     const out = path.join(MUSIC_DIR, track.file);
-    if (fs.existsSync(out)) continue;
+    const dur = 180;
     try {
-      await runFfmpeg([
+      const args = [
         "-y",
-        "-f","lavfi","-i",
-        `sine=frequency=${track.f1}:sample_rate=44100:duration=90`,
-        "-f","lavfi","-i",
-        `sine=frequency=${track.f2}:sample_rate=44100:duration=90`,
-        "-f","lavfi","-i",
-        `sine=frequency=${track.f3}:sample_rate=44100:duration=90`,
+        "-f","lavfi","-i",`sine=frequency=${track.f1}:sample_rate=44100:duration=${dur}`,
+        "-f","lavfi","-i",`sine=frequency=${track.f2}:sample_rate=44100:duration=${dur}`,
+        "-f","lavfi","-i",`sine=frequency=${track.f3}:sample_rate=44100:duration=${dur}`,
+        "-f","lavfi","-i",`anoisesrc=color=brown:amplitude=0.025:sample_rate=44100:duration=${dur}`,
         "-filter_complex",
-        "[0:a]volume=0.10[a0];[1:a]volume=0.07[a1];[2:a]volume=0.05[a2];[a0][a1][a2]amix=inputs=3:duration=longest,lowpass=f=1800,aecho=0.8:0.7:900:0.18,afade=t=in:st=0:d=8,afade=t=out:st=82:d=8,volume=0.8[out]",
-        "-map","[out]","-c:a","libmp3lame","-b:a","128k",out
-      ]);
+        "[0:a]volume=0.075,tremolo=f=0.045:d=0.25,lowpass=f=900[a0];" +
+        "[1:a]volume=0.055,tremolo=f=0.031:d=0.35,lowpass=f=1400[a1];" +
+        "[2:a]volume=0.040,tremolo=f=0.021:d=0.45,lowpass=f=1900[a2];" +
+        "[3:a]highpass=f=35,lowpass=f=700,volume=0.55[a3];" +
+        "[a0][a1][a2][a3]amix=inputs=4:duration=longest:normalize=0," +
+        "aecho=0.8:0.72:850|1350:0.14|0.09," +
+        "lowpass=f=5200," +
+        "acompressor=threshold=-22dB:ratio=2:attack=80:release=500," +
+        "afade=t=in:st=0:d=18,afade=t=out:st=162:d=18," +
+        "volume=0.9[out]",
+        "-map","[out]","-c:a","libmp3lame","-b:a","160k","-ar","44100",out
+      ];
+      await runFfmpeg(args);
     } catch (e) {
-      console.error("No se pudo crear música integrada:", track.file, e.message);
+      console.error("No se pudo crear ambiente:", track.file, e.message);
     }
-  }
+  });
+  await Promise.all(jobs);
 }
 
 function listFiles(dir, base) {
