@@ -106,7 +106,7 @@ function writeWav(file, samples, sampleRate=44100, channels=2){
   fs.writeFileSync(file,b);
 }
 
-function makeCompositionWav(track, wavPath){
+function makeCompositionWav(track, wavPath, durationMs=18000){
   // SECUENCIADOR MUSICAL LOCAL
   // Convierte la petición del usuario en una pequeña "sesión" musical:
   // 1) interpreta estilo/tempo/ambiente,
@@ -116,7 +116,7 @@ function makeCompositionWav(track, wavPath){
   // 5) renderiza esos eventos con el timbre solicitado.
   // IMPORTANTE: este bloque es exclusivamente de MÚSICA. La generación de imágenes
   // no se toca.
-  const sr=24000, dur=18, n=sr*dur, samples=new Float32Array(n*2);
+  const sr=24000, dur=Math.max(18,Math.min(600,Number(durationMs||18000)/1000)), n=Math.round(sr*dur), samples=new Float32Array(n*2);
   const variant=((Number(track.variant||1)-1)%4+4)%4;
   const rawBrief=String(track.userSearch||track.originalMusicPrompt||"relaxscape");
   const brief=rawBrief.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
@@ -580,11 +580,11 @@ function makeCompositionWav(track, wavPath){
   for(let i=0;i<samples.length;i++)samples[i]*=gain;
   writeWav(wavPath,samples,sr,2);
 }
-async function generateAIMusicFile(track, outPath){
+async function generateAIMusicFile(track, outPath, durationMs=18000){
   // Motor local gratuito: la búsqueda del usuario controla directamente la composición.
   // Generamos WAV temporal y lo convertimos a MP3 real para que el navegador lo reproduzca.
   const wavPath=outPath.replace(/\.mp3$/i,".wav");
-  makeCompositionWav(track, wavPath);
+  makeCompositionWav(track, wavPath, durationMs);
   await runFfmpeg(["-y","-i",wavPath,"-c:a","libmp3lame","-b:a","192k","-ar","48000",outPath]);
   fs.rmSync(wavPath,{force:true});
   const stat=fs.statSync(outPath);
