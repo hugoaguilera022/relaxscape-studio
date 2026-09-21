@@ -153,7 +153,7 @@ app.post("/api/generate-ai-video", async (req, res) => {
     const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/veo-3.1-generate-preview:predictLongRunning", {
       method: "POST",
       headers: geminiHeaders(key),
-      body: JSON.stringify({ instances: [{ prompt }], parameters: { aspectRatio, numberOfVideos: 1, resolution: "720p" } })
+      body: JSON.stringify({ instances: [{ prompt }], parameters: { aspectRatio, resolution: "720p" } })
     });
     const data = await r.json();
     if (!r.ok) return res.status(r.status).json({ error: data.error?.message || "No se pudo iniciar Veo." });
