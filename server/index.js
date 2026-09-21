@@ -130,103 +130,54 @@ async function generatePexelsVideo(prompt, aspectRatio, key, durationHours = 1) 
   const hours = Number(durationHours);
   if (![1, 2].includes(hours)) throw new Error("La duración debe ser de 1 o 2 horas.");
 
-  console.log("[Pexels] Buscando:", query);
-
   const search = await fetch(
-    `https://api.pexels.com/v1/videos/search?query=${encodeURIComponent(query)}&per_page=20&orientation=${aspectRatio === "9:16" ? "portrait" : "landscape"}&size=small`,
+    `https://api.pexels.com/v1/videos/search?query=${encodeURIComponent(query)}&per_page=10&orientation=${aspectRatio === "9:16" ? "portrait" : "landscape"}&size=small&locale=en-US`,
     { headers: { Authorization: key } }
   );
   const data = await search.json();
-  if (!search.ok) throw new Error(data.error || `Pexels respondió HTTP ${search.status}.`);
+  if (!search.ok) throw new Error("Pexels: " + (data.error || data.message || ("HTTP " + search.status)));
   const videos = (data.videos || []).filter(v => v.video_files?.length && Number(v.duration || 0) >= 5);
-  if (!videos.length) throw new Error("Pexels no encontró clips. Prueba una descripción como: bosque, océano, lluvia, montañas.");
+  if (!videos.length) throw new Error("Pexels no encontró un vídeo. Prueba: océano, bosque, lluvia o montañas.");
 
-  // Pocos clips para que Render no se quede sin RAM/CPU durante la creación.
-  const selected = videos.slice(0, Math.min(3, videos.length));
+  // Para que funcione rápido en Render, usamos un único clip y lo repetimos.
+  const video = videos[0];
+  const files = [...video.video_files].sort((a,b) => {
+    const wanted = f => aspectRatio === "9:16" ? f.height > f.width : f.width >= f.height;
+    return (wanted(b) ? 100000 : 0) - (wanted(a) ? 100000 : 0)
+      - Math.abs((b.width || 0) - (aspectRatio === "9:16" ? 720 : 1280))
+      + Math.abs((a.width || 0) - (aspectRatio === "9:16" ? 720 : 1280));
+  });
+  const url = files[0]?.link;
+  if (!url) throw new Error("Pexels no devolvió un archivo de vídeo descargable.");
+
   const stamp = Date.now();
-  const normalized = [];
-  const sources = [];
+  const source = path.join(VIDEO_DIR, `pexels-${stamp}-source.mp4`);
+  const finalName = `relaxscape-${stamp}-${hours}h.mp4`;
+  const finalPath = path.join(VIDEO_DIR, finalName);
 
   try {
-    for (let i = 0; i < selected.length; i++) {
-      const video = selected[i];
-      const files = [...video.video_files].sort((a,b) => {
-        const score = f => {
-          const vertical = f.height > f.width;
-          const wanted = aspectRatio === "9:16" ? vertical : !vertical;
-          const distance = Math.abs((f.width || 0) - (aspectRatio === "9:16" ? 720 : 1280));
-          return (wanted ? 100000 : 0) - distance;
-        };
-        return score(b) - score(a);
-      });
+    console.log("[Pexels] Descargando un clip:", video.id);
+    const download = await fetch(url);
+    if (!download.ok) throw new Error("No se pudo descargar el vídeo de Pexels (HTTP " + download.status + ").");
+    fs.writeFileSync(source, Buffer.from(await download.arrayBuffer()));
 
-      const url = files[0]?.link;
-      if (!url) continue;
-
-      console.log(`[Pexels] Descargando clip ${i + 1}/${selected.length}`);
-      const r = await fetch(url);
-      if (!r.ok) continue;
-
-      const source = path.join(VIDEO_DIR, `pexels-src-${stamp}-${i}.mp4`);
-      const segment = path.join(VIDEO_DIR, `pexels-segment-${stamp}-${i}.mp4`);
-      fs.writeFileSync(source, Buffer.from(await r.arrayBuffer()));
-
-      const size = aspectRatio === "9:16"
-        ? "scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2"
-        : "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2";
-
-      console.log(`[FFmpeg] Normalizando clip ${i + 1}/${selected.length}`);
-      await runFfmpeg([
-        "-y","-i",source,
-        "-vf",`${size},fps=24,format=yuv420p`,
-        "-an","-c:v","libx264","-preset","ultrafast","-crf","30",
-        "-movflags","+faststart",segment
-      ]);
-
-      try { fs.unlinkSync(source); } catch {}
-      normalized.push(segment);
-      sources.push(video.url);
-    }
-
-    if (!normalized.length) throw new Error("Pexels encontró vídeos pero no pudo descargar ninguno.");
-
-    const concatFile = path.join(VIDEO_DIR, `pexels-concat-${stamp}.txt`);
-    const montage = path.join(VIDEO_DIR, `pexels-montage-${stamp}.mp4`);
-    const finalName = `relaxscape-${stamp}-${hours}h.mp4`;
-    const finalPath = path.join(VIDEO_DIR, finalName);
-
-    fs.writeFileSync(concatFile, normalized.map(f => `file '${f.replace(/'/g, "'\\''")}'`).join("\n"));
-
-    try {
-      console.log("[FFmpeg] Uniendo clips...");
-      await runFfmpeg([
-        "-y","-f","concat","-safe","0","-i",concatFile,
-        "-an","-c:v","copy","-movflags","+faststart",montage
-      ]);
-
-      console.log(`[FFmpeg] Creando vídeo de ${hours} hora(s)...`);
-      await runFfmpeg([
-        "-y","-stream_loop","-1","-i",montage,
-        "-t",String(hours * 3600),
-        "-an","-c:v","copy","-movflags","+faststart",finalPath
-      ]);
-    } finally {
-      try { fs.unlinkSync(concatFile); } catch {}
-      try { fs.unlinkSync(montage); } catch {}
-    }
+    console.log("[FFmpeg] Repitiendo clip hasta " + hours + " hora(s)...");
+    await runFfmpeg([
+      "-y","-stream_loop","-1","-i",source,
+      "-t",String(hours * 3600),
+      "-an","-c:v","copy",finalPath
+    ]);
 
     return {
       name: finalName,
       url: `/media/videos/${finalName}`,
       source: "Pexels",
-      sourceUrl: sources[0],
-      clips: normalized.length,
+      sourceUrl: video.url,
+      clips: 1,
       durationHours: hours
     };
   } finally {
-    for (const file of normalized) {
-      try { fs.unlinkSync(file); } catch {}
-    }
+    try { fs.unlinkSync(source); } catch {}
   }
 }
 
