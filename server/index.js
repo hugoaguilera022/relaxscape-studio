@@ -47,7 +47,7 @@ function safe(name) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-const MUSIC_ENGINE_VERSION = "v8-prompt-aware-ambient-composer";
+const MUSIC_ENGINE_VERSION = "v11-search-intent-music";
 
 const BUILTIN_MUSIC = [
   ["relax-piano.mp3","Piano nocturno","Sueño",261.63,329.63,392],
@@ -627,28 +627,49 @@ function hashText(text){
   for(const ch of String(text)){h^=ch.charCodeAt(0);h=Math.imul(h,16777619)}
   return (h>>>0).toString(36);
 }
+function musicIntentProfile(prompt=""){
+  const p=String(prompt||"").toLowerCase();
+  const has=(...words)=>words.some(w=>p.includes(w));
+  const parts=[];
+  if(has("piano","piano suave","teclas","pianístico","pianistica")) parts.push("felt piano");
+  if(has("guitarra","acústica","acustica","nylon","guitar")) parts.push("professional nylon acoustic guitar");
+  if(has("violín","violin","cello","cuerdas","strings","orquesta","orchestral")) parts.push("warm cinematic strings");
+  if(has("flauta","flute","bambú","bambu","viento","wind")) parts.push("airy bamboo flute");
+  if(has("agua","water","océano","oceano","mar","olas","waves","río","rio","lluvia","rain","cascada","waterfall")) parts.push("subtle natural water ambience");
+  if(has("bosque","forest","montaña","montana","naturaleza","nature","pájaros","pajaros","birds","jardín","jardin")) parts.push("organic forest nature ambience");
+  if(has("spa","meditación","meditacion","zen","yoga","respiración","respiracion")) parts.push("spa meditation atmosphere");
+  if(has("sueño","sueno","dormir","sleep","noche","night","luna","moon","estrellas","stars")) parts.push("deep sleep nocturnal atmosphere");
+  if(has("cinemático","cinematic","película","pelicula","film","emocional","emotional")) parts.push("cinematic evolving pads");
+  if(has("lofi","lo-fi","chill","chillout")) parts.push("soft lo-fi texture");
+  if(has("electrónica","electronica","synth","sintetizador","ambient")) parts.push("warm analog ambient synthesizers");
+  if(has("triste","melancólico","melancolico")) parts.push("gentle melancholic harmony");
+  if(has("alegre","luminoso","bright","sunrise","amanecer")) parts.push("warm luminous harmony");
+  const noPerc=has("sin batería","sin bateria","sin percusión","sin percusion","no drums","no percussion");
+  if(noPerc) parts.push("no drums, no percussion");
+  if(!parts.length) parts.push("felt piano, warm evolving pads, spacious ambient texture");
+  return parts.join(", ");
+}
+
 function aiTracksForBackground(prompt=""){ 
   const p=String(prompt||"very slow peaceful ambient piano, warm soft pads, spacious reverb, no drums").slice(0,220);
+  const intent=musicIntentProfile(p);
   const seedBase=parseInt(hashText(p),36)||1;
-  const bases=[
-    [196,246.94,293.66],[174.61,220,261.63],[146.83,196,246.94],[164.81,220,277.18]
+  const bases=[[196,246.94,293.66],[174.61,220,261.63],[146.83,196,246.94],[164.81,220,277.18]];
+  const variations=[
+    "variation 1: same requested sound, closest interpretation, intimate and legato",
+    "variation 2: same requested sound, deeper harmony, longer sustained notes and wider space",
+    "variation 3: same requested sound, slightly more melodic movement while preserving the requested instruments",
+    "variation 4: same requested sound, cinematic development and a gentle final resolution"
   ];
   return bases.map((f,i)=>{
     const b=BUILTIN_MUSIC[i];
     const shift=((seedBase+i*7)%7)-3;
-    const variant=i;
-    const profiles=[
-      "variation 1: professional flowing felt piano, warm analog pads, spacious legato, intimate close-mic tone",
-      "variation 2: professional deep ambient strings, soft piano, long evolving chords, very sparse melody, wide stereo space",
-      "variation 3: professional nature ambience, gentle piano, airy flute texture, subtle water shimmer, no drums",
-      "variation 4: professional cinematic acoustic guitar, warm strings, deep pads, slow emotional descending melody, no percussion"
-    ];
     return {...b,
-      file:"ai-prompt-"+hashText(p)+"-v10-"+(i+1)+".mp3",
+      file:"ai-prompt-"+hashText(p)+"-v11-"+(i+1)+".mp3",
       label:"IA · "+(i+1),
-      variant,
+      variant:i,
       f1:f[0]*Math.pow(2,shift/12),f2:f[1]*Math.pow(2,shift/12),f3:f[2]*Math.pow(2,shift/12),
-      musicProfile:p+" "+profiles[i]
+      musicProfile:"user request: "+p+". interpreted sound: "+intent+". "+variations[i]
     };
   });
 }
