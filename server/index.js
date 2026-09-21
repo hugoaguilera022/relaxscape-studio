@@ -278,6 +278,27 @@ async function generatePollinationsMusicFile(prompt, index) {
 }
 
 
+async function generateLyriaMusicFile(prompt, index=1) {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error("GEMINI_API_KEY no configurada");
+  const r = await fetchWithTimeout("https://generativelanguage.googleapis.com/v1beta/interactions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+    body: JSON.stringify({
+      model: "lyria-3-clip-preview",
+      input: prompt,
+      response_format: { type: "audio" }
+    })
+  }, 45000);
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error?.message || ("Lyria HTTP " + r.status));
+  const b64 = data.output_audio?.data;
+  if (!b64) throw new Error("Lyria no devolvió audio.");
+  const filename = "ai-lyria-relax-" + Date.now() + "-" + index + ".mp3";
+  fs.writeFileSync(path.join(MUSIC_DIR, filename), Buffer.from(b64, "base64"));
+  return { name: filename, url: "/media/music/" + encodeURIComponent(filename), ai: true, provider: "Google Lyria 3", generated: true, fallback: false };
+}
+
 function makeFallbackLandscape(filename, theme="nature") {
   const safeTheme = String(theme).replace(/[&<>"]/g, "");
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
@@ -367,40 +388,72 @@ app.post("/api/ai-options", async (req, res) => {
     // Generamos WAV PCM directamente: el navegador lo reproduce y FFmpeg
     // solo entra en juego cuando el usuario pide la versión larga.
     const existingMusic = BUILTIN_MUSIC.filter(t => fs.existsSync(path.join(MUSIC_DIR, t.file)));
-    const track = [...(existingMusic.length ? existingMusic : BUILTIN_MUSIC)]
-      .sort(() => Math.random() - 0.5)[0];
+    const track = [...BUILTIN_MUSIC].sort(() => Math.random() - 0.5)[0];
+
+    // Primero intentamos música realmente generada por IA. No copiamos canciones
+    // concretas: usamos los rasgos que funcionan en los grandes vídeos de relax:
+    // piano muy suave, pads cálidos, agua/lluvia sutil, melodía lenta y pocos
+    // elementos para que sirva como música de fondo durante horas.
+    const aiPrompt = [
+      "30-second original instrumental relaxation music preview.",
+      "Very slow 52 BPM, gentle felt piano carrying a simple memorable melody.",
+      "Warm soft ambient pads, airy strings, subtle glassy texture, deep warm bass.",
+      "Very soft natural water ambience and distant rain texture, no thunder.",
+      "Sparse arrangement, long sustained notes, smooth transitions, no vocals, no lyrics.",
+      "No aggressive drums, no sharp transients, no dramatic climax, no sudden changes.",
+      "Peaceful, dreamy, sleep-friendly, meditation and spa atmosphere.",
+      "Premium cinematic ambient production, stereo, spacious reverb, soft dynamics.",
+      "Original composition, do not imitate or reproduce any existing song."
+    ].join(" ");
+
     try {
-      if (existingMusic.length) {
-        music.push({
-          name: track.file,
-          url: "/media/music/" + encodeURIComponent(track.file),
-          ai: true,
-          provider: "RelaxScape Ambient Engine",
-          generated: true,
-          fallback: false,
-          label: track.label,
-          category: track.category
-        });
-      } else {
-        const previewName = "relaxscape-preview-" + Date.now() + ".wav";
-        const previewPath = path.join(MUSIC_DIR, previewName);
-        makeCompositionWav(track, previewPath);
-        if (fs.existsSync(previewPath)) {
+      if (process.env.GEMINI_API_KEY) {
+        const generated = await generateLyriaMusicFile(aiPrompt, 1);
+        music.push(generated);
+      } else if (process.env.POLLINATIONS_API_KEY) {
+        const generated = await generatePollinationsMusicFile(aiPrompt, 1);
+        music.push(generated);
+      }
+    } catch (e) {
+      console.error("[AI options] IA musical no disponible:", e.message);
+      musicErrors.push("IA musical: " + e.message);
+    }
+
+    // Fallback local: siempre habrá una previa aunque el proveedor de IA falle.
+    if (!music.length) {
+      try {
+        if (existingMusic.length) {
           music.push({
-            name: previewName,
-            url: "/media/music/" + encodeURIComponent(previewName),
-            ai: true,
+            name: track.file,
+            url: "/media/music/" + encodeURIComponent(track.file),
+            ai: false,
             provider: "RelaxScape Ambient Engine",
             generated: true,
             fallback: true,
             label: track.label,
             category: track.category
           });
+        } else {
+          const previewName = "relaxscape-preview-" + Date.now() + ".wav";
+          const previewPath = path.join(MUSIC_DIR, previewName);
+          makeCompositionWav(track, previewPath);
+          if (fs.existsSync(previewPath)) {
+            music.push({
+              name: previewName,
+              url: "/media/music/" + encodeURIComponent(previewName),
+              ai: false,
+              provider: "RelaxScape Ambient Engine",
+              generated: true,
+              fallback: true,
+              label: track.label,
+              category: track.category
+            });
+          }
         }
+      } catch (e) {
+        console.error("[AI options] Fallback musical falló:", e.message);
+        musicErrors.push("Fallback musical: " + e.message);
       }
-    } catch (e) {
-      console.error("[AI options] No se pudo crear la previa WAV:", e.message);
-      musicErrors.push("Error generando música: " + e.message);
     }
     if (!music.length) musicErrors.push("No se pudo preparar la biblioteca musical.");
 
