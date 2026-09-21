@@ -87,7 +87,9 @@ function writeWav(file, samples, sampleRate=44100, channels=2){
 }
 
 function makeCompositionWav(track, wavPath){
-  const sr=44100, dur=180, n=sr*dur, samples=new Float32Array(n*2);
+  // Generamos solo 30 s de material original. Después FFmpeg lo repite para
+  // formar la previa de 3 min. Así Render no necesita reservar ~100 MB por pista.
+  const sr=44100, dur=30, n=sr*dur, samples=new Float32Array(n*2);
   const r=track.f1, m=track.f2, h=track.f3, bass=Math.max(55,r*.5), beat=60/56;
   const melody=[r*2,m*2,h*2,m*2,r*2,h*2,m*2,r*1.5,m*2,h*2,r*2,m*2,h*2,m*2,r*2,h*1.5];
   const arp=[r*2.5,m*2.5,h*2.5,m*3,r*3,h*3,m*2.5,r*2.5];
@@ -130,7 +132,10 @@ async function ensureBuiltinMusic(tracks=BUILTIN_MUSIC){
     try{
       console.log("[Music v6] Generando:",track.label);
       makeCompositionWav(track,wav);
-      await runFfmpeg(["-y","-i",wav,"-c:a","libmp3lame","-b:a","160k","-ar","44100",out]);
+      await runFfmpeg([
+        "-y","-stream_loop","-1","-i",wav,"-t","180",
+        "-c:a","libmp3lame","-b:a","160k","-ar","44100",out
+      ]);
     }catch(e){console.error("No se pudo crear composición:",track.file,e.message)}
     finally{try{fs.rmSync(wav,{force:true})}catch{}}
   }
@@ -142,15 +147,13 @@ function listFiles(dir, base) {
 }
 
 app.get("/api/library", (_, res) => {
-  // Nunca bloqueamos la carga de la web generando 24 pistas con FFmpeg.
-  // Las pistas que falten se crean en segundo plano.
+  // La biblioteca nunca genera audio durante la carga de la web.
+  // La música se prepara solo cuando el usuario pulsa Crear IA.
   res.json({
     images: listFiles(IMAGE_DIR, "/media/images"),
     music: listFiles(MUSIC_DIR, "/media/music"),
     videos: listFiles(VIDEO_DIR, "/media/videos").reverse()
   });
-  setImmediate(() => ensureBuiltinMusic(BUILTIN_MUSIC.slice(0, 6))
-    .catch(e => console.error("Error preparando música inicial:", e.message)));
 });
 
 app.post("/api/upload/image", imageUpload.single("image"), (req, res) => {
@@ -775,7 +778,4 @@ app.get("*splat", (_, res) => res.sendFile(path.join(PUBLIC, "index.html")));
 const port = Number(process.env.PORT || 3000);
 app.listen(port, () => {
   console.log(`RelaxScape activo en http://localhost:${port}`);
-  setImmediate(() => ensureBuiltinMusic(BUILTIN_MUSIC.slice(0, 6))
-    .then(() => console.log("Biblioteca musical inicial lista."))
-    .catch(e => console.error("Error preparando la música inicial:", e.message)));
 });
