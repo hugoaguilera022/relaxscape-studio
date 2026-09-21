@@ -559,22 +559,27 @@ app.post("/api/ai-options", async (req, res) => {
     imageErrors.push("Se completaron los 4 paisajes con fondos locales porque Pexels no devolvió suficientes resultados.");
   }
 
-  // IMPORTANTE: no bloqueamos la respuesta esperando la síntesis de 4 músicas.
-  // Las fotos aparecen inmediatamente y la música se prepara en segundo plano.
+  // Generamos las 4 previews aquí antes de responder. Así las tarjetas nunca
+  // apuntan a archivos inexistentes y el audio se puede reproducir inmediatamente.
   aiMusicTracks = aiTracksForBackground(musicPrompt);
-  let music=getAIMusicOptions();
-  if(music.length<4 && !aiMusicPreparing){
-    aiMusicPreparing=true;
-    // Primero garantizamos que la UI reciba 4 opciones: si la síntesis tarda,
-    // usamos pistas locales existentes y luego las sustituimos por las versiones IA.
-    const safeMusic=BUILTIN_MUSIC.slice(0,4).map((t,i)=>({
-      ...t,url:"/media/music/"+t.file,ai:true,generated:false,fallback:true,
-      label:"Base · "+(i+1),provider:"RelaxScape Free"
-    }));
-    music=safeMusic;
-    ensureBuiltinMusic(aiMusicTracks).catch(e=>console.error("[AI Music]",e.message)).finally(()=>{aiMusicPreparing=false});
+  aiMusicPreparing = true;
+  try {
+    await ensureBuiltinMusic(aiMusicTracks);
+  } catch(e) {
+    console.error("[AI Music] preparación:",e.message);
+  } finally {
+    aiMusicPreparing = false;
   }
-  res.json({images,music,musicReady:music.length>=4,musicPreparing:aiMusicPreparing,imageErrors,musicErrors:music.length<4?["Preparando las 4 músicas en segundo plano…"]:[],provider:"RelaxScape Free"});
+  const music=getAIMusicOptions();
+  res.json({
+    images,
+    music,
+    musicReady:music.length>=4,
+    musicPreparing:false,
+    imageErrors,
+    musicErrors:music.length<4?["No se pudieron crear las 4 previews musicales."]:[],
+    provider:"RelaxScape Free"
+  });
 });
 
 function hashText(text){
