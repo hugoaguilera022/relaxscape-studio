@@ -595,7 +595,7 @@ app.post("/api/generate-video", async (req, res) => {
   const imageName = decodeURIComponent(image.split("/").pop());
   const musicName = decodeURIComponent(music.split("/").pop());
   let imagePath = path.join(IMAGE_DIR, imageName);
-  if (!fs.existsSync(imagePath) && /^https?:\\/\\//i.test(image)) {
+  if (!fs.existsSync(imagePath) && /^https?:\/\//i.test(image)) {
     const downloaded = await fetchWithTimeout(image, {}, 8000);
     if (!downloaded.ok) return res.status(502).json({ error: "No se pudo descargar el paisaje seleccionado." });
     const localName = "selected-pexels-" + Date.now() + ".jpg";
