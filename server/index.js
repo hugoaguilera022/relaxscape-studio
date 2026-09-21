@@ -47,7 +47,7 @@ function safe(name) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-const MUSIC_ENGINE_VERSION = "v7-peaceful-harmonic-composer";
+const MUSIC_ENGINE_VERSION = "v8-prompt-aware-ambient-composer";
 
 const BUILTIN_MUSIC = [
   ["relax-piano.mp3","Piano nocturno","Sueño",261.63,329.63,392],
@@ -91,8 +91,11 @@ function makeCompositionWav(track, wavPath){
   // estricto, melodía respirada y capas suaves. Se renderiza a 22.05 kHz y se
   // entrega a FFmpeg a 44.1 kHz para mantener calidad sin bloquear Render.
   const sr=22050, dur=16, n=sr*dur, samples=new Float32Array(n*2);
+  const profile=String(track.musicProfile||"").toLowerCase();
+  const ultraCalm=/relax|calm|sleep|meditat|peace|soft|ambient|piano|nature|spa|healing|stress|anxiety/.test(profile);
+  const darkCalm=/deep|night|dream|sleep/.test(profile);
   const seed=Math.abs(Math.floor(track.f1*100 + track.f2*10 + track.f3)) % 1000;
-  const bpm=[46,48,50,52][seed%4], beat=60/bpm, bar=beat*4;
+  const bpm=(ultraCalm ? [40,42,44,46] : [46,48,50,52])[seed%4], beat=60/bpm, bar=beat*4;
   const hz=m=>440*Math.pow(2,(m-69)/12);
   const midiFromHz=f=>69+12*Math.log2(f/440);
   const baseMidi=Math.round(midiFromHz(track.f1));
@@ -104,7 +107,7 @@ function makeCompositionWav(track, wavPath){
     {scale:[0,2,3,5,7,9,10], name:"dorian"},
     {scale:[0,2,3,5,7,8,10], name:"minor"}
   ];
-  const mode=modes[seed%3];
+  const mode=modes[darkCalm ? 2 : seed%3];
   const scale=mode.scale;
 
   // Progresiones pensadas para reposo: tónica, subdominante y dominante
@@ -190,7 +193,7 @@ function makeCompositionWav(track, wavPath){
     [4,null,3,2,3,null,1,2],
     [2,4,null,3,2,null,3,1]
   ];
-  const mp=melodyPatterns[seed%melodyPatterns.length];
+  const mp=melodyPatterns[ultraCalm ? (seed+1)%melodyPatterns.length : seed%melodyPatterns.length];
   for(let b=0;b<8;b++){
     const ch=chords[b];
     for(let j=0;j<8;j++){
@@ -203,7 +206,7 @@ function makeCompositionWav(track, wavPath){
       const note=pool[degree%pool.length];
       // Entradas fuera del pulso para una sensación humana y flotante.
       const t=b*bar+j*(beat/2)+beat*(j%2===0?.18:.05);
-      events.push({t,f:hz(note),v:.095+(j%4===0?.025:0)});
+      events.push({t,f:hz(note),v:ultraCalm ? (.050+(j%4===0?.012:0)) : (.095+(j%4===0?.025:0))});
     }
   }
 
@@ -221,7 +224,7 @@ function makeCompositionWav(track, wavPath){
     const chordT=t-b*bar;
     const pan=.08*Math.sin(2*Math.PI*t/19);
     const padNotes=[ch.notes[0]-12,ch.notes[1],ch.notes[3],ch.notes[4]];
-    const padLevels=[.045,.028,.020,.012];
+    const padLevels=ultraCalm ? [.060,.038,.026,.016] : [.045,.028,.020,.012];
     for(let p=0;p<padNotes.length;p++){
       const v=padVoice(hz(padNotes[p]),chordT,padLevels[p]);
       left+=v*(1-pan); right+=v*(1+pan);
@@ -244,7 +247,7 @@ function makeCompositionWav(track, wavPath){
     }
 
     // Aire alto muy sutil, siempre basado en la 9ª del acorde.
-    const air=padVoice(hz(ch.notes[4]+12),chordT,.006);
+    const air=padVoice(hz(ch.notes[4]+12),chordT,ultraCalm ? .009 : .006);
     left+=air*.88; right+=air*1.05;
 
     // Entrada/salida global muy suave para que el preview pueda repetirse.
@@ -265,7 +268,7 @@ function makeCompositionWav(track, wavPath){
   writeWav(wavPath,samples,sr,2);
 }
 async function ensureBuiltinMusic(tracks=BUILTIN_MUSIC){
-  const marker=path.join(MUSIC_DIR,".relaxscape-music-engine-v7");
+  const marker=path.join(MUSIC_DIR,".relaxscape-music-engine-v8");
   if(!fs.existsSync(marker)){
     for(const t of BUILTIN_MUSIC){try{fs.rmSync(path.join(MUSIC_DIR,t.file),{force:true})}catch{}}
     try{fs.writeFileSync(marker,MUSIC_ENGINE_VERSION)}catch{}
@@ -273,7 +276,7 @@ async function ensureBuiltinMusic(tracks=BUILTIN_MUSIC){
   for(const track of tracks.filter(t=>!fs.existsSync(path.join(MUSIC_DIR,t.file)))){
     const out=path.join(MUSIC_DIR,track.file), wav=path.join(MUSIC_DIR,"."+track.file+".wav");
     try{
-      console.log("[Music v6] Generando:",track.label);
+      console.log("[Music v8] Generando:",track.label);
       makeCompositionWav(track,wav);
       await runFfmpeg([
         "-y","-stream_loop","-1","-i",wav,"-t","30",
@@ -456,9 +459,10 @@ function makeFallbackLandscape(filename, theme="nature") {
 }
 
 let aiMusicPreparing = false;
+let aiMusicTracks = [];
 
 function getAIMusicOptions(){
-  const defs = [
+  const defs = aiMusicTracks.length ? aiMusicTracks.map(t=>({file:t.file,label:t.label})) : [
     { file:"relax-piano.mp3", label:"Piano nocturno" },
     { file:"relax-ocean.mp3", label:"Piano y océano" },
     { file:"relax-rain.mp3", label:"Piano y lluvia" },
@@ -472,7 +476,8 @@ function getAIMusicOptions(){
 }
 
 app.post("/api/ai-options", async (req, res) => {
-  const theme = String(req.body?.theme || "relaxing nature").trim().slice(0, 120);
+  const theme = String(req.body?.theme || "peaceful lake, misty mountains, soft dawn light").trim().slice(0, 120);
+  const musicPrompt = String(req.body?.musicPrompt || "very slow peaceful ambient piano, warm soft pads, gentle evolving harmony, deep calm atmosphere, spacious reverb, no drums, no rhythmic pulse").trim().slice(0, 220);
   const images = [];
   const imageErrors = [];
 
@@ -506,17 +511,36 @@ app.post("/api/ai-options", async (req, res) => {
 
   // IMPORTANTE: no bloqueamos la respuesta esperando la síntesis de 4 músicas.
   // Las fotos aparecen inmediatamente y la música se prepara en segundo plano.
+  aiMusicTracks = aiTracksForBackground(musicPrompt);
   let music=getAIMusicOptions();
   if(music.length<4 && !aiMusicPreparing){
     aiMusicPreparing=true;
-    ensureBuiltinMusic(aiTracksForBackground()).catch(e=>console.error("[AI Music]",e.message)).finally(()=>{aiMusicPreparing=false});
+    ensureBuiltinMusic(aiMusicTracks).catch(e=>console.error("[AI Music]",e.message)).finally(()=>{aiMusicPreparing=false});
   }
   res.json({images,music,musicReady:music.length>=4,musicPreparing:aiMusicPreparing,imageErrors,musicErrors:music.length<4?["Preparando las 4 músicas en segundo plano…"]:[],provider:"RelaxScape Free"});
 });
 
-function aiTracksForBackground(){
-  return ["relax-piano.mp3","relax-ocean.mp3","relax-rain.mp3","relax-dream.mp3"]
-    .map(file=>BUILTIN_MUSIC.find(t=>t.file===file)).filter(Boolean);
+function hashText(text){
+  let h=2166136261;
+  for(const ch of String(text)){h^=ch.charCodeAt(0);h=Math.imul(h,16777619)}
+  return (h>>>0).toString(36);
+}
+function aiTracksForBackground(prompt=""){ 
+  const p=String(prompt||"very slow peaceful ambient piano, warm soft pads, spacious reverb, no drums").slice(0,220);
+  const seedBase=parseInt(hashText(p),36)||1;
+  const bases=[
+    [196,246.94,293.66],[174.61,220,261.63],[146.83,196,246.94],[164.81,220,277.18]
+  ];
+  return bases.map((f,i)=>{
+    const b=BUILTIN_MUSIC[i];
+    const shift=((seedBase+i*7)%5)-2;
+    return {...b,
+      file:"ai-prompt-"+hashText(p)+"-"+(i+1)+".mp3",
+      label:"IA · "+(i+1),
+      f1:f[0]*Math.pow(2,shift/12),f2:f[1]*Math.pow(2,shift/12),f3:f[2]*Math.pow(2,shift/12),
+      musicProfile:p+" variation "+(i+1)
+    };
+  });
 }
 
 app.get("/api/ai-options-status", (_,res)=>{
