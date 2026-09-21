@@ -228,7 +228,7 @@ async function generatePollinationsImageFile(prompt, index) {
 
 async function generatePollinationsMusicFile(prompt, index) {
   const url = "https://gen.pollinations.ai/audio/" + encodeURIComponent(prompt);
-  const r = await fetchWithTimeout(url, { headers: pollinationsHeaders() }, 45000);
+  const r = await fetchWithTimeout(url, { headers: pollinationsHeaders() }, 12000);
   if (!r.ok) throw new Error("Pollinations música HTTP " + r.status);
   const type = r.headers.get("content-type") || "";
   if (!type.includes("audio") && !type.includes("mpeg") && !type.includes("octet-stream")) {
