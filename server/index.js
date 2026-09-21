@@ -738,30 +738,35 @@ function musicIntentProfile(prompt=""){
   return parts.join(", ");
 }
 
-function aiTracksForBackground(prompt=""){ 
-  const p=String(prompt||"very slow peaceful ambient piano, warm soft pads, spacious reverb, no drums").slice(0,220);
+function aiTracksForBackground(prompt=""){
+  const p=String(prompt||"deep relaxation ambient music").trim().slice(0,220);
   const intent=musicIntentProfile(p);
-  const seedBase=parseInt(hashText(p),36)||1;
-  const bases=[[196,246.94,293.66],[174.61,220,261.63],[146.83,196,246.94],[164.81,220,277.18]];
-  const variations=[
-    "variation 1: exact requested instrumentation, closest interpretation, intimate and legato",
-    "variation 2: exact requested instrumentation, deeper harmony, longer sustained notes and wider space",
-    "variation 3: exact requested instrumentation, slightly more melodic movement while preserving the requested instruments",
-    "variation 4: exact requested instrumentation, cinematic development and a gentle final resolution"
+  const seed=hashText(p);
+  const variants=[
+    "minimal version: one clear lead instrument, almost no accompaniment, very long pauses",
+    "organic version: lead instrument plus one subtle natural texture, wider room",
+    "harmonic version: lead instrument plus soft sustained harmony, gentle chord movement",
+    "immersive version: same requested palette with slow evolving ambience and spacious depth"
   ];
-  return bases.map((f,i)=>{
+  return variants.map((variation,i)=>{
     const b=BUILTIN_MUSIC[i];
-    const shift=((seedBase+i*7)%7)-3;
-    return {...b,
-      file:"ai-prompt-"+hashText(p)+"-v13-"+(i+1)+".mp3",
+    return {
+      ...b,
+      file:"ai-prompt-"+seed+"-v14-"+(i+1)+".mp3",
       label:"IA · "+(i+1),
-      variant:i,
-      f1:f[0]*Math.pow(2,shift/12),f2:f[1]*Math.pow(2,shift/12),f3:f[2]*Math.pow(2,shift/12),
-      musicProfile:"user request: "+p+". interpreted sound: "+intent+". "+variations[i]
+      variant:i+1,
+      f1:b.f1,f2:b.f2,f3:b.f3,
+      musicProfile:[
+        "USER SEARCH: "+p,
+        "STRICT SOUND INTENT: "+intent,
+        "IMPORTANT: the user's requested instrument/texture must be the dominant audible element.",
+        "Do not default to piano unless piano was explicitly requested.",
+        variation,
+        "The four options must sound noticeably different from each other while remaining faithful to the same search."
+      ].join(". ")
     };
   });
 }
-
 app.get("/api/ai-options-status", (_,res)=>{
   const music=getAIMusicOptions();
   res.json({music,musicReady:music.length>=4,musicPreparing:aiMusicPreparing,musicErrors:aiMusicErrors});
