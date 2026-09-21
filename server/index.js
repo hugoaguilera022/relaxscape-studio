@@ -294,6 +294,58 @@ function runFfmpeg(args) {
   });
 }
 
+
+app.post("/api/generate-relax-mix", async (req, res) => {
+  const hours = Number(req.body?.durationHours || 1);
+  if (![1, 2].includes(hours)) return res.status(400).json({ error: "La duración debe ser de 1 o 2 horas." });
+  try {
+    await ensureBuiltinMusic();
+    const available = BUILTIN_MUSIC.map(t => path.join(MUSIC_DIR, t.file)).filter(fs.existsSync);
+    if (available.length < 6) return res.status(503).json({ error: "La biblioteca musical todavía no está lista. Inténtalo de nuevo en unos segundos." });
+
+    const shuffled = [...available].sort(() => Math.random() - 0.5);
+    const stamp = Date.now();
+    const workDir = path.join(MUSIC_DIR, "mix-" + stamp);
+    fs.mkdirSync(workDir, { recursive: true });
+    const basePath = path.join(workDir, "base.mp3");
+    const finalName = "relaxscape-relax-mix-" + hours + "h-" + stamp + ".mp3";
+    const finalPath = path.join(MUSIC_DIR, finalName);
+
+    try {
+      const inputs = [];
+      const filters = [];
+      for (let i = 0; i < shuffled.length; i++) {
+        inputs.push("-i", shuffled[i]);
+        filters.push("[" + i + ":a]aresample=44100,volume=0.72[a" + i + "]");
+      }
+      let current = "a0";
+      for (let i = 1; i < shuffled.length; i++) {
+        const next = "mix" + i;
+        filters.push("[" + current + "][a" + i + "]acrossfade=d=6:c1=tri:c2=tri[" + next + "]");
+        current = next;
+      }
+
+      await runFfmpeg(["-y", ...inputs, "-filter_complex", filters.join(";"), "-map", "[" + current + "]", "-c:a", "libmp3lame", "-b:a", "128k", basePath]);
+      await runFfmpeg(["-y", "-stream_loop", "-1", "-i", basePath, "-t", String(hours * 3600), "-c:a", "libmp3lame", "-b:a", "160k", "-af", "afade=t=out:st=" + String(hours * 3600 - 18) + ":d=18", finalPath]);
+
+      res.json({
+        name: finalName,
+        url: "/media/music/" + encodeURIComponent(finalName),
+        hours,
+        provider: "RelaxScape",
+        type: "mixed-library",
+        tracks: shuffled.map(f => path.basename(f)),
+        styles: [...new Set(BUILTIN_MUSIC.map(x => x.category))]
+      });
+    } finally {
+      fs.rmSync(workDir, { recursive: true, force: true });
+    }
+  } catch (e) {
+    console.error("Error creando mezcla RelaxScape:", e.message);
+    res.status(500).json({ error: "No se pudo crear la mezcla relajante: " + e.message });
+  }
+});
+
 app.post("/api/generate-video", async (req, res) => {
   const { image, music, durationHours = 1 } = req.body || {};
   if (!image || !music) return res.status(400).json({ error: "Selecciona una imagen y una pista de música." });
