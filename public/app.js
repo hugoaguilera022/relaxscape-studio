@@ -30,58 +30,38 @@ async function loadPexels(){
   }catch(e){$("#builderStatus").textContent=e.message}
 }
 function render(){renderImages();renderMusic();renderVideos();renderAICreator();$("#statVideos").textContent=S.videos.length;update();picker();}
-async function ensureAIOptions(){
-  if(S.aiReady||S.aiLoading)return;
-  S.aiLoading=true;
-  const status=$("#aiSelectionStatus"),ig=$("#aiImageGrid"),mg=$("#aiMusicList");
-  if(status)status.textContent="Preparando 4 paisajes y 4 músicas según tus descripciones…";
-  if(ig)ig.innerHTML='<div class="empty">✨ Buscando 4 paisajes…</div>';
-  if(mg)mg.innerHTML='<div class="empty">♫ Preparando 4 músicas…</div>';
+async function ensureAIOptions(){ return; }
+
+async function generateAIImagesOnly(){
+  const prompt=(($( "#aiImagePrompt").value||"").trim()||"peaceful lake, misty mountains, soft dawn light");
+  S.aiLoading=true; S.aiImages=[]; S.image=null;
+  const status=$( "#aiSelectionStatus"), ig=$( "#aiImageGrid");
+  if(status)status.textContent="Generando 4 paisajes IA a partir de tu descripción…";
+  if(ig)ig.innerHTML='<div class="empty">✨ Generando 4 paisajes independientes…</div>';
   try{
-    const theme=(($("#aiImagePrompt")?.value||$("#prompt")?.value||"").trim()||"peaceful lake, misty mountains, soft dawn light");
-    const typedMusic=($("#aiMusicPrompt")?.value||"").trim();
-    // Si el usuario busca un paisaje concreto y no escribe una búsqueda musical aparte,
-    // esa misma búsqueda es también la fuente de la música.
-    const musicPrompt=typedMusic||theme;
-    const d=await api("/api/ai-options",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({theme,musicPrompt})});
-    S.aiImages=d.images||[]; S.aiMusic=d.music||[];
+    const d=await api("/api/ai-images",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({theme:prompt})});
+    S.aiImages=d.images||[];
     if(S.aiImages[0])S.image=S.aiImages[0];
-    if(S.aiMusic[0])S.music=S.aiMusic[0];
     renderAICreator();
-    if(S.aiImages.length){
-      S.aiReady=!!(S.aiImages.length&&S.aiMusic.length>=4);
-      if(status)status.textContent=S.aiReady?"✓ 4 paisajes y 4 músicas listas.":"✓ Paisajes listos · generando las 4 músicas…";
-      if(!S.aiReady) await waitForAIMusic();
-    }else{
-      if(status)status.textContent="Preparando opciones…";
-      await waitForAIMusic();
-    }
+    if(status)status.textContent="✓ Paisajes generados. Ahora puedes elegir uno.";
   }catch(e){
-    if(status)status.textContent="Error: "+e.message;
-    if(ig)ig.innerHTML='<div class="empty">No se pudieron cargar los paisajes.<br><small>'+e.message+'</small></div>';
-    if(mg)mg.innerHTML='<div class="empty">No se pudo preparar la música.<br><small>'+e.message+'</small></div>';
+    if(status)status.textContent="Error de imagen: "+e.message;
+    if(ig)ig.innerHTML='<div class="empty">No se pudieron generar los paisajes.<br><small>'+e.message+'</small></div>';
   }finally{S.aiLoading=false;renderAICreator()}
 }
-async function waitForAIMusic(){
-  for(let attempt=0;attempt<144;attempt++){
-    await new Promise(r=>setTimeout(r,2500));
-    try{
-      const d=await api("/api/ai-options-status");
-      if(d.music?.length){
-        S.aiMusic=d.music;
-        if(!S.music)S.music=S.aiMusic[0];
-        renderAICreator();
-      }
-      if(d.musicReady){
-        S.aiReady=!!(S.aiImages.length&&S.aiMusic.length>=4);
-        if($("#aiSelectionStatus"))$("#aiSelectionStatus").textContent="✓ 4 paisajes y 4 músicas listas.";
-        return;
-      }
-      if(d.musicErrors?.length){ if($("#aiSelectionStatus"))$("#aiSelectionStatus").textContent="Error de música: "+d.musicErrors[0]; return; }
-      if($("#aiSelectionStatus"))$("#aiSelectionStatus").textContent="✓ Paisajes listos · generando música "+Math.min(4,Math.floor(attempt/4)+1)+"/4…";
-    }catch(e){}
-  }
-  if($("#aiSelectionStatus"))$("#aiSelectionStatus").textContent="Las fotos están listas; la música todavía está preparándose. Déjala terminar; las 4 pistas se generan en segundo plano.";
+
+async function generateAIMusicOnly(){
+  const prompt=(($( "#aiMusicPrompt").value||"").trim()||"deep relaxation ambient music");
+  S.aiLoading=true; S.aiMusic=[]; S.music=null;
+  const status=$( "#aiSelectionStatus"), mg=$( "#aiMusicList");
+  if(status)status.textContent="Generando 4 músicas según tu descripción…";
+  if(mg)mg.innerHTML='<div class="empty">♫ Preparando 4 músicas independientes…</div>';
+  try{
+    await api("/api/ai-music",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({musicPrompt:prompt})});
+    await waitForAIMusic();
+    if(status)status.textContent="✓ Música generada. Ahora puedes elegir una pista.";
+  }catch(e){if(status)status.textContent="Error de música: "+e.message}
+  finally{S.aiLoading=false;renderAICreator()}
 }
 function renderAICreator(){
   const ig=$("#aiImageGrid"),mg=$("#aiMusicList");
