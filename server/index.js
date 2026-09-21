@@ -340,9 +340,10 @@ app.post("/api/ai-options", async (req, res) => {
       if (!images.length) imageErrors.push("Pexels no devolvió imágenes.");
     } else {
       imageErrors.push("Falta PEXELS_API_KEY en Render.");
+    }
 
-    // La música debe estar lista en la misma petición: antes se generaba en
-    // segundo plano y el frontend recibía imágenes pero cero pistas.
+    // La música se prepara después de las imágenes, independientemente de
+    // que Pexels tenga clave o de que alguna búsqueda haya fallado.
     const existingMusic = BUILTIN_MUSIC.filter(t => fs.existsSync(path.join(MUSIC_DIR, t.file)));
     const musicTracks = [...(existingMusic.length ? existingMusic : BUILTIN_MUSIC)]
       .sort(() => Math.random() - 0.5).slice(0, 4);
