@@ -242,6 +242,23 @@ $("#aiCreateHour").onclick=async()=>{
   finally{btn.disabled=false}
 };
 $("#closeResult").onclick=()=>$("#result").classList.add("hidden");
+document.addEventListener("click",ev=>{
+  const mix=ev.target.closest("#createFreesoundMix");
+  if(mix){
+    ev.preventDefault();
+    ev.stopPropagation();
+    if(!mix.disabled) createFreesoundAIMix();
+    return;
+  }
+  const dl=ev.target.closest("[data-download-external]");
+  if(dl){
+    ev.preventDefault();
+    ev.stopPropagation();
+    const x=S.externalMusic.find(v=>String(v.id)===String(dl.dataset.downloadExternal));
+    if(x) downloadExternalMusic(x);
+  }
+},true);
+
 
 async function createRelaxMix(hours){
   const status=$("#mixStatus"), b=hours===1?$("#mix1h"):$("#mix2h");
