@@ -356,7 +356,11 @@ async function ensureBuiltinMusic(tracks=BUILTIN_MUSIC){
       await runFfmpeg(["-y","-i",wav,"-t","24","-c:a","libmp3lame","-b:a","160k","-ar","44100",out]);
       if(!valid(track)) throw new Error("FFmpeg no creó un MP3 válido");
       console.log("[Music v10] Lista:",track.file);
-    }catch(e){console.error("[Music v10] ERROR",track.file,e.stack||e.message)}
+    }catch(e){
+      const msg=(e&&e.message)||String(e);
+      aiMusicErrors.push(track.label+": "+msg);
+      console.error("[Music v10] ERROR",track.file,e.stack||e.message)
+    }
     finally{try{fs.rmSync(wav,{force:true})}catch{}}
   }
 }
@@ -534,6 +538,7 @@ function makeFallbackLandscape(filename, theme="nature") {
 
 let aiMusicPreparing = false;
 let aiMusicTracks = [];
+let aiMusicErrors = [];
 
 function getAIMusicOptions(){
   const defs = aiMusicTracks.length ? aiMusicTracks : [
@@ -598,11 +603,12 @@ app.post("/api/ai-options", async (req, res) => {
   // Las imágenes se entregan inmediatamente. La música se genera en segundo plano
   // para que Render no bloquee la petición mientras crea las 4 previews.
   aiMusicTracks = aiTracksForBackground(musicPrompt);
+  aiMusicErrors = [];
   const music=getAIMusicOptions();
   if(music.length<4 && !aiMusicPreparing){
     aiMusicPreparing = true;
     ensureBuiltinMusic(aiMusicTracks)
-      .catch(e=>console.error("[AI Music] preparación:",e.message))
+      .catch(e=>{ aiMusicErrors.push(e.message||String(e)); console.error("[AI Music] preparación:",e.stack||e.message); })
       .finally(()=>{ aiMusicPreparing=false; });
   }
   res.json({
@@ -649,15 +655,23 @@ function aiTracksForBackground(prompt=""){
 
 app.get("/api/ai-options-status", (_,res)=>{
   const music=getAIMusicOptions();
-  res.json({music,musicReady:music.length>=4,musicPreparing:aiMusicPreparing});
+  res.json({music,musicReady:music.length>=4,musicPreparing:aiMusicPreparing,musicErrors:aiMusicErrors});
 });
 
 function runFfmpeg(args) {
   return new Promise((resolve, reject) => {
     const p = spawn(ffmpegPath, args);
     let stderr = "";
+    let settled = false;
+    const fail = e => { if(!settled){settled=true;reject(e instanceof Error?e:new Error(String(e)))} };
+    p.on("error", fail);
     p.stderr.on("data", d => stderr += d.toString());
-    p.on("close", code => code === 0 ? resolve() : reject(new Error(stderr.slice(-4000))));
+    p.on("close", code => {
+      if(settled)return;
+      settled=true;
+      if(code===0) resolve();
+      else reject(new Error(stderr.slice(-4000)||("FFmpeg terminó con código "+code)));
+    });
   });
 }
 
