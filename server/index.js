@@ -247,7 +247,14 @@ function makeCompositionWav(track, wavPath){
   if(semantic.sad) progressions.push([0,5,3,4],[0,3,6,4]);
   if(semantic.jazz) progressions.push([0,3,6,2],[0,2,5,1]);
   if(semantic.flamenco) progressions.push([0,5,4,3],[0,3,2,1]);
-  // Progresiones diatónicas adaptadas a la escala para mantener coherencia armónica.\n  const diatonicProgressions = scale.length >= 7\n    ? [[0,5,3,4],[0,3,5,4],[0,4,2,5],[0,2,5,3]]\n    : [[0,3,4,0],[0,2,3,4],[0,3,2,4],[0,2,4,3]];\n  const progressionPool = semantic.sad\n    ? diatonicProgressions.concat(scale.length >= 7 ? [[0,5,3,4]] : [[0,3,2,4]])\n    : diatonicProgressions;\n  const progression=progressionPool[(Math.floor(hash01(19)*progressionPool.length)+variant-1)%progressionPool.length];
+  // Progresiones diatónicas adaptadas a la escala para mantener coherencia armónica.
+  const diatonicProgressions = scale.length >= 7
+    ? [[0,5,3,4],[0,3,5,4],[0,4,2,5],[0,2,5,3]]
+    : [[0,3,4,0],[0,2,3,4],[0,3,2,4],[0,2,4,3]];
+  const progressionPool = semantic.sad
+    ? diatonicProgressions.concat(scale.length >= 7 ? [[0,5,3,4]] : [[0,3,2,4]])
+    : diatonicProgressions;
+  const progression=progressionPool[(Math.floor(hash01(19)*progressionPool.length)+variant-1)%progressionPool.length];
 
   const motifs=[
     [0,1,2,4,2,1,3,2],[0,2,4,3,1,4,2,0],[0,3,2,4,5,3,1,0],
