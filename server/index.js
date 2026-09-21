@@ -47,7 +47,7 @@ function safe(name) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-const MUSIC_ENGINE_VERSION = "v21-instrument-family-variety";
+const MUSIC_ENGINE_VERSION = "v22-multi-sound-request-lock";
 
 const BUILTIN_MUSIC = [
   ["relax-piano.mp3","Piano nocturno","Sueño",261.63,329.63,392],
@@ -563,7 +563,13 @@ async function generateLyriaMusicFile(prompt,index=1){
   if(has("bosque","forest","naturaleza","nature","pájaros","pajaros","birds")) requested.push("organic forest ambience");
 
   const explicit=requested.length>0 ? requested.join(", ") : family;
-  const arrangements=[
+  const requestedPalette=requested.length>0 ? requested.join(" + ") : family;
+  const arrangements=requested.length>0 ? [
+    "use ALL requested instruments and textures clearly: the first requested sound leads, the others provide audible secondary phrases and sustained layers",
+    "use ALL requested instruments and textures clearly: alternate the lead between the requested sounds while keeping the others softly audible",
+    "use ALL requested instruments and textures clearly: build a layered ensemble where each requested sound has its own register and musical role",
+    "use ALL requested instruments and textures clearly: create a slow conversational arrangement with distinct entrances, counterlines and texture changes for every requested sound"
+  ] : [
     "piano-led motif with gentle answering phrases and long pedal resonance",
     "breathy flute melody over very soft sustained harmony, with pauses between phrases",
     "fingerpicked guitar motif with subtle counter-melody and slowly changing open chords",
@@ -578,9 +584,11 @@ async function generateLyriaMusicFile(prompt,index=1){
 
   const finalPrompt=[
     "Create an original professional instrumental deep-relaxation ambient composition.",
+    "MULTI-SOUND REQUIREMENT: if the user requested multiple instruments or textures, ALL of them must be audibly present in this option; never reduce the request to one sound.",
+    "REQUESTED PALETTE: "+requestedPalette+".",
     "PRIMARY TIMBRE FOR THIS OPTION: "+family+".",
     "USER REQUESTED SOUND: "+explicit+".",
-    "Do not default to piano if this option's primary family is flute, guitar or strings.",
+    "Do not default to piano if piano was not requested. Do not omit any requested instrument or texture.",
     arrangements[n%arrangements.length]+".",
     structures[n%structures.length]+".",
     "The four options must be audibly different: different lead instrument, register, articulation, harmonic texture and room character.",
