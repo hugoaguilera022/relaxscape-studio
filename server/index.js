@@ -1384,30 +1384,25 @@ function buildAIGenPrompt(query){
   ].join(" ");
 }
 
-// GRATUITO: usamos el Space oficial de ACE-Step 1.5 en Hugging Face.
-// El Space expone la API de cola de Gradio; no requiere REPLICATE_API_TOKEN.
-// Si el Space está dormido, Hugging Face lo despierta y puede tardar más en arrancar.
+// GRATUITO: usamos la API REST oficial del Space de ACE-Step 1.5.
+// No usamos Replicate ni una API de Gradio: ACE-Step documenta /v1/music/generate
+// para crear la tarea, /v1/jobs/{job_id} para consultarla y /v1/audio para descargarla.
 const ACESTEP_HF_SPACE="https://ace-step-ace-step-v1-5.hf.space";
 
 async function aceStepHFGenerate(query, durationSeconds){
-  const prompt=buildAIGenPrompt(query);
-  // API pública del botón /generate_music del Space oficial.
-  // Orden actual de controles: prompt, lyrics, duration, bpm, language,
-  // instrumental, guidance scale, seed.
   const payload={
-    data:[
-      prompt,
-      "[Instrumental]",
-      Math.max(10,Math.min(600,Number(durationSeconds)||600)),
-      null,
-      "英文 (en)",
-      "是",
-      7,
-      null
-    ]
+    caption:buildAIGenPrompt(query),
+    lyrics:"[Instrumental]",
+    audio_duration:Math.max(10,Math.min(600,Number(durationSeconds)||600)),
+    thinking:true,
+    audio_format:"mp3",
+    batch_size:1,
+    inference_steps:8,
+    guidance_scale:7,
+    seed:-1
   };
   const r=await fetchWithTimeout(
-    ACESTEP_HF_SPACE+"/gradio_api/call/generate_music",
+    ACESTEP_HF_SPACE+"/v1/music/generate",
     {
       method:"POST",
       headers:{"Content-Type":"application/json","Accept":"application/json"},
@@ -1417,94 +1412,73 @@ async function aceStepHFGenerate(query, durationSeconds){
   );
   const text=await r.text();
   let data={}; try{data=JSON.parse(text)}catch{}
-  if(!r.ok) throw new Error(data?.detail||data?.error||text.slice(0,500)||("Hugging Face HTTP "+r.status));
-  if(!data.event_id) throw new Error("El Space de ACE-Step no devolvió un event_id.");
-  return data.event_id;
+  if(!r.ok) throw new Error(data?.detail||data?.error||text.slice(0,700)||("ACE-Step HTTP "+r.status));
+  if(!data.job_id) throw new Error("ACE-Step no devolvió un job_id.");
+  return data.job_id;
 }
 
-async function aceStepHFWait(eventId, timeoutMs=12*60*1000){
+async function aceStepHFWait(jobId, timeoutMs=18*60*1000){
   const started=Date.now();
-  const r=await fetch(
-    ACESTEP_HF_SPACE+"/gradio_api/call/generate_music/"+encodeURIComponent(eventId),
-    {headers:{Accept:"text/event-stream"}}
-  );
-  if(!r.ok) throw new Error("ACE-Step/Hugging Face no pudo consultar la generación (HTTP "+r.status+").");
-  if(!r.body) throw new Error("ACE-Step no devolvió un flujo de resultados.");
-
-  const reader=r.body.getReader();
-  const decoder=new TextDecoder();
-  let buffer="";
-  let result=null;
   while(Date.now()-started<timeoutMs){
-    const {value,done}=await reader.read();
-    if(value) buffer+=decoder.decode(value,{stream:!done});
-    const chunks=buffer.split("\n\n");
-    buffer=chunks.pop()||"";
-    for(const chunk of chunks){
-      const lines=chunk.split("\n");
-      let event="", payload="";
-      for(const line of lines){
-        if(line.startsWith("event:")) event=line.slice(6).trim();
-        if(line.startsWith("data:")) payload+=line.slice(5).trim();
-      }
-      if(event==="error"){
-        let e={}; try{e=JSON.parse(payload)}catch{}
-        throw new Error(e?.message||e?.error||payload||"ACE-Step devolvió un error.");
-      }
-      if(event==="complete"){
-        try{result=JSON.parse(payload)}catch{result=payload}
-        return result;
-      }
-    }
-    if(done) break;
+    const r=await fetchWithTimeout(
+      ACESTEP_HF_SPACE+"/v1/jobs/"+encodeURIComponent(jobId),
+      {headers:{Accept:"application/json"}},
+      30000
+    );
+    const text=await r.text();
+    let data={}; try{data=JSON.parse(text)}catch{}
+    if(!r.ok) throw new Error(data?.detail||data?.error||text.slice(0,700)||("ACE-Step status HTTP "+r.status));
+    if(data.status==="succeeded") return data.result;
+    if(data.status==="failed") throw new Error(data.error||"ACE-Step terminó con un error.");
+    await new Promise(resolve=>setTimeout(resolve,7000));
   }
-  throw new Error("ACE-Step tardó demasiado en responder. El Space gratuito puede estar despertando la GPU.");
+  throw new Error("ACE-Step tardó demasiado en responder. El Space gratuito puede estar despertando o saturado.");
 }
 
-function findAudioUrl(value){
+function findAudioPath(value){
   if(!value) return null;
   if(typeof value==="string"){
     if(/^https?:\/\//i.test(value)) return value;
-    if(/\.(wav|mp3|flac)(\?|$)/i.test(value)) return ACESTEP_HF_SPACE+"/file="+encodeURIComponent(value.replace(/^\/+/, ""));
+    if(/\.(wav|mp3|flac)(\?|$)/i.test(value)) return value;
     return null;
   }
   if(Array.isArray(value)){
-    for(const item of value){const u=findAudioUrl(item);if(u)return u}
+    for(const item of value){const u=findAudioPath(item);if(u)return u}
     return null;
   }
   if(typeof value==="object"){
-    for(const k of ["url","audio","path","value"]){
-      const u=findAudioUrl(value[k]); if(u)return u;
+    for(const k of ["first_audio_path","audio_paths","url","audio","path","file","value"]){
+      const u=findAudioPath(value[k]); if(u)return u;
     }
-    for(const k of Object.keys(value)){const u=findAudioUrl(value[k]);if(u)return u}
+    for(const k of Object.keys(value)){const u=findAudioPath(value[k]);if(u)return u}
   }
   return null;
 }
 
 async function downloadHFGeneratedAudio(result, stamp){
-  const audioUrl=findAudioUrl(result);
-  if(!audioUrl) throw new Error("ACE-Step terminó pero no devolvió un archivo de audio utilizable.");
+  const audioPath=findAudioPath(result);
+  if(!audioPath) throw new Error("ACE-Step terminó pero no devolvió la ruta del audio.");
+  let audioUrl=audioPath;
+  if(!/^https?:\/\//i.test(audioUrl)){
+    audioUrl=ACESTEP_HF_SPACE+"/v1/audio?path="+encodeURIComponent(audioUrl);
+  }
   const audio=await fetchWithTimeout(audioUrl,{headers:{Accept:"audio/*"}},120000);
   if(!audio.ok) throw new Error("No se pudo descargar el audio generado por ACE-Step (HTTP "+audio.status+").");
   const filename="relaxscape-ai-"+stamp+".mp3";
-  const source=path.join(MUSIC_DIR,"ace-step-source-"+stamp+".wav");
   const out=path.join(MUSIC_DIR,filename);
   const bytes=Buffer.from(await audio.arrayBuffer());
   if(!bytes.length) throw new Error("ACE-Step devolvió un archivo vacío.");
-  // El Space puede devolver WAV aunque la interfaz pida música. Normalizamos a MP3.
-  fs.writeFileSync(source,bytes);
-  await runFfmpeg(["-y","-i",source,"-af","loudnorm=I=-16:TP=-1.5:LRA=8","-c:a","libmp3lame","-b:a","192k",out]);
-  fs.rmSync(source,{force:true});
-  return {name:filename,url:"/media/music/"+encodeURIComponent(filename),provider:"ACE-Step 1.5 vía Hugging Face Space gratuito",generatedFromSearch:true,query:""};
+  fs.writeFileSync(out,bytes);
+  return {name:filename,url:"/media/music/"+encodeURIComponent(filename),provider:"ACE-Step 1.5 vía Hugging Face gratuito",generatedFromSearch:true,query:""};
 }
 
 async function processFreeAceStepJob(job){
   try{
     job.status="starting";
-    const eventId=await aceStepHFGenerate(job.query,Math.min(600,Number(job.sourceDuration)||600));
-    job.eventId=eventId;
+    const jobId=await aceStepHFGenerate(job.query,600);
+    job.eventId=jobId;
     job.status="running";
-    const raw=await aceStepHFWait(eventId);
+    const raw=await aceStepHFWait(jobId);
     const stamp=Date.now();
     const result=await downloadHFGeneratedAudio(raw,stamp);
     result.query=job.query;
@@ -1525,7 +1499,7 @@ app.post("/api/generate-freesound-ai-mix", async (req,res)=>{
   if(![1,2].includes(hours)) return res.status(400).json({error:"La duración debe ser de 1 o 2 horas."});
 
   const jobId="music-"+Date.now()+"-"+Math.random().toString(36).slice(2,9);
-  const job={id:jobId,status:"queued",query:cleanQuery,durationHours:hours,sourceDuration:600,result:null,error:null,createdAt:Date.now(),eventId:null};
+  const job={id:jobId,status:"queued",query:cleanQuery,durationHours:hours,result:null,error:null,createdAt:Date.now(),eventId:null};
   FREESOUND_MIX_JOBS.set(jobId,job);
   processFreeAceStepJob(job);
   return res.json({jobId,status:"queued",provider:"ACE-Step 1.5 vía Hugging Face Space gratuito"});
