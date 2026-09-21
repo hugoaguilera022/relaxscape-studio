@@ -172,18 +172,25 @@ function makeCompositionWav(track, wavPath){
     "piano","strings","synth","guitar","flute","glass","pluck"
   ];
   let lead;
+  // Prioridad semántica: si la búsqueda nombra un instrumento, manda.
+  // Si describe un paisaje, escogemos un color musical coherente con ese paisaje.
   if(semantic.piano) lead="piano";
   else if(semantic.guitar) lead="guitar";
   else if(semantic.flute) lead="flute";
   else if(semantic.strings||semantic.cinematic) lead="strings";
+  else if(semantic.rain) lead="synth";
+  else if(semantic.ocean) lead="synth";
+  else if(semantic.forest) lead="flute";
+  else if(semantic.mountain) lead="strings";
+  else if(semantic.night||semantic.sleep) lead="piano";
   else if(semantic.synth) lead="synth";
   else lead=pick(palettes);
   // Las cuatro opciones no son la misma composición con otro volumen.
   const leadByVariant=["piano","strings","synth","flute"];
-  if(variant===0 && !semantic.guitar && !semantic.flute) lead=semantic.piano?"piano":pick(["piano","guitar","pluck"]);
-  if(variant===1) lead=semantic.strings||semantic.cinematic?"strings":pick(["strings","piano","synth"]);
-  if(variant===2) lead=semantic.synth||semantic.ocean||semantic.rain?"synth":pick(["synth","glass","pluck"]);
-  if(variant===3) lead=semantic.flute?"flute":pick(["flute","guitar","pluck"]);
+  if(variant===0 && !semantic.guitar && !semantic.flute) lead=semantic.piano?"piano":(semantic.rain||semantic.ocean?"synth":pick(["piano","guitar","pluck"]));
+  if(variant===1) lead=semantic.strings||semantic.cinematic||semantic.mountain?"strings":pick(["strings","piano","synth"]);
+  if(variant===2) lead=semantic.synth||semantic.ocean||semantic.rain||semantic.night?"synth":pick(["synth","glass","pluck"]);
+  if(variant===3) lead=semantic.flute||semantic.forest?"flute":pick(["flute","guitar","pluck"]);
   if(semantic.guitar) lead=variant===2?"pluck":"guitar";
 
   const piano=(f,t,v=1)=>{
@@ -253,17 +260,33 @@ function makeCompositionWav(track, wavPath){
   const reverbDelay=(src,delay,decay,t)=>src*Math.exp(-delay*decay);
   const texture=(t)=>{
     let x=0;
+    // Textura semántica claramente audible: el paisaje buscado cambia el carácter
+    // sonoro, no solo el nombre del archivo.
     if(semantic.rain){
-      x+=(Math.sin(2*Math.PI*83*t)+.55*Math.sin(2*Math.PI*131*t)+.25*Math.sin(2*Math.PI*197*t))*.0028;
-      x+=.0012*Math.sin(2*Math.PI*(5+(t%7))*t);
+      const drop=(Math.sin(2*Math.PI*73*t)+.6*Math.sin(2*Math.PI*127*t)+.28*Math.sin(2*Math.PI*211*t));
+      const shimmer=.5+.5*Math.sin(2*Math.PI*.73*t);
+      x+=drop*(.0018+.0015*shimmer);
+      x+=.0010*Math.sin(2*Math.PI*(4.5+.7*Math.sin(t*.17))*t);
     }
     if(semantic.ocean){
       const swell=.5+.5*Math.sin(2*Math.PI*.055*t+Math.sin(t*.07));
-      x+=swell*(Math.sin(2*Math.PI*170*t)+.4*Math.sin(2*Math.PI*290*t))*.0045;
+      x+=swell*(Math.sin(2*Math.PI*120*t)+.45*Math.sin(2*Math.PI*260*t))*.0065;
     }
     if(semantic.forest){
       const breeze=.5+.5*Math.sin(2*Math.PI*.11*t+Math.sin(t*.23));
-      x+=breeze*(Math.sin(2*Math.PI*610*t)+.35*Math.sin(2*Math.PI*1170*t))*.0018;
+      x+=breeze*(Math.sin(2*Math.PI*430*t)+.45*Math.sin(2*Math.PI*980*t))*.0028;
+      // Pequeños armónicos tipo pájaro, solo si el usuario pide bosque/naturaleza.
+      x+=Math.sin(2*Math.PI*(1450+90*Math.sin(t*.31))*t)*.00045;
+    }
+    if(semantic.mountain){
+      // Espacio amplio y grave para paisajes de montaña.
+      x+=.0022*Math.sin(2*Math.PI*54*t)*(0.5+.5*Math.sin(t*.09));
+    }
+    if(semantic.night){
+      x+=.0014*Math.sin(2*Math.PI*92*t)*(.65+.35*Math.sin(t*.05));
+    }
+    if(semantic.sunset||semantic.bright){
+      x+=.0012*Math.sin(2*Math.PI*330*t)*(0.7+.3*Math.sin(t*.08));
     }
     return x;
   };
