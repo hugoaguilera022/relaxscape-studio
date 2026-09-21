@@ -133,185 +133,26 @@ async function generatePexelsVideo(prompt, aspectRatio, key, durationHours = 1) 
   console.log("[Pexels] Buscando:", query);
 
   const search = await fetch(
-    `https://api.pexels.com/v1/videos/search?query=${encodeURIComponent(query)}&per_page=20&orientation=${aspectRatio === "9:16" ? "portrait" : "landscape"}&size=small`,
+    `https://api.pexels.com/v1/videos/search?query=${encodeURIComponent(query)}&per_page=20&orientation=${aspectRatio === "9:16" ? "portrait" : "landscape"}&locale=en-US`,
     { headers: { Authorization: key } }
   );
   const data = await search.json();
-  if (!search.ok) throw new Error(data.error || `Pexels respondió HTTP ${search.status}.`);
-  const videos = (data.videos || []).filter(v => v.video_files?.length && Number(v.duration || 0) >= 5);
-  if (!videos.length) throw new Error("Pexels no encontró clips. Prueba una descripción como: bosque, océano, lluvia, montañas.");
-
-  // Pocos clips para que Render no se quede sin RAM/CPU durante la creación.
-  const selected = videos.slice(0, Math.min(3, videos.length));
-  const stamp = Date.now();
-  const normalized = [];
-  const sources = [];
-
-  try {
-    for (let i = 0; i < selected.length; i++) {
-      const video = selected[i];
-      const files = [...video.video_files].sort((a,b) => {
-        const score = f => {
-          const vertical = f.height > f.width;
-          const wanted = aspectRatio === "9:16" ? vertical : !vertical;
-          const distance = Math.abs((f.width || 0) - (aspectRatio === "9:16" ? 720 : 1280));
-          return (wanted ? 100000 : 0) - distance;
-        };
-        return score(b) - score(a);
-      });
-
-      const url = files[0]?.link;
-      if (!url) continue;
-
-      console.log(`[Pexels] Descargando clip ${i + 1}/${selected.length}`);
-      const r = await fetch(url);
-      if (!r.ok) continue;
-
-      const source = path.join(VIDEO_DIR, `pexels-src-${stamp}-${i}.mp4`);
-      const segment = path.join(VIDEO_DIR, `pexels-segment-${stamp}-${i}.mp4`);
-      fs.writeFileSync(source, Buffer.from(await r.arrayBuffer()));
-
-      const size = aspectRatio === "9:16"
-        ? "scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2"
-        : "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2";
-
-      console.log(`[FFmpeg] Normalizando clip ${i + 1}/${selected.length}`);
-      await runFfmpeg([
-        "-y","-i",source,
-        "-vf",`${size},fps=24,format=yuv420p`,
-        "-an","-c:v","libx264","-preset","ultrafast","-crf","30",
-        "-movflags","+faststart",segment
-      ]);
-
-      try { fs.unlinkSync(source); } catch {}
-      normalized.push(segment);
-      sources.push(video.url);
-    }
-
-    if (!normalized.length) throw new Error("Pexels encontró vídeos pero no pudo descargar ninguno.");
-
-    const concatFile = path.join(VIDEO_DIR, `pexels-concat-${stamp}.txt`);
-    const montage = path.join(VIDEO_DIR, `pexels-montage-${stamp}.mp4`);
-    const finalName = `relaxscape-${stamp}-${hours}h.mp4`;
-    const finalPath = path.join(VIDEO_DIR, finalName);
-
-    fs.writeFileSync(concatFile, normalized.map(f => `file '${f.replace(/'/g, "'\\''")}'`).join("\n"));
-
-    try {
-      console.log("[FFmpeg] Uniendo clips...");
-      await runFfmpeg([
-        "-y","-f","concat","-safe","0","-i",concatFile,
-        "-an","-c:v","copy","-movflags","+faststart",montage
-      ]);
-
-      console.log(`[FFmpeg] Creando vídeo de ${hours} hora(s)...`);
-      await runFfmpeg([
-        "-y","-stream_loop","-1","-i",montage,
-        "-t",String(hours * 3600),
-        "-an","-c:v","copy","-movflags","+faststart",finalPath
-      ]);
-    } finally {
-      try { fs.unlinkSync(concatFile); } catch {}
-      try { fs.unlinkSync(montage); } catch {}
-    }
-
-    return {
-      name: finalName,
-      url: `/media/videos/${finalName}`,
-      source: "Pexels",
-      sourceUrl: sources[0],
-      clips: normalized.length,
-      durationHours: hours
-    };
-  } finally {
-    for (const file of normalized) {
-      try { fs.unlinkSync(file); } catch {}
-    }
+  if (!search.ok) {
+    const detail = data.error || data.message || `HTTP ${search.status}`;
+    throw new Error(`Pexels: ${detail}. Comprueba que PEXELS_API_KEY esté configurada en Render.`);
   }
-}
+  let videos = (data.videos || []).filter(v => v.video_files?.length && Number(v.duration || 0) >= 5);
 
-app.post("/api/generate-ai-video", async (req, res) => {
-  const key = process.env.PEXELS_API_KEY;
-  if (!key) return res.status(400).json({ error: "Añade PEXELS_API_KEY en Render. La API de Pexels es gratuita y permite buscar vídeos sin pagar." });
-  const prompt = req.body.prompt || "peaceful cinematic nature landscape, relaxing atmosphere, no people, no text";
-  const aspectRatio = req.body.aspectRatio === "9:16" ? "9:16" : "16:9";
-  try {
-    const durationHours = Number(req.body.durationHours || 1);
-    const result = await generatePexelsVideo(prompt, aspectRatio, key, durationHours);
-    res.json(result);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
+  if (!videos.length) {
+    console.log("[Pexels] Sin resultados; usando búsqueda de respaldo.");
+    const fallbackQuery = aspectRatio === "9:16" ? "relaxing nature vertical" : "relaxing nature landscape";
+    const fallback = await fetch(
+      `https://api.pexels.com/v1/videos/search?query=${encodeURIComponent(fallbackQuery)}&per_page=20&orientation=${aspectRatio === "9:16" ? "portrait" : "landscape"}&locale=en-US`,
+      { headers: { Authorization: key } }
+    );
+    const fallbackData = await fallback.json();
+    if (!fallback.ok) throw new Error(`Pexels búsqueda de respaldo: ${fallbackData.error || fallbackData.message || `HTTP ${fallback.status}`}`);
+    videos = (fallbackData.videos || []).filter(v => v.video_files?.length && Number(v.duration || 0) >= 5);
   }
-});
 
-app.post("/api/generate-ai-music", async (req, res) => {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) return res.status(400).json({ error: "Añade GEMINI_API_KEY en Render para activar Lyria." });
-  const base = req.body.prompt || "Peaceful ambient music for sleep and relaxation, soft piano and warm pads.";
-  const mode = req.body.mode === "song" ? "Create a complete song with a gentle arrangement." : "Instrumental only, no vocals, no lyrics.";
-  const prompt = `${base}. ${mode} Suitable for a relaxing visual landscape video.`;
-  try {
-    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify({ model: "lyria-3.5", input: prompt, response_format: { type: "audio" } })
-    });
-    const data = await r.json();
-    if (!r.ok) return res.status(r.status).json({ error: data.error?.message || "No se pudo generar la música." });
-    const b64 = data.output_audio?.data;
-    if (!b64) throw new Error("Lyria terminó pero no devolvió audio.");
-    const filename = `ai-music-${Date.now()}.mp3`;
-    fs.writeFileSync(path.join(MUSIC_DIR, filename), Buffer.from(b64, "base64"));
-    res.json({ name: filename, url: `/media/music/${filename}` });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-
-
-app.post("/api/mux-video-audio", async (req, res) => {
-  const { video, music, durationHours = 1 } = req.body || {};
-  if (!video || !music) return res.status(400).json({ error: "Faltan el vídeo o la música." });
-  const videoName = decodeURIComponent(video.split("/").pop());
-  const musicName = decodeURIComponent(music.split("/").pop());
-  const videoPath = path.join(VIDEO_DIR, videoName);
-  const musicPath = path.join(MUSIC_DIR, musicName);
-  if (!fs.existsSync(videoPath) || !fs.existsSync(musicPath)) return res.status(404).json({ error: "No se encontró el archivo para mezclar." });
-  const hours = Number(durationHours);
-  if (![1, 2].includes(hours)) return res.status(400).json({ error: "La duración debe ser de 1 o 2 horas." });
-  const filename = `ai-relax-${Date.now()}-${hours}h.mp4`;
-  const out = path.join(VIDEO_DIR, filename);
-  try {
-    await runFfmpeg([
-      "-y","-stream_loop","-1","-i",videoPath,"-stream_loop","-1","-i",musicPath,
-      "-t",String(hours * 3600),
-      "-map","0:v:0","-map","1:a:0","-c:v","libx264","-preset","veryfast","-crf","24","-c:a","aac","-b:a","160k",out
-    ]);
-    res.json({ name: filename, url: `/media/videos/${filename}` });
-  } catch (e) { res.status(500).json({ error: "No se pudo mezclar vídeo y música: " + e.message }); }
-});
-
-async function generateDaily() {
-  const images = listFiles(IMAGE_DIR, "/media/images");
-  const music = listFiles(MUSIC_DIR, "/media/music");
-  if (!images.length || !music.length) return console.log("Daily render omitido: faltan imagen o música.");
-  const imagePath = path.join(IMAGE_DIR, images[0].name);
-  const musicPath = path.join(MUSIC_DIR, music[0].name);
-  const filename = `daily-${new Date().toISOString().slice(0,10)}.mp4`;
-  const out = path.join(VIDEO_DIR, filename);
-  try {
-    await runFfmpeg([
-      "-y","-loop","1","-i",imagePath,"-stream_loop","-1","-i",musicPath,"-t","3600",
-      "-vf","scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
-      "-c:v","libx264","-preset","veryfast","-crf","23","-c:a","aac","-b:a","160k","-shortest",out
-    ]);
-    console.log("Daily video creado:", filename);
-  } catch (e) { console.error("Daily render error:", e.message); }
-}
-
-const hour = Number(process.env.DAILY_VIDEO_HOUR || 7);
-cron.schedule(`0 ${hour} * * *`, generateDaily);
-
-app.get("*splat", (_, res) => res.sendFile(path.join(PUBLIC, "index.html")));
-
-const port = Number(process.env.PORT || 3000);
-app.listen(port, () => console.log(`RelaxScape activo en http://localhost:${port}`));
+  if (!videos.length) throw new Error("Pexels no devolvió ningún vídeo. Revisa la PEXELS_API_KEY en Render.");;
