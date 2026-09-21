@@ -124,38 +124,99 @@ app.post("/api/generate-video", async (req, res) => {
 });
 
 async function generatePexelsVideo(prompt, aspectRatio, key, durationHours = 1) {
-  const query = String(prompt || "peaceful nature landscape")
+  const rawPrompt = String(prompt || "peaceful nature landscape");
+  const aliases = {
+    lluvia: "rain rainfall storm",
+    bosque: "forest woods woodland",
+    oceano: "ocean sea waves",
+    mar: "ocean sea waves",
+    montanas: "mountains mountain landscape",
+    montaña: "mountains mountain landscape",
+    lago: "lake water landscape",
+    nieve: "snow winter landscape",
+    playa: "beach ocean coast",
+    atardecer: "sunset golden hour landscape",
+    amanecer: "sunrise dawn landscape",
+    cascada: "waterfall nature",
+    rio: "river flowing water nature",
+    fuego: "fireplace fire cozy",
+    nubes: "clouds sky timelapse"
+  };
+  const normalized = rawPrompt.toLowerCase();
+  const extra = Object.entries(aliases)
+    .filter(([word]) => normalized.includes(word))
+    .map(([, terms]) => terms)
+    .join(" ");
+  const query = (rawPrompt + " " + extra)
     .replace(/[^a-zA-Z0-9áéíóúüñÁÉÍÓÚÜÑ ,.-]/g, " ")
-    .replace(/\s+/g, " ").trim().slice(0, 120) || "peaceful nature landscape";
+    .replace(/\s+/g, " ").trim().slice(0, 180) || "peaceful nature landscape";
+
   const hours = Number(durationHours);
   if (![1, 2].includes(hours)) throw new Error("La duración debe ser de 1 o 2 horas.");
 
+  const orientation = aspectRatio === "9:16" ? "portrait" : "landscape";
   const search = await fetch(
-    `https://api.pexels.com/v1/videos/search?query=${encodeURIComponent(query)}&per_page=10&orientation=${aspectRatio === "9:16" ? "portrait" : "landscape"}&size=large&locale=en-US`,
+    `https://api.pexels.com/v1/videos/search?query=${encodeURIComponent(query)}&per_page=20&orientation=${orientation}&size=large&locale=es-ES`,
     { headers: { Authorization: key } }
   );
   const data = await search.json();
   if (!search.ok) throw new Error("Pexels: " + (data.error || data.message || ("HTTP " + search.status)));
-  const videos = (data.videos || []).filter(v => v.video_files?.length && Number(v.duration || 0) >= 5);
-  if (!videos.length) throw new Error("Pexels no encontró un vídeo. Prueba: océano, bosque, lluvia o montañas.");
 
-  // Elegimos el archivo de mayor calidad compatible con el formato solicitado.
-  // Priorizamos 1080p; si Pexels ofrece 4K, también puede ser seleccionado.
-  const video = [...videos].sort((a, b) => Number(b.duration || 0) - Number(a.duration || 0))[0];
+  const videos = (data.videos || [])
+    .filter(v => v.video_files?.length && Number(v.duration || 0) >= 5);
+
+  if (!videos.length) {
+    throw new Error("Pexels no encontró un vídeo de buena calidad para esa búsqueda. Prueba con otro paisaje.");
+  }
+
   const targetWidth = aspectRatio === "9:16" ? 1080 : 1920;
   const targetHeight = aspectRatio === "9:16" ? 1920 : 1080;
-  const compatible = video.video_files.filter(f => f.link && f.width && f.height);
-  const files = [...compatible].sort((a,b) => {
-    const portraitA = a.height > a.width;
-    const portraitB = b.height > b.width;
-    const targetPortrait = aspectRatio === "9:16";
-    const orientationPenaltyA = portraitA === targetPortrait ? 0 : 10000000;
-    const orientationPenaltyB = portraitB === targetPortrait ? 0 : 10000000;
-    const resolutionPenaltyA = Math.abs((a.width || 0) - targetWidth) + Math.abs((a.height || 0) - targetHeight);
-    const resolutionPenaltyB = Math.abs((b.width || 0) - targetWidth) + Math.abs((b.height || 0) - targetHeight);
-    return (orientationPenaltyA + resolutionPenaltyA) - (orientationPenaltyB + resolutionPenaltyB);
-  });
-  const url = files[0]?.link;
+
+  // Evaluamos TODOS los resultados y TODOS sus archivos.
+  // La prioridad es: orientación correcta -> resolución alta -> cercanía a 1080p.
+  const candidates = [];
+  for (const video of videos) {
+    for (const file of video.video_files || []) {
+      if (!file.link || !file.width || !file.height) continue;
+
+      const isPortrait = file.height > file.width;
+      const correctOrientation = aspectRatio === "9:16" ? isPortrait : !isPortrait;
+      const pixels = file.width * file.height;
+      const targetPixels = targetWidth * targetHeight;
+
+      candidates.push({
+        video,
+        file,
+        correctOrientation,
+        pixels,
+        score:
+          (correctOrientation ? 100000000000 : 0) +
+          Math.min(pixels, 3840 * 2160) * 100 +
+          1000000 / (1 + Math.abs(pixels - targetPixels))
+      });
+    }
+  }
+
+  candidates.sort((a, b) => b.score - a.score);
+
+  // Preferimos 4K/1080p reales. Si no existen, usamos la mayor resolución disponible.
+  const preferred = candidates.find(c =>
+    c.correctOrientation &&
+    c.file.width >= targetWidth * 0.9 &&
+    c.file.height >= targetHeight * 0.9
+  ) || candidates.find(c => c.correctOrientation) || candidates[0];
+
+  const video = preferred.video;
+  const url = preferred.file.link;
+  if (!url) throw new Error("Pexels no devolvió un archivo de vídeo descargable.");
+
+  console.log(
+    "[Pexels] Seleccionado:",
+    video.id,
+    preferred.file.width + "x" + preferred.file.height,
+    "para", aspectRatio,
+    "| consulta:", query
+  );
 
   const stamp = Date.now();
   const source = path.join(VIDEO_DIR, `pexels-${stamp}-source.mp4`);
@@ -163,12 +224,12 @@ async function generatePexelsVideo(prompt, aspectRatio, key, durationHours = 1) 
   const finalPath = path.join(VIDEO_DIR, finalName);
 
   try {
-    console.log("[Pexels] Descargando un clip:", video.id);
+    console.log("[Pexels] Descargando vídeo HD:", video.id);
     const download = await fetch(url);
     if (!download.ok) throw new Error("No se pudo descargar el vídeo de Pexels (HTTP " + download.status + ").");
     fs.writeFileSync(source, Buffer.from(await download.arrayBuffer()));
 
-    console.log("[FFmpeg] Repitiendo clip hasta " + hours + " hora(s)...");
+    console.log("[FFmpeg] Repitiendo vídeo HD hasta " + hours + " hora(s)...");
     await runFfmpeg([
       "-y","-stream_loop","-1","-i",source,
       "-t",String(hours * 3600),
@@ -180,6 +241,7 @@ async function generatePexelsVideo(prompt, aspectRatio, key, durationHours = 1) 
       url: `/media/videos/${finalName}`,
       source: "Pexels",
       sourceUrl: video.url,
+      resolution: `${preferred.file.width}x${preferred.file.height}`,
       clips: 1,
       durationHours: hours
     };
