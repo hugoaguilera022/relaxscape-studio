@@ -107,228 +107,222 @@ function writeWav(file, samples, sampleRate=44100, channels=2){
 }
 
 function makeCompositionWav(track, wavPath){
-  // Motor musical procedural: la búsqueda controla de forma fuerte la composición.
-  // No reutiliza una melodía fija: hash + variante determinan estructura, armonía,
-  // instrumento principal, registro, tempo, motivo, densidad y movimiento estéreo.
-  // Previa corta para que Render pueda generar las 4 opciones rápidamente.
-  // La versión larga se construye después a partir de esta composición.
+  // Motor musical local: interpreta la búsqueda de forma semántica y la convierte
+  // directamente en instrumento, ambiente, armonía, tempo, registro y textura.
+  // IMPORTANTE: este bloque es exclusivamente de MÚSICA. La generación de imágenes
+  // no se toca.
   const sr=24000, dur=18, n=sr*dur, samples=new Float32Array(n*2);
   const variant=((Number(track.variant||1)-1)%4+4)%4;
-  const brief=String(track.userSearch||track.originalMusicPrompt||track.musicProfile||"relaxscape").toLowerCase();
+  const brief=String(track.userSearch||track.originalMusicPrompt||"relaxscape").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
   const hz=m=>440*Math.pow(2,(m-69)/12);
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   const has=(...w)=>w.some(x=>brief.includes(x));
+  const word=(re)=>re.test(brief);
+
+  // Frase -> intención musical. Las palabras específicas pesan más que "relax".
   const semantic={
-    rain:has("rain","lluvia","storm","tormenta"),
-    ocean:has("ocean","océano","oceano","sea","mar","waves","olas"),
-    forest:has("forest","bosque","woodland","pájaros","pajaros"),
-    mountain:has("mountain","montaña","montana","alpine"),
-    night:has("night","noche","moon","luna","stars","estrellas"),
-    sunset:has("sunset","atardecer","golden hour","ocaso"),
-    sleep:has("sleep","sueño","sueno","dormir"),
-    meditation:has("meditation","meditación","meditacion","zen","mindfulness","yoga","breathing","respiración"),
-    piano:has("piano","teclas"),
-    guitar:has("guitar","guitarra","acoustic","nylon"),
-    strings:has("strings","cuerdas","violin","violín","cello","viola","orchestral","cinematic","cinemático"),
-    flute:has("flute","flauta","bamboo","bambú"),
-    synth:has("synth","sintetizador","electronic","electrónica","ambient"),
-    dark:has("dark","oscuro","deep","profundo"),
-    bright:has("bright","luminoso","sunrise","amanecer","sun"),
-    cinematic:has("cinematic","cinemático","film","orchestral"),
-    warm:has("warm","cálido","calido","cozy","acogedor"),
-    flamenco:has("flamenco","palmas","guitarra española","rumba"),
+    piano:has("piano","teclas","pianistico"),
+    guitar:has("guitarra","guitar","nylon","acustica"),
+    strings:has("cuerdas","strings","violin","cello","viola","orquesta","orchestral"),
+    flute:has("flauta","flute","bambu"),
+    synth:has("sintetizador","synth","sintesis","electronica","electronic"),
+    harp:has("arpa","harp"),
+    kalimba:has("kalimba","mbira"),
+    rain:has("lluvia","rain","tormenta","storm"),
+    ocean:has("oceano","ocean","mar","olas","waves","sea","costa","beach"),
+    river:has("rio","river","corriente","stream","arroyo","agua corriendo","agua corriente","flowing water"),
+    waterfall:has("cascada","waterfall"),
+    forest:has("bosque","forest","woodland","pajaros","birds","naturaleza","nature"),
+    mountain:has("montana","mountain","alpine"),
+    fireplace:has("chimenea","fireplace","fuego","fire","hogar"),
+    night:has("noche","night","luna","moon","estrellas","stars"),
+    sunset:has("atardecer","sunset","ocaso","golden hour"),
+    sunrise:has("amanecer","sunrise","dawn"),
+    sleep:has("sueno","sleep","dormir","sleeping"),
+    meditation:has("meditacion","meditation","zen","mindfulness","yoga","respiracion"),
+    spa:has("spa","wellness","bienestar"),
+    cinematic:has("cinematico","cinematic","pelicula","film","banda sonora","soundtrack"),
+    flamenco:has("flamenco","palmas","rumba","guitarra espanola"),
     lofi:has("lofi","lo-fi","chillhop"),
-    classical:has("classical","clásica","clásico","piano clásico"),
     jazz:has("jazz","swing","blues"),
     trap:has("trap","808","hip hop","hip-hop"),
-    upbeat:has("upbeat","energético","energética","rápido","alegre"),
-    sad:has("sad","triste","melancólico","melancolia","melancolía"),
-    dreamy:has("dreamy","dream","etéreo","etereo","soñador","soñadora")
+    classical:has("clasico","classica","classical","sonata"),
+    warm:has("calido","warm","acogedor","cozy","intimo","intimate"),
+    bright:has("luminoso","bright","alegre","sunny"),
+    sad:has("triste","sad","melancolico","melancholic"),
+    dreamy:has("sonador","dreamy","etereo","ethereal"),
+    slow:has("lento","slow","muy tranquilo","very calm"),
+    energetic:has("energetico","energetica","upbeat","rapido","fast","intenso")
   };
 
-  // FNV-1a completo + PRNG determinista. Dos búsquedas distintas producen
-  // secuencias de decisiones distintas incluso si comparten palabras "relax".
+  // Determinismo por búsqueda completa + variante: las cuatro opciones son
+  // diferentes, pero todas siguen exactamente el mismo tema solicitado.
   let h=2166136261>>>0;
   const seedText=String(track.userSearch||track.originalMusicPrompt||"relaxscape")+"|v="+variant+"|"+String(track.generationSeed||"");
   for(const ch of seedText){h^=ch.charCodeAt(0);h=Math.imul(h,16777619)>>>0;}
   let rngState=(h^((variant+1)*0x9e3779b9))>>>0;
-  const rnd=()=>{rngState^=rngState<<13;rngState^=rngState>>>17;rngState^=rngState<<5;rngState>>>=0;return rngState/4294967296};
+  const rnd=()=>{rngState^=rngState<<13;rngState^=rngState>>>17;rngState^=rngState<<5;rngState>>>=0;return rngState/4294967296;};
   const pick=a=>a[Math.floor(rnd()*a.length)];
+  const hash01=(shift=0)=>(((h>>>shift)%997)/996);
 
-  const scaleSets=[
-    [0,2,4,7,9], [0,2,3,5,7,9,10], [0,2,3,5,7,8,10],
-    [0,2,4,6,7,9,11], [0,1,3,5,7,8,10], [0,2,3,6,7,9,10]
-  ];
-  // PERFIL MUSICAL DERIVADO DE TODA LA FRASE, no solo de "relax".
-  // El hash completo de la búsqueda modifica de forma audible tonalidad,
-  // registro, tempo, progresión y motivo. Así dos búsquedas distintas no
-  // pueden caer en la misma plantilla musical por casualidad con tanta facilidad.
-  const phraseHash=h;
-  const hash01=(shift=0)=>(((phraseHash>>>shift)%997)/996);
-  let scale=pick(scaleSets);
-  if(semantic.dark||semantic.night||semantic.sad) scale=[0,2,3,5,7,8,10];
-  if(semantic.bright||semantic.sunset||semantic.upbeat) scale=[0,2,4,5,7,9,11];
-  if(semantic.ocean) scale=pick([[0,2,4,7,9],[0,2,3,5,7,9,10]]);
+  const hzRootNames=[36,38,40,41,43,45,47,48,50,52,53,55];
+  let root=pick(hzRootNames);
+  if(semantic.night||semantic.sleep) root=Math.max(33,root-5);
+  if(semantic.sunrise||semantic.sunset||semantic.bright) root=Math.min(55,root+4);
+  if(semantic.ocean) root=45+Math.floor(hash01(7)*10);
+  if(semantic.flamenco) root=40+Math.floor(hash01(5)*12);
+
+  let scale;
   if(semantic.flamenco) scale=[0,1,4,5,7,8,10];
-  if(semantic.jazz) scale=[0,2,4,5,7,9,10];
-  if(semantic.classical) scale=pick([[0,2,4,5,7,9,11],[0,2,3,5,7,9,11]]);
-  if(semantic.trap) scale=[0,3,5,7,10];
-  if(semantic.dreamy||semantic.meditation) scale=[0,2,4,7,9];
+  else if(semantic.sad||semantic.night||semantic.sleep) scale=[0,2,3,5,7,8,10];
+  else if(semantic.jazz) scale=[0,2,4,5,7,9,10];
+  else if(semantic.classical) scale=variant%2?[0,2,3,5,7,9,11]:[0,2,4,5,7,9,11];
+  else if(semantic.bright||semantic.sunrise) scale=[0,2,4,5,7,9,11];
+  else scale=pick([[0,2,4,7,9],[0,2,3,5,7,9,10],[0,2,4,5,7,9,11]]);
 
-  let root=36+Math.floor(hash01(0)*36);
-  if(semantic.ocean) root=45+Math.floor(hash01(8)*14);
-  if(semantic.night||semantic.sleep) root-=7;
-  if(semantic.bright||semantic.sunset) root+=7;
-  if(semantic.flamenco) root=40+Math.floor(hash01(4)*14);
+  let bpm=42+Math.floor(hash01(11)*12);
+  if(semantic.sleep) bpm=32+Math.floor(hash01(13)*6);
+  if(semantic.meditation||semantic.spa) bpm=36+Math.floor(hash01(13)*8);
+  if(semantic.river||semantic.ocean) bpm=40+Math.floor(hash01(13)*10);
+  if(semantic.cinematic) bpm=42+Math.floor(hash01(13)*14);
+  if(semantic.flamenco) bpm=84+Math.floor(hash01(13)*16);
+  if(semantic.jazz) bpm=58+Math.floor(hash01(13)*20);
+  if(semantic.trap) bpm=68+Math.floor(hash01(13)*18);
+  if(semantic.energetic) bpm=82+Math.floor(hash01(13)*24);
+  if(semantic.slow) bpm=Math.min(bpm,48);
 
-  let bpm=30+Math.floor(hash01(12)*30);
-  if(semantic.sleep) bpm=30+Math.floor(hash01(16)*7);
-  if(semantic.meditation) bpm=34+Math.floor(hash01(16)*9);
-  if(semantic.ocean) bpm=38+Math.floor(hash01(16)*10);
-  if(semantic.cinematic) bpm=36+Math.floor(hash01(16)*12);
-  if(semantic.flamenco) bpm=82+Math.floor(hash01(16)*18);
-  if(semantic.jazz) bpm=58+Math.floor(hash01(16)*22);
-  if(semantic.trap) bpm=68+Math.floor(hash01(16)*18);
-  if(semantic.upbeat) bpm=82+Math.floor(hash01(16)*28);
   const beat=60/bpm, bar=beat*4;
   const degree=(d,o=0)=>root+scale[((d%scale.length)+scale.length)%scale.length]+12*o;
 
-  const palettes=[
-    "piano","strings","synth","guitar","flute","glass","pluck"
-  ];
-  // BLOQUEO ESTRICTO DE LA BÚSQUEDA:
-  // Las variantes ya NO pueden cambiar el instrumento principal por azar.
-  // Si el usuario pide un instrumento, ese instrumento manda en las 4 pistas.
-  // Si pide "solo/únicamente", no añadimos otros instrumentos melódicos.
-  const explicitInstrumentCount=[semantic.piano,semantic.guitar,semantic.flute,semantic.strings,semantic.synth].filter(Boolean).length;
-  const soloMode=/\\b(solo|solamente|únicamente|unicamente|only|just)\\b/.test(brief);
-  const requestedLead=semantic.piano?"piano":semantic.guitar?"guitar":semantic.flute?"flute":semantic.strings?"strings":semantic.synth?"synth":null;
-  let lead=requestedLead;
-  if(!lead){
-    if(semantic.rain||semantic.ocean) lead="synth";
-    else if(semantic.forest) lead="flute";
-    else if(semantic.mountain) lead="strings";
-    else if(semantic.night||semantic.sleep) lead="piano";
-    else lead=pick(palettes);
-  }
-  // En modo explícito, las cuatro opciones comparten el mismo lead requerido.
-  // Solo cambian melodía, registro y textura, nunca el significado de la búsqueda.
-  if(soloMode && requestedLead) lead=requestedLead;
+  const explicitLead=semantic.piano?"piano":semantic.guitar?"guitar":semantic.flute?"flute":semantic.strings?"strings":semantic.synth?"synth":semantic.harp?"harp":semantic.kalimba?"kalimba":null;
+  const lead=explicitLead || (semantic.flamenco?"guitar":semantic.forest?"flute":semantic.cinematic?"strings":semantic.night||semantic.sleep?"piano":semantic.ocean||semantic.river?"piano":"piano");
 
+  // Timbres dedicados: el instrumento pedido es claramente protagonista.
   const piano=(f,t,v=1)=>{
     if(t<0||t>7)return 0;
-    const attack=Math.min(1,t/.008);
-    const decay=Math.exp(-t*(1.15+Math.min(f,1200)/2200));
-    const hammer=Math.exp(-t/0.055);
-    const body=Math.exp(-t/3.8);
-    const inharm=1+0.000015*f;
-    const p=attack*(.58*hammer+.42*body);
-    return v*p*(.72*Math.sin(2*Math.PI*f*inharm*t)+.18*Math.sin(2*Math.PI*2.01*f*t)+.065*Math.sin(2*Math.PI*3.02*f*t)+.025*Math.sin(2*Math.PI*4.05*f*t));
+    const a=1-Math.exp(-t/.006), hammer=Math.exp(-t/.045), body=Math.exp(-t/3.2);
+    const brightness=semantic.warm?.88:1;
+    return v*a*(.52*hammer+.48*body)*(
+      .76*Math.sin(2*Math.PI*f*t)+
+      .16*Math.sin(2*Math.PI*f*2.01*t)*brightness+
+      .055*Math.sin(2*Math.PI*f*3.02*t)+
+      .018*Math.sin(2*Math.PI*f*4.05*t)
+    );
   };
   const pianoPedal=(f,t,v=1)=>{
     if(t<0||t>8)return 0;
-    return v*(1-Math.exp(-t/.03))*Math.exp(-t/6.5)*(.45*Math.sin(2*Math.PI*f*t)+.12*Math.sin(2*Math.PI*2.01*f*t)+.035*Math.sin(2*Math.PI*3.02*f*t));
+    return v*(1-Math.exp(-t/.04))*Math.exp(-t/6.2)*(
+      .48*Math.sin(2*Math.PI*f*t)+.10*Math.sin(2*Math.PI*2.01*f*t)+.025*Math.sin(2*Math.PI*3.02*f*t)
+    );
   };
-  const guitar=(f,t,v=1)=>t<0||t>4?0:v*Math.min(1,t/.008)*Math.exp(-t/1.9)*(.68*Math.sin(2*Math.PI*f*t)+.22*Math.sin(4*Math.PI*f*t)+.07*Math.sin(6*Math.PI*f*t));
-  const pluck=(f,t,v=1)=>t<0||t>3?0:v*Math.min(1,t/.006)*Math.exp(-t/1.45)*(.62*Math.sin(2*Math.PI*f*t)+.25*Math.sin(4*Math.PI*f*t)+.10*Math.sin(8*Math.PI*f*t));
-  const strings=(f,t,v=1)=>t<0?0:v*(1-Math.exp(-t/1.2))*Math.exp(-t/9)*(.42*Math.sin(2*Math.PI*f*t)+.36*Math.sin(4*Math.PI*f*t)+.16*Math.sin(6*Math.PI*f*t)+.06*Math.sin(8*Math.PI*f*t));
-  const synth=(f,t,v=1)=>t<0?0:v*(1-Math.exp(-t/1.0))*Math.exp(-t/13)*(.34*Math.sin(2*Math.PI*f*t)+.25*Math.sin(2*Math.PI*f*1.007*t)+.18*Math.sin(2*Math.PI*f*.993*t)+.10*Math.sin(2*Math.PI*f/2*t));
-  const flute=(f,t,v=1)=>t<0||t>5?0:v*Math.min(1,t/.14)*Math.exp(-t/3.5)*(.80*Math.sin(2*Math.PI*f*(1+.004*Math.sin(2*Math.PI*5*t))*t)+.13*Math.sin(4*Math.PI*f*t)+.04*Math.sin(6*Math.PI*f*t));
-  const glass=(f,t,v=1)=>t<0||t>4?0:v*Math.min(1,t/.004)*Math.exp(-t/2.8)*(.55*Math.sin(2*Math.PI*f*t)+.25*Math.sin(2*Math.PI*2.01*f*t)+.12*Math.sin(2*Math.PI*3.97*f*t));
+  const guitar=(f,t,v=1)=>t<0||t>4?0:v*(1-Math.exp(-t/.007))*Math.exp(-t/1.65)*(
+    .66*Math.sin(2*Math.PI*f*t)+.23*Math.sin(4*Math.PI*f*t)+.08*Math.sin(6*Math.PI*f*t)
+  );
+  const strings=(f,t,v=1)=>t<0?0:v*(1-Math.exp(-t/.75))*Math.exp(-t/8.5)*(
+    .48*Math.sin(2*Math.PI*f*t)+.30*Math.sin(4*Math.PI*f*t)+.14*Math.sin(6*Math.PI*f*t)+.05*Math.sin(8*Math.PI*f*t)
+  );
+  const flute=(f,t,v=1)=>t<0||t>5?0:v*(1-Math.exp(-t/.13))*Math.exp(-t/3.2)*(
+    .82*Math.sin(2*Math.PI*f*(1+.003*Math.sin(2*Math.PI*4.7*t))*t)+.13*Math.sin(4*Math.PI*f*t)+.035*Math.sin(6*Math.PI*f*t)
+  );
+  const synth=(f,t,v=1)=>t<0?0:v*(1-Math.exp(-t/.8))*Math.exp(-t/11)*(
+    .42*Math.sin(2*Math.PI*f*t)+.22*Math.sin(2*Math.PI*f*1.006*t)+.16*Math.sin(2*Math.PI*f*.994*t)+.08*Math.sin(2*Math.PI*f/2*t)
+  );
+  const pluck=(f,t,v=1)=>t<0||t>3?0:v*(1-Math.exp(-t/.004))*Math.exp(-t/1.35)*(
+    .60*Math.sin(2*Math.PI*f*t)+.25*Math.sin(4*Math.PI*f*t)+.10*Math.sin(8*Math.PI*f*t)
+  );
+  const harp=(f,t,v=1)=>t<0||t>4?0:v*(1-Math.exp(-t/.004))*Math.exp(-t/2.2)*(
+    .70*Math.sin(2*Math.PI*f*t)+.20*Math.sin(2*Math.PI*2.99*f*t)+.06*Math.sin(2*Math.PI*5*f*t)
+  );
+  const kalimba=(f,t,v=1)=>t<0||t>3?0:v*(1-Math.exp(-t/.003))*Math.exp(-t/1.9)*(
+    .55*Math.sin(2*Math.PI*f*t)+.30*Math.sin(2*Math.PI*2.7*f*t)+.12*Math.sin(2*Math.PI*5.1*f*t)
+  );
 
   const events=[];
-  // Tres barras son suficientes para una previa de 18 s y reducen muchísimo
-  // el coste de CPU en Render.
-  const progressionOptions=semantic.flamenco
-    ? [[0,1,2,1,0,5,4,1,0],[0,5,4,3,2,1,0,1,0]]
-    : semantic.jazz
-    ? [[0,3,6,2,5,1,4,3,0],[0,2,5,1,4,6,3,2,0]]
-    : semantic.sad
-    ? [[0,5,3,4,0,5,2,4,0],[0,3,6,4,1,5,3,4,0]]
-    : semantic.trap
-    ? [[0,0,5,0,3,0,6,5,0],[0,3,0,5,0,6,0,5,0]]
-    : [[0,3,5,4,0,2,3,1,0],[0,5,3,4,1,0,3,5,0],[0,2,4,1,3,5,2,4,0],
-       [0,4,2,5,3,1,4,2,0],[0,1,4,3,5,2,1,4,0],[0,5,1,4,2,3,5,1,0]];
-  // Elegimos la progresión desde la huella completa de la búsqueda.
-  const progression=progressionOptions[Math.floor(hash01(20)*progressionOptions.length)];
-  const motifPool=[
+  const progressions=[
+    [0,5,3,4],[0,3,5,4],[0,4,2,5],[0,2,5,3],[0,5,1,4],[0,3,6,4]
+  ];
+  if(semantic.sad) progressions.push([0,5,3,4],[0,3,6,4]);
+  if(semantic.jazz) progressions.push([0,3,6,2],[0,2,5,1]);
+  if(semantic.flamenco) progressions.push([0,5,4,3],[0,3,2,1]);
+  const progression=progressions[(Math.floor(hash01(19)*progressions.length)+variant-1)%progressions.length];
+
+  const motifs=[
     [0,1,2,4,2,1,3,2],[0,2,4,3,1,4,2,0],[0,3,2,4,5,3,1,0],
     [0,1,4,2,3,5,4,2],[0,4,3,1,2,5,3,0],[0,2,1,3,5,4,2,1]
   ];
-  const motif=pick(motifPool);
-  let noteStep=pick([beat/2,beat,beat*1.5]);
-  if(semantic.flamenco||semantic.jazz) noteStep=beat/2;
-  if(semantic.trap) noteStep=beat/2;
-  const register=semantic.night||semantic.sleep ? -1 : (semantic.flamenco||semantic.upbeat ? 1 : Math.floor(hash01(24)*3));
+  const motif=motifs[(Math.floor(hash01(23)*motifs.length)+variant-1)%motifs.length];
+  const register=semantic.night||semantic.sleep?-1:(semantic.flamenco||semantic.energetic?1:0);
+  const noteStep=semantic.flamenco||semantic.jazz||semantic.trap?beat/2:variant%2?beat:beat*.75;
 
-  for(let b=0;b<3;b++){
-    const chord=progression[b];
-    const chordRoot=degree(chord,0);
-    const chord2=degree(chord+2,0);
-    const chord3=degree(chord+4,0);
-    // Cama armónica estricta: no introducimos cuerdas/pads por defecto
-    // cuando la búsqueda pide un instrumento concreto o modo "solo".
-    if(!soloMode || !requestedLead || requestedLead==="strings" || requestedLead==="synth"){
-      events.push({t:b*bar,f:hz(chordRoot-12),v:.028+rnd()*.014,role:requestedLead==="synth"?"synth":"strings"});
-      events.push({t:b*bar,f:hz(chord2),v:.018+rnd()*.012,role:requestedLead==="synth"?"synth":"strings"});
-      events.push({t:b*bar,f:hz(chord3),v:.016+rnd()*.010,role:requestedLead==="synth"?"synth":"strings"});
+  // La armonía se mantiene simple y coherente, mientras el lead expresa la búsqueda.
+  for(let b=0;b<4;b++){
+    const c=progression[b%progression.length];
+    const chord=[degree(c,0),degree(c+2,0),degree(c+4,0)];
+    if(lead==="piano"){
+      events.push({t:b*bar,f:hz(chord[0]-12),v:.13,role:"piano"});
+      events.push({t:b*bar+bar*.45,f:hz(chord[1]),v:.075,role:"piano"});
+      events.push({t:b*bar+bar*.72,f:hz(chord[2]),v:.06,role:"piano"});
+    }else{
+      events.push({t:b*bar,f:hz(chord[0]-12),v:.045,role:"pad"});
+      events.push({t:b*bar,f:hz(chord[1]),v:.028,role:"pad"});
+      events.push({t:b*bar,f:hz(chord[2]),v:.022,role:"pad"});
     }
-    if(lead==="piano" || semantic.piano){
-      events.push({t:b*bar,f:hz(chordRoot-24),v:.055+rnd()*.025,role:"pedal"});
-      events.push({t:b*bar+bar*.25,f:hz(chord2-12),v:.028,role:"pedal"});
-    }
-    // Motif changes every bar; never just repeats one fixed four-bar phrase.
-    const offset=Math.floor(rnd()*motif.length);
-    const density=semantic.trap ? 7 : (semantic.flamenco||semantic.jazz ? 5+Math.floor(rnd()*3) : 3+Math.floor(hash01(28)*5));
+
+    const density=semantic.energetic?7:(semantic.flamenco||semantic.jazz?6:4);
+    const offset=(variant+b)%motif.length;
     for(let j=0;j<density;j++){
-      const idx=(offset+j+(b%3))%motif.length;
-      const d=motif[idx]+chord;
-      const t=b*bar+j*noteStep+(rnd()-.5)*beat*.12;
-      if(t<0||t>dur-1) continue;
-      events.push({t,f:hz(degree(d,register)),v:.055+rnd()*.065,role:lead});
-      if(rnd()>.68) events.push({t:t+noteStep*.42,f:hz(degree(motif[(idx+2)%motif.length]+chord,register+1)),v:.025+rnd()*.025,role:lead==="flute"?"glass":"pluck"});
+      const idx=(offset+j)%motif.length;
+      const d=motif[idx]+c;
+      const t=b*bar+j*noteStep;
+      if(t>=dur) continue;
+      const vel=(lead==="piano"?.13:lead==="guitar"?.12:lead==="flute"?.105:.09)+(j%3===0?.025:0);
+      events.push({t,f:hz(degree(d,register)),v:vel,role:lead});
+      if(j%3===2) events.push({t:t+noteStep*.45,f:hz(degree(motif[(idx+2)%motif.length]+c,register+1)),v:vel*.42,role:lead});
     }
   }
 
-  // Texturas ligadas directamente al paisaje/búsqueda.
-  const reverbDelay=(src,delay,decay,t)=>src*Math.exp(-delay*decay);
+  // Ambientes reales reconocibles, únicamente cuando aparecen en la búsqueda.
+  const noiseAt=(t,seed=0)=>{
+    let x=0;
+    for(let k=1;k<=9;k++) x+=Math.sin(2*Math.PI*(17*k+seed*3.1)*t+Math.sin(t*(.7+k*.11))*k)*((k%3===0)?.65:1);
+    return x/7;
+  };
   const texture=(t)=>{
     let x=0;
-    // Textura semántica estricta: solo se activa si la búsqueda la contiene.
-    // El paisaje/ambiente nunca se sustituye por una textura genérica.
-    if(semantic.rain){
-      const drop=(Math.sin(2*Math.PI*73*t)+.6*Math.sin(2*Math.PI*127*t)+.28*Math.sin(2*Math.PI*211*t));
-      const shimmer=.5+.5*Math.sin(2*Math.PI*.73*t);
-      x+=drop*(.006+.004*shimmer);
-      x+=.003*Math.sin(2*Math.PI*(4.5+.7*Math.sin(t*.17))*t);
-    }
-    if(semantic.flamenco){
-      const pulse=Math.sin(2*Math.PI*(bpm/60)*t);
-      x+=pulse*0.0018;
-    }
-    if(semantic.trap){
-      const pulse=Math.sin(2*Math.PI*(bpm/60)*t);
-      x+=pulse*0.0012;
+    if(semantic.river){
+      const flow=.62+.38*Math.sin(2*Math.PI*.09*t+1.2*Math.sin(t*.17));
+      const n1=noiseAt(t,3), n2=noiseAt(t*.73+1.7,7);
+      const bubbles=Math.pow(Math.max(0,Math.sin(2*Math.PI*(.55+.16*Math.sin(t*.13))*t)),18);
+      x += flow*(.020*n1+.012*n2)+bubbles*.012;
+      x += .004*Math.sin(2*Math.PI*(420+55*Math.sin(t*.21))*t);
     }
     if(semantic.ocean){
       const swell=.5+.5*Math.sin(2*Math.PI*.055*t+Math.sin(t*.07));
-      x+=swell*(Math.sin(2*Math.PI*120*t)+.45*Math.sin(2*Math.PI*260*t))*.0065;
+      const foam=Math.max(0,Math.sin(2*Math.PI*.23*t+Math.sin(t*.11)));
+      x += swell*(.012*noiseAt(t,11)+.005*Math.sin(2*Math.PI*170*t));
+      x += Math.pow(foam,7)*.012;
+    }
+    if(semantic.rain){
+      x += .012*noiseAt(t,19)*(.5+.5*Math.sin(2*Math.PI*.73*t));
+      if(Math.sin(2*Math.PI*3.7*t)>0.985) x+=.035*Math.sin(2*Math.PI*2100*t);
+    }
+    if(semantic.waterfall){
+      x += .018*noiseAt(t,29)+.006*Math.sin(2*Math.PI*110*t);
     }
     if(semantic.forest){
-      const breeze=.5+.5*Math.sin(2*Math.PI*.11*t+Math.sin(t*.23));
-      x+=breeze*(Math.sin(2*Math.PI*430*t)+.45*Math.sin(2*Math.PI*980*t))*.0028;
-      // Pequeños armónicos tipo pájaro, solo si el usuario pide bosque/naturaleza.
-      x+=Math.sin(2*Math.PI*(1450+90*Math.sin(t*.31))*t)*.00045;
+      x += .004*noiseAt(t,37);
+      const bird=Math.pow(Math.max(0,Math.sin(2*Math.PI*.17*t)),18);
+      x += bird*.006*Math.sin(2*Math.PI*(1500+180*Math.sin(t*.27))*t);
     }
-    if(semantic.mountain){
-      // Espacio amplio y grave para paisajes de montaña.
-      x+=.0022*Math.sin(2*Math.PI*54*t)*(0.5+.5*Math.sin(t*.09));
+    if(semantic.fireplace){
+      const crack=Math.pow(Math.max(0,Math.sin(2*Math.PI*.31*t+Math.sin(t*.7))),22);
+      x += .006*noiseAt(t,43)+crack*.035*Math.sin(2*Math.PI*700*t);
     }
     if(semantic.night){
-      x+=.0014*Math.sin(2*Math.PI*92*t)*(.65+.35*Math.sin(t*.05));
+      x += .0015*Math.sin(2*Math.PI*92*t)*(.65+.35*Math.sin(t*.05));
     }
-    if(semantic.sunset||semantic.bright){
-      x+=.0012*Math.sin(2*Math.PI*330*t)*(0.7+.3*Math.sin(t*.08));
+    if(semantic.sunset||semantic.sunrise||semantic.bright){
+      x += .0014*Math.sin(2*Math.PI*330*t)*(.7+.3*Math.sin(t*.08));
     }
     return x;
   };
@@ -336,37 +330,43 @@ function makeCompositionWav(track, wavPath){
   for(let i=0;i<n;i++){
     const t=i/sr;
     let l=0,r=0;
-    const pan=.18*Math.sin(2*Math.PI*t/(9+((h%7))));
+    const pan=.13*Math.sin(2*Math.PI*t/(8+(h%5)));
     for(const e of events){
       const nt=t-e.t;
       if(nt<0) continue;
       let x=0;
       if(e.role==="piano")x=piano(e.f,nt,e.v);
-      else if(e.role==="pedal")x=pianoPedal(e.f,nt,e.v);
       else if(e.role==="guitar")x=guitar(e.f,nt,e.v);
-      else if(e.role==="pluck")x=pluck(e.f,nt,e.v);
       else if(e.role==="strings")x=strings(e.f,nt,e.v);
-      else if(e.role==="synth")x=synth(e.f,nt,e.v);
       else if(e.role==="flute")x=flute(e.f,nt,e.v);
-      else x=glass(e.f,nt,e.v);
+      else if(e.role==="synth")x=synth(e.f,nt,e.v);
+      else if(e.role==="harp")x=harp(e.f,nt,e.v);
+      else if(e.role==="kalimba")x=kalimba(e.f,nt,e.v);
+      else if(e.role==="pluck")x=pluck(e.f,nt,e.v);
+      else if(e.role==="pad")x=synth(e.f,nt,e.v*.32);
       l+=x*(1-pan);r+=x*(1+pan);
     }
-    const tx=texture(t);l+=tx*(1+pan);r+=tx*(1-pan);
-    if(semantic.night||semantic.sleep){l*=.78;r*=.78;}
-    if(semantic.bright||semantic.sunset){const x=.0018*Math.sin(2*Math.PI*1450*t);l+=x;r+=x*.8;}
-    const fadeIn=Math.min(1,t/2),fadeOut=Math.min(1,(dur-t)/4),m=fadeIn*fadeOut;
-    // Saturación muy ligera + filtrado de graves/agudos para un acabado más natural.
-    const room=1+0.035*Math.sin(2*Math.PI*.21*t);
-    l*=room;r*=room;
-    l=Math.tanh(l*1.55)*m;r=Math.tanh(r*1.55)*m;
-    samples[i*2]=clamp(l,-.78,.78);samples[i*2+1]=clamp(r,-.78,.78);
+    // Pedal acústico solo para piano, para que "piano" suene a piano y no a pad.
+    if(lead==="piano"){
+      for(let b=0;b<4;b++){
+        const bt=b*bar;
+        if(t>=bt){ const nt=t-bt; const c=progression[b%progression.length]; l+=pianoPedal(hz(degree(c)-12),nt,.045); r+=pianoPedal(hz(degree(c)-12),nt,.041); }
+      }
+    }
+    const tx=texture(t);
+    l+=tx*(1+pan); r+=tx*(1-pan);
+    if(semantic.sleep||semantic.night){l*=.82;r*=.82;}
+    if(semantic.warm){l*=1.02;r*=1.02;}
+    const fadeIn=Math.min(1,t/1.5),fadeOut=Math.min(1,(dur-t)/3),m=fadeIn*fadeOut;
+    l=Math.tanh(l*1.35)*m; r=Math.tanh(r*1.35)*m;
+    samples[i*2]=clamp(l,-.82,.82); samples[i*2+1]=clamp(r,-.82,.82);
   }
+
   let peak=0;for(const x of samples)peak=Math.max(peak,Math.abs(x));
-  const gain=peak>.001?Math.min(1.7,.82/peak):1;
+  const gain=peak>.001?Math.min(1.25,.78/peak):1;
   for(let i=0;i<samples.length;i++)samples[i]*=gain;
   writeWav(wavPath,samples,sr,2);
 }
-
 async function generateAIMusicFile(track, outPath){
   // Motor local gratuito: la búsqueda del usuario controla directamente la composición.
   // Generamos WAV temporal y lo convertimos a MP3 real para que el navegador lo reproduzca.
