@@ -84,7 +84,7 @@ function renderAICreator(){
     $$("#aiImageGrid .ai-photo").forEach(e=>e.onclick=()=>{S.image={url:e.dataset.url,name:e.dataset.name};renderAICreator()});
   }
   if(mg){
-    mg.innerHTML=S.aiMusic.length?S.aiMusic.map((x,i)=>'<div class="ai-track '+(S.music?.url===x.url?"selected":"")+'" data-url="'+x.url+'" data-name="'+x.name+'"><div><b>♫ Música original '+(i+1)+'</b><small>Previa · melodía · ambiente · texturas</small></div><div class="ai-track-actions"><audio controls preload="none" src="'+x.url+'"></audio><a class="preview-download" href="'+x.url+'" download>↓ Descargar previa</a></div></div>').join(""):'<div class="empty">♫ Generando opciones IA…</div>';
+    mg.innerHTML=S.aiMusic.length?S.aiMusic.map((x,i)=>'<div class="ai-track '+(S.music?.url===x.url?"selected":"")+'" data-url="'+x.url+'" data-name="'+x.name+'"><div><b>♫ Música original '+(i+1)+'</b><small>Previa · melodía · ambiente · texturas</small></div><div class="ai-track-actions"><audio controls preload="metadata" src="'+x.url+(x.url.includes("?")?"&":"?")+"fresh="+encodeURIComponent(x.name+"-"+Date.now())+'"></audio><a class="preview-download" href="'+x.url+'" download>↓ Descargar previa</a></div></div>').join(""):'<div class="empty">♫ Generando opciones IA…</div>';
     $$("#aiMusicList .ai-track").forEach(e=>e.onclick=ev=>{if(ev.target.tagName==="AUDIO")return;S.music={url:e.dataset.url,name:e.dataset.name};renderAICreator()});
   }
   if($("#aiSelectedPhoto"))$("#aiSelectedPhoto").textContent=S.image?prettyImageName(S.image.name):"Sin foto";
