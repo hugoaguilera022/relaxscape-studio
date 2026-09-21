@@ -171,27 +171,24 @@ function makeCompositionWav(track, wavPath){
   const palettes=[
     "piano","strings","synth","guitar","flute","glass","pluck"
   ];
-  let lead;
-  // Prioridad semántica: si la búsqueda nombra un instrumento, manda.
-  // Si describe un paisaje, escogemos un color musical coherente con ese paisaje.
-  if(semantic.piano) lead="piano";
-  else if(semantic.guitar) lead="guitar";
-  else if(semantic.flute) lead="flute";
-  else if(semantic.strings||semantic.cinematic) lead="strings";
-  else if(semantic.rain) lead="synth";
-  else if(semantic.ocean) lead="synth";
-  else if(semantic.forest) lead="flute";
-  else if(semantic.mountain) lead="strings";
-  else if(semantic.night||semantic.sleep) lead="piano";
-  else if(semantic.synth) lead="synth";
-  else lead=pick(palettes);
-  // Las cuatro opciones no son la misma composición con otro volumen.
-  const leadByVariant=["piano","strings","synth","flute"];
-  if(variant===0 && !semantic.guitar && !semantic.flute) lead=semantic.piano?"piano":(semantic.rain||semantic.ocean?"synth":pick(["piano","guitar","pluck"]));
-  if(variant===1) lead=semantic.strings||semantic.cinematic||semantic.mountain?"strings":pick(["strings","piano","synth"]);
-  if(variant===2) lead=semantic.synth||semantic.ocean||semantic.rain||semantic.night?"synth":pick(["synth","glass","pluck"]);
-  if(variant===3) lead=semantic.flute||semantic.forest?"flute":pick(["flute","guitar","pluck"]);
-  if(semantic.guitar) lead=variant===2?"pluck":"guitar";
+  // BLOQUEO ESTRICTO DE LA BÚSQUEDA:
+  // Las variantes ya NO pueden cambiar el instrumento principal por azar.
+  // Si el usuario pide un instrumento, ese instrumento manda en las 4 pistas.
+  // Si pide "solo/únicamente", no añadimos otros instrumentos melódicos.
+  const explicitInstrumentCount=[semantic.piano,semantic.guitar,semantic.flute,semantic.strings,semantic.synth].filter(Boolean).length;
+  const soloMode=/\\b(solo|solamente|únicamente|unicamente|only|just)\\b/.test(brief);
+  const requestedLead=semantic.piano?"piano":semantic.guitar?"guitar":semantic.flute?"flute":semantic.strings?"strings":semantic.synth?"synth":null;
+  let lead=requestedLead;
+  if(!lead){
+    if(semantic.rain||semantic.ocean) lead="synth";
+    else if(semantic.forest) lead="flute";
+    else if(semantic.mountain) lead="strings";
+    else if(semantic.night||semantic.sleep) lead="piano";
+    else lead=pick(palettes);
+  }
+  // En modo explícito, las cuatro opciones comparten el mismo lead requerido.
+  // Solo cambian melodía, registro y textura, nunca el significado de la búsqueda.
+  if(soloMode && requestedLead) lead=requestedLead;
 
   const piano=(f,t,v=1)=>{
     if(t<0||t>7)return 0;
@@ -235,14 +232,17 @@ function makeCompositionWav(track, wavPath){
     const chordRoot=degree(chord,0);
     const chord2=degree(chord+2,0);
     const chord3=degree(chord+4,0);
-    // Sustained harmonic bed.
-    events.push({t:b*bar,f:hz(chordRoot-12),v:.035+rnd()*.018,role:"strings"});
+    // Cama armónica estricta: no introducimos cuerdas/pads por defecto
+    // cuando la búsqueda pide un instrumento concreto o modo "solo".
+    if(!soloMode || !requestedLead || requestedLead==="strings" || requestedLead==="synth"){
+      events.push({t:b*bar,f:hz(chordRoot-12),v:.028+rnd()*.014,role:requestedLead==="synth"?"synth":"strings"});
+      events.push({t:b*bar,f:hz(chord2),v:.018+rnd()*.012,role:requestedLead==="synth"?"synth":"strings"});
+      events.push({t:b*bar,f:hz(chord3),v:.016+rnd()*.010,role:requestedLead==="synth"?"synth":"strings"});
+    }
     if(lead==="piano" || semantic.piano){
       events.push({t:b*bar,f:hz(chordRoot-24),v:.055+rnd()*.025,role:"pedal"});
       events.push({t:b*bar+bar*.25,f:hz(chord2-12),v:.028,role:"pedal"});
     }
-    events.push({t:b*bar,f:hz(chord2),v:.025+ rnd()*.018,role:"strings"});
-    events.push({t:b*bar,f:hz(chord3),v:.022+ rnd()*.016,role:"strings"});
     // Motif changes every bar; never just repeats one fixed four-bar phrase.
     const offset=Math.floor(rnd()*motif.length);
     const density=3+Math.floor(rnd()*5);
@@ -260,8 +260,8 @@ function makeCompositionWav(track, wavPath){
   const reverbDelay=(src,delay,decay,t)=>src*Math.exp(-delay*decay);
   const texture=(t)=>{
     let x=0;
-    // Textura semántica claramente audible: el paisaje buscado cambia el carácter
-    // sonoro, no solo el nombre del archivo.
+    // Textura semántica estricta: solo se activa si la búsqueda la contiene.
+    // El paisaje/ambiente nunca se sustituye por una textura genérica.
     if(semantic.rain){
       const drop=(Math.sin(2*Math.PI*73*t)+.6*Math.sin(2*Math.PI*127*t)+.28*Math.sin(2*Math.PI*211*t));
       const shimmer=.5+.5*Math.sin(2*Math.PI*.73*t);
