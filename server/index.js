@@ -47,7 +47,7 @@ function safe(name) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-const MUSIC_ENGINE_VERSION = "v19-lyria-clean-relaxation";
+const MUSIC_ENGINE_VERSION = "v20-composition-variety";
 
 const BUILTIN_MUSIC = [
   ["relax-piano.mp3","Piano nocturno","Sueño",261.63,329.63,392],
@@ -90,7 +90,7 @@ function makeCompositionWav(track, wavPath){
   // Motor armónico v7: ambient cinematográfico, progresiones lentas, voice-leading
   // estricto, melodía respirada y capas suaves. Se renderiza a 22.05 kHz y se
   // entrega a FFmpeg a 44.1 kHz para mantener calidad sin bloquear Render.
-  const sr=16000, dur=6, n=sr*dur, samples=new Float32Array(n*2);
+  const sr=16000, dur=48, n=sr*dur, samples=new Float32Array(n*2);
   const profile=String(track.musicProfile||"").toLowerCase();
   const ultraCalm=/relax|relaj|calm|calma|tranquil|peace|soft|ambient|piano|nature|spa|healing|bienestar|stress|estrés|ansiedad|anxiety|meditat|sleep|suave/.test(profile);
   const darkCalm=/deep|night|dream|sleep/.test(profile);
@@ -538,29 +538,45 @@ async function generateLyriaMusicFile(prompt,index=1){
   const key=process.env.GEMINI_API_KEY;
   if(!key) throw new Error("GEMINI_API_KEY no configurada");
 
-  // Perfil fijo de referencia: piano de relajación larga, limpio, cálido y muy espacioso.
-  // El texto del usuario modifica la atmósfera, pero no convierte la pista en otro género.
-  const atmosphere=String(prompt||"").slice(0,220);
-  const variants=[
-    "soft felt piano, close natural recording, sparse single notes, long pedal resonance",
-    "soft felt piano, gentle two-note phrases, warm room tone, long sustained harmony",
-    "soft felt piano, sparse melodic phrases, subtle warm pad far behind, very wide reverb",
-    "soft felt piano, extremely gentle arpeggios, natural pedal resonance, deep spacious ambience"
+  const atmosphere=String(prompt||"deep relaxation ambient music").slice(0,260);
+  const p=atmosphere.toLowerCase();
+  const has=(...w)=>w.some(x=>p.includes(x));
+  const requested=[];
+  if(has("guitarra","acústica","acustica","nylon","guitar")) requested.push("warm nylon acoustic guitar");
+  if(has("violín","violin","cello","cuerdas","strings")) requested.push("soft legato strings");
+  if(has("flauta","flute","bambú","bambu","wind")) requested.push("airy bamboo flute");
+  if(has("sintetizador","synth","electrónica","electronica","ambient")) requested.push("warm analog synth textures");
+  if(has("piano","pianístico","pianistica","teclas")) requested.push("felt acoustic piano");
+  if(has("agua","water","océano","oceano","mar","olas","waves","lluvia","rain","cascada","waterfall")) requested.push("subtle natural water texture");
+  if(has("bosque","forest","naturaleza","nature","pájaros","pajaros","birds")) requested.push("organic forest ambience");
+  if(!requested.length) requested.push("felt acoustic piano");
+
+  const palettes=[
+    "intimate piano-led meditation, sparse motif with gentle answering phrases",
+    "piano and soft string-bed, slow harmonic bloom, wider stereo depth",
+    "piano with delicate natural texture, subtle evolving ambience and long tails",
+    "piano-led nocturnal atmosphere, lower register, suspended chords and very soft high harmonics"
   ];
+  const structures=[
+    "A-B-A' structure: establish a motif, develop it with a new chord color, then return transformed",
+    "four-section arc: introduction, gentle harmonic expansion, emotional peak without volume increase, peaceful resolution",
+    "through-composed ambient flow with two contrasting harmonic centers and recurring melodic motif",
+    "slow rondo-like meditation: recurring theme separated by spacious harmonic interludes"
+  ];
+  const variant=Math.max(1,Number(index))-1;
   const finalPrompt=[
-    "Instrumental relaxation music.",
-    "Style reference: long-form healing meditation piano ambience similar in mood and sonic character to the supplied relaxation reference.",
-    "Main instrument MUST be soft acoustic felt piano.",
-    variants[(Math.max(1,Number(index))-1)%variants.length]+".",
-    "Slow approximately 45 BPM feel.",
-    "Very sparse playing, long silences, long natural decay, sustained consonant chords, gentle voice leading.",
-    "Warm intimate piano recording blended into a large clean spacious reverb.",
-    "Continuous ambient meditation background, not a conventional song.",
-    "No drums, no percussion, no beat, no bass groove, no vocals, no lyrics, no pop structure, no cinematic impacts.",
-    "Very low dynamics, peaceful and emotionally neutral, no sudden transitions.",
-    "Clean professional stereo recording, detailed piano, smooth highs, controlled lows, no distortion, no clipping.",
-    "User atmosphere: "+atmosphere+".",
-    "Create an original composition and do not reproduce any existing melody or recording."
+    "Create an original instrumental deep-relaxation ambient composition.",
+    "Use the user's requested sound as the dominant audible identity: "+requested.join(", ")+".",
+    palettes[variant%palettes.length]+".",
+    structures[variant%structures.length]+".",
+    "Musically developed composition, not a static loop: clear motif, counter-phrase, harmonic movement, voice leading, cadential breathing points and subtle variation.",
+    "Very slow 40-55 BPM feel, long phrases, natural dynamics, consonant extended harmony such as maj7, add9, sus2 and gentle minor colors.",
+    "Allow the arrangement to evolve every 8-16 bars while remaining calm and suitable for meditation.",
+    "Professional acoustic/ambient recording aesthetic, clean stereo image, realistic transients, warm low mids, silky highs, controlled sub-bass, natural room and reverb tails.",
+    "No drums, no percussion, no bass groove, no pop drop, no aggressive rhythm, no vocals, no lyrics, no sudden impacts.",
+    "Relaxation reference aesthetic: long-form therapeutic-style piano ambience, peaceful, spacious, warm and continuous, but completely original.",
+    "User search and atmosphere: "+atmosphere+".",
+    "Do not reproduce any existing melody, recording or distinctive musical phrase."
   ].join(" ");
 
   const r=await fetchWithTimeout("https://generativelanguage.googleapis.com/v1beta/interactions",{
@@ -575,11 +591,11 @@ async function generateLyriaMusicFile(prompt,index=1){
 
   const raw=path.join(MUSIC_DIR,".lyria-"+Date.now()+"-"+index+".bin");
   fs.writeFileSync(raw,Buffer.from(b64,"base64"));
-  const outName="ai-reference-relax-"+hashText(finalPrompt)+"-"+index+".mp3";
+  const outName="ai-reference-relax-v20-"+hashText(finalPrompt)+"-"+index+".mp3";
   const out=path.join(MUSIC_DIR,outName);
   try{
     await runFfmpeg(["-y","-i",raw,
-      "-af","highpass=f=30,lowpass=f=18000,acompressor=threshold=-30dB:ratio=1.3:attack=35:release=400:makeup=1,alimiter=limit=0.94",
+      "-af","highpass=f=28,lowpass=f=18500,acompressor=threshold=-28dB:ratio=1.4:attack=30:release=350:makeup=1,alimiter=limit=0.94",
       "-ar","44100","-ac","2","-c:a","libmp3lame","-b:a","320k",out]);
   }finally{fs.rmSync(raw,{force:true})}
   if(!fs.existsSync(out)||fs.statSync(out).size<4096) throw new Error("El audio generado no es válido.");
@@ -731,7 +747,7 @@ function aiTracksForBackground(prompt=""){
     const b=BUILTIN_MUSIC[i];
     return {
       ...b,
-      file:"ai-prompt-"+seed+"-v14-"+(i+1)+".mp3",
+      file:"ai-prompt-"+seed+"-v15-"+(i+1)+".mp3",
       label:"IA · "+(i+1),
       variant:i+1,
       f1:b.f1,f2:b.f2,f3:b.f3,
