@@ -90,7 +90,7 @@ function makeCompositionWav(track, wavPath){
   // Motor armónico v7: ambient cinematográfico, progresiones lentas, voice-leading
   // estricto, melodía respirada y capas suaves. Se renderiza a 22.05 kHz y se
   // entrega a FFmpeg a 44.1 kHz para mantener calidad sin bloquear Render.
-  const sr=22050, dur=10, n=sr*dur, samples=new Float32Array(n*2);
+  const sr=8000, dur=5, n=sr*dur, samples=new Float32Array(n*2);
   const profile=String(track.musicProfile||"").toLowerCase();
   const ultraCalm=/relax|calm|sleep|meditat|peace|soft|ambient|piano|nature|spa|healing|stress|anxiety/.test(profile);
   const darkCalm=/deep|night|dream|sleep/.test(profile);
