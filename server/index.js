@@ -107,46 +107,58 @@ function writeWav(file, samples, sampleRate=44100, channels=2){
 }
 
 function makeCompositionWav(track, wavPath){
-  // Motor musical local: interpreta la búsqueda de forma semántica y la convierte
-  // directamente en instrumento, ambiente, armonía, tempo, registro y textura.
+  // SECUENCIADOR MUSICAL LOCAL
+  // Convierte la petición del usuario en una pequeña "sesión" musical:
+  // 1) interpreta estilo/tempo/ambiente,
+  // 2) crea tonalidad + progresión,
+  // 3) asigna un rol a CADA instrumento solicitado,
+  // 4) escribe eventos MIDI-like (nota, tiempo, duración, velocidad, instrumento),
+  // 5) renderiza esos eventos con el timbre solicitado.
   // IMPORTANTE: este bloque es exclusivamente de MÚSICA. La generación de imágenes
   // no se toca.
   const sr=24000, dur=18, n=sr*dur, samples=new Float32Array(n*2);
   const variant=((Number(track.variant||1)-1)%4+4)%4;
-  const brief=String(track.userSearch||track.originalMusicPrompt||"relaxscape").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  const rawBrief=String(track.userSearch||track.originalMusicPrompt||"relaxscape");
+  const brief=rawBrief.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
   const hz=m=>440*Math.pow(2,(m-69)/12);
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   const has=(...w)=>w.some(x=>brief.includes(x));
-  const word=(re)=>re.test(brief);
 
-  // Frase -> intención musical. Las palabras específicas pesan más que "relax".
+  // -------------------- 1. INTERPRETACIÓN --------------------
+  // INSTRUMENTOS: solo alias que realmente nombran un instrumento.
+  // Los géneros ("electronic", "orchestral", etc.) NO crean instrumentos.
   const semantic={
     piano:has("piano","teclas","pianistico"),
-    guitar:has("guitarra","guitar","nylon","acustica"),
-    strings:has("cuerdas","strings","violin","cello","viola","orquesta","orchestral"),
+    guitar:has("guitarra","guitar","guitarra acustica","guitarra clasica","guitarra de nylon","nylon guitar"),
+    strings:has("cuerdas","strings","violin","cello","viola"),
     flute:has("flauta","flute","bambu"),
-    synth:has("sintetizador","synth","sintesis","electronica","electronic"),
+    synth:has("sintetizador","synth","synthesizer"),
     harp:has("arpa","harp"),
     kalimba:has("kalimba","mbira"),
+
     rain:has("lluvia","rain","tormenta","storm"),
     ocean:has("oceano","ocean","mar","olas","waves","sea","costa","beach"),
     river:has("rio","river","corriente","stream","arroyo","agua corriendo","agua corriente","corriente de agua","agua fluyendo","agua que corre","flowing water","running water","creek"),
     waterfall:has("cascada","waterfall"),
-    forest:has("bosque","forest","woodland","pajaros","birds","naturaleza","nature"),
+    forest:has("bosque","forest","woodland","pajaros","birds"),
     mountain:has("montana","mountain","alpine"),
     fireplace:has("chimenea","fireplace","fuego","fire","hogar"),
+
     night:has("noche","night","luna","moon","estrellas","stars"),
     sunset:has("atardecer","sunset","ocaso","golden hour"),
     sunrise:has("amanecer","sunrise","dawn"),
+
     sleep:has("sueno","sleep","dormir","sleeping"),
     meditation:has("meditacion","meditation","zen","mindfulness","yoga","respiracion"),
     spa:has("spa","wellness","bienestar"),
+
     cinematic:has("cinematico","cinematic","pelicula","film","banda sonora","soundtrack"),
-    flamenco:has("flamenco","palmas","rumba","guitarra espanola"),
+    flamenco:has("flamenco","palmas","rumba"),
     lofi:has("lofi","lo-fi","chillhop"),
     jazz:has("jazz","swing","blues"),
     trap:has("trap","808","hip hop","hip-hop"),
     classical:has("clasico","classica","classical","sonata"),
+    ambient:has("ambient","ambiente","ambiental"),
     warm:has("calido","warm","acogedor","cozy","intimo","intimate"),
     bright:has("luminoso","bright","alegre","sunny"),
     sad:has("triste","sad","melancolico","melancholic"),
@@ -155,18 +167,29 @@ function makeCompositionWav(track, wavPath){
     energetic:has("energetico","energetica","upbeat","rapido","fast","intenso")
   };
 
-  // Determinismo por búsqueda completa + variante: las cuatro opciones son
-  // diferentes, pero todas siguen exactamente el mismo tema solicitado.
+  const requestedRoles=[];
+  if(semantic.piano) requestedRoles.push("piano");
+  if(semantic.guitar) requestedRoles.push("guitar");
+  if(semantic.strings) requestedRoles.push("strings");
+  if(semantic.flute) requestedRoles.push("flute");
+  if(semantic.synth) requestedRoles.push("synth");
+  if(semantic.harp) requestedRoles.push("harp");
+  if(semantic.kalimba) requestedRoles.push("kalimba");
+
+  // Si no se pide instrumento, NO se inventa ninguno.
+  const lead=requestedRoles[0]||null;
+  const companions=requestedRoles.slice(1);
+
+  // -------------------- 2. SEMILLA + PARAMETROS --------------------
   let h=2166136261>>>0;
-  const seedText=String(track.userSearch||track.originalMusicPrompt||"relaxscape")+"|v="+variant+"|"+String(track.generationSeed||"");
+  const seedText=rawBrief+"|v="+variant+"|"+String(track.generationSeed||"");
   for(const ch of seedText){h^=ch.charCodeAt(0);h=Math.imul(h,16777619)>>>0;}
   let rngState=(h^((variant+1)*0x9e3779b9))>>>0;
-  const rnd=()=>{rngState^=rngState<<13;rngState^=rngState>>>17;rngState^=rngState<<5;rngState>>>=0;return rngState/4294967296;};
+  const rnd=()=>{rngState^=rngState<<13;rngState^=rngState>>>17;rngState>>>=0;return rngState/4294967296;};
   const pick=a=>a[Math.floor(rnd()*a.length)];
   const hash01=(shift=0)=>(((h>>>shift)%997)/996);
 
-  const hzRootNames=[36,38,40,41,43,45,47,48,50,52,53,55];
-  let root=pick(hzRootNames);
+  let root=pick([36,38,40,41,43,45,47,48,50,52,53,55]);
   if(semantic.night||semantic.sleep) root=Math.max(33,root-5);
   if(semantic.sunrise||semantic.sunset||semantic.bright) root=Math.min(55,root+4);
   if(semantic.ocean) root=45+Math.floor(hash01(7)*10);
@@ -182,7 +205,7 @@ function makeCompositionWav(track, wavPath){
 
   let bpm=42+Math.floor(hash01(11)*12);
   if(semantic.sleep) bpm=32+Math.floor(hash01(13)*6);
-  if(semantic.meditation||semantic.spa) bpm=36+Math.floor(hash01(13)*8);
+  if(semantic.meditation||semantic.spa||semantic.ambient) bpm=36+Math.floor(hash01(13)*8);
   if(semantic.river||semantic.ocean) bpm=40+Math.floor(hash01(13)*10);
   if(semantic.cinematic) bpm=42+Math.floor(hash01(13)*14);
   if(semantic.flamenco) bpm=84+Math.floor(hash01(13)*16);
@@ -194,16 +217,7 @@ function makeCompositionWav(track, wavPath){
   const beat=60/bpm, bar=beat*4;
   const degree=(d,o=0)=>root+scale[((d%scale.length)+scale.length)%scale.length]+12*o;
 
-  const explicitLead=semantic.piano?"piano":semantic.guitar?"guitar":semantic.flute?"flute":semantic.strings?"strings":semantic.synth?"synth":semantic.harp?"harp":semantic.kalimba?"kalimba":null;
-
-  // REGLA ESTRICTA DE INSTRUMENTACIÓN:
-  // el género, mood, paisaje o estilo JAMÁS pueden añadir un instrumento que
-  // el usuario no haya pedido. Antes se introducía piano/guitarra/flauta/cuerdas
-  // automáticamente por "noche", "río", "cinematic", etc.; eso se elimina.
-  // Los instrumentos existentes en la búsqueda son la única fuente sonora tonal.
-  const lead=explicitLead;
-
-  // Timbres dedicados: solo se renderizan instrumentos explícitamente pedidos.
+  // -------------------- 3. TIMBRE --------------------
   const piano=(f,t,v=1)=>{
     if(t<0||t>7)return 0;
     const a=1-Math.exp(-t/.006), hammer=Math.exp(-t/.045), body=Math.exp(-t/3.2);
@@ -229,25 +243,14 @@ function makeCompositionWav(track, wavPath){
   );
   const flute=(f,t,v=1)=>{
     if(t<0||t>7)return 0;
-    // Flauta de aire: fundamental muy dominante, armónicos suaves y vibrato lento.
-    // El ruido de respiración es estrecho y filtrado para no parecer ruido blanco.
-    const attack=1-Math.exp(-t/.16);
-    const body=Math.exp(-t/4.8);
+    const attack=1-Math.exp(-t/.16), body=Math.exp(-t/4.8);
     const vib=1+.0045*Math.sin(2*Math.PI*5.1*t);
     const breath=(Math.sin(2*Math.PI*37*t)+.55*Math.sin(2*Math.PI*61*t+.7)+.25*Math.sin(2*Math.PI*89*t+1.4))/1.8;
     const airEnv=Math.exp(-t/1.7)*(0.018+0.010*Math.sin(2*Math.PI*.7*t));
-    return v*attack*body*(
-      .91*Math.sin(2*Math.PI*f*vib*t)+
-      .065*Math.sin(2*Math.PI*2*f*vib*t)+
-      .018*Math.sin(2*Math.PI*3*f*vib*t)+
-      breath*airEnv
-    );
+    return v*attack*body*(.91*Math.sin(2*Math.PI*f*vib*t)+.065*Math.sin(2*Math.PI*2*f*vib*t)+.018*Math.sin(2*Math.PI*3*f*vib*t)+breath*airEnv);
   };
   const synth=(f,t,v=1)=>t<0?0:v*(1-Math.exp(-t/.8))*Math.exp(-t/11)*(
     .42*Math.sin(2*Math.PI*f*t)+.22*Math.sin(2*Math.PI*f*1.006*t)+.16*Math.sin(2*Math.PI*f*.994*t)+.08*Math.sin(2*Math.PI*f/2*t)
-  );
-  const pluck=(f,t,v=1)=>t<0||t>3?0:v*(1-Math.exp(-t/.004))*Math.exp(-t/1.35)*(
-    .60*Math.sin(2*Math.PI*f*t)+.25*Math.sin(4*Math.PI*f*t)+.10*Math.sin(8*Math.PI*f*t)
   );
   const harp=(f,t,v=1)=>t<0||t>4?0:v*(1-Math.exp(-t/.004))*Math.exp(-t/2.2)*(
     .70*Math.sin(2*Math.PI*f*t)+.20*Math.sin(2*Math.PI*2.99*f*t)+.06*Math.sin(2*Math.PI*5*f*t)
@@ -255,123 +258,156 @@ function makeCompositionWav(track, wavPath){
   const kalimba=(f,t,v=1)=>t<0||t>3?0:v*(1-Math.exp(-t/.003))*Math.exp(-t/1.9)*(
     .55*Math.sin(2*Math.PI*f*t)+.30*Math.sin(2*Math.PI*2.7*f*t)+.12*Math.sin(2*Math.PI*5.1*f*t)
   );
+  const renderers={piano,guitar,strings,flute,synth,harp,kalimba};
 
+  // -------------------- 4. SECUENCIA --------------------
+  // Cada evento es independiente del render:
+  // {t, dur, f, v, role, kind}. Esto permite que la misma composición pueda
+  // cambiar de timbre/mezcla sin volver a inventar las notas.
   const events=[];
-  const progressions=[
-    [0,5,3,4],[0,3,5,4],[0,4,2,5],[0,2,5,3],[0,5,1,4],[0,3,6,4]
-  ];
-  if(semantic.sad) progressions.push([0,5,3,4],[0,3,6,4]);
-  if(semantic.jazz) progressions.push([0,3,6,2],[0,2,5,1]);
-  if(semantic.flamenco) progressions.push([0,5,4,3],[0,3,2,1]);
-  // Progresiones diatónicas adaptadas a la escala para mantener coherencia armónica.
-  const diatonicProgressions = scale.length >= 7
-    ? [[0,5,3,4],[0,3,5,4],[0,4,2,5],[0,2,5,3]]
-    : [[0,3,4,0],[0,2,3,4],[0,3,2,4],[0,2,4,3]];
-  const progressionPool = semantic.sad
-    ? diatonicProgressions.concat(scale.length >= 7 ? [[0,5,3,4]] : [[0,3,2,4]])
-    : diatonicProgressions;
-  const progression=progressionPool[(Math.floor(hash01(19)*progressionPool.length)+variant-1)%progressionPool.length];
+  const add=(role,t,durBeats,degreeIndex,octave,velocity,kind="note")=>{
+    if(!role||t>=dur)return;
+    events.push({
+      role,
+      t,
+      end:Math.min(dur,t+durBeats*beat),
+      f:hz(degree(degreeIndex,octave)),
+      v:velocity,
+      kind
+    });
+  };
 
-  // Melodía más desarrollada: cada compás tiene una célula principal, notas de
-  // aproximación, variaciones rítmicas y una respuesta en registro diferente.
-  const motifs=[
-    [0,1,2,4,5,4,2,1],[0,2,4,5,4,3,1,0],[0,3,2,4,6,5,3,2],
-    [0,2,1,4,3,5,4,1],[0,4,3,2,5,4,2,0],[0,1,3,5,4,2,6,3]
-  ];
-  const motif=motifs[(Math.floor(hash01(23)*motifs.length)+variant-1)%motifs.length];
-  const register=semantic.night||semantic.sleep?-1:(semantic.flamenco||semantic.energetic?1:0);
-  const noteStep=semantic.flamenco||semantic.jazz||semantic.trap?beat/2:beat/2;
-  const harmonyRole=lead==="guitar"?"guitar":lead==="strings"?"strings":lead==="flute"?"flute":lead==="synth"?"synth":lead==="harp"?"harp":lead==="kalimba"?"kalimba":lead==="piano"?"piano":null;
-  const leadVelocity=lead==="piano"?.205:lead==="guitar"?.195:lead==="flute"?.18:lead==="strings"?.17:lead==="harp"?.18:lead==="kalimba"?.18:lead==="synth"?.16:0;
+  // Armonía: progresión por compases. La progresión cambia según estilo, pero
+  // siempre se mantiene dentro de la escala elegida.
+  const progressionPool = semantic.flamenco
+    ? [[0,5,4,3],[0,3,2,1],[0,5,3,4]]
+    : semantic.jazz
+      ? [[0,3,6,2],[0,2,5,1],[0,3,5,4]]
+      : semantic.sad
+        ? [[0,5,3,4],[0,3,6,4],[0,5,1,4]]
+        : [[0,5,3,4],[0,3,5,4],[0,4,2,5],[0,2,5,3]];
+  const progression=progressionPool[(Math.floor(hash01(19)*progressionPool.length)+variant-1+progressionPool.length)%progressionPool.length];
 
-  // ENSAMBLE EXPLÍCITO Y CERRADO: SOLO instrumentos presentes en la búsqueda.
-  const requestedRoles=[];
-  if(semantic.piano) requestedRoles.push("piano");
-  if(semantic.guitar) requestedRoles.push("guitar");
-  if(semantic.strings) requestedRoles.push("strings");
-  if(semantic.flute) requestedRoles.push("flute");
-  if(semantic.synth) requestedRoles.push("synth");
-  if(semantic.harp) requestedRoles.push("harp");
-  if(semantic.kalimba) requestedRoles.push("kalimba");
-  const companionRoles=requestedRoles.filter(role=>role!==lead);
-  const companionVelocity={piano:.075,guitar:.065,strings:.060,flute:.065,synth:.045,harp:.070,kalimba:.055};
+  // La armonía base se reparte entre los instrumentos pedidos.
+  // Con un solo instrumento, ese instrumento lleva la armonía y la melodía.
+  // Con varios, el primero lidera y los demás reciben un papel definido.
+  const chordVoicing=(c,oct=0)=>{
+    const third=scale.length>=7?c+2:c+2;
+    const fifth=c+4;
+    const seventh=scale.length>=7?c+6:null;
+    const tones=[degree(c,oct),degree(third,oct),degree(fifth,oct)];
+    if(seventh!==null) tones.push(degree(seventh,oct));
+    return tones;
+  };
 
+  const roles=requestedRoles;
+  const leadRole=lead;
+  const roleVelocity={
+    piano:.19,guitar:.18,strings:.145,flute:.17,synth:.14,harp:.16,kalimba:.16
+  };
+
+  // Registro y comportamiento de cada rol.
+  const roleSpec={
+    piano:{oct:-1,pattern:"chords"},
+    guitar:{oct:-1,pattern:"arpeggio"},
+    strings:{oct:-1,pattern:"sustain"},
+    flute:{oct:1,pattern:"melody"},
+    synth:{oct:-1,pattern:"pad"},
+    harp:{oct:1,pattern:"arpeggio"},
+    kalimba:{oct:1,pattern:"ostinato"}
+  };
+
+  // 4 compases = una frase. Cada instrumento obtiene un patrón coherente.
   for(let b=0;b<4;b++){
     const c=progression[b%progression.length];
-    const chord=[degree(c,0),degree(c+2,0),degree(c+4,0)];
-    // Armonía SOLO si existe un instrumento solicitado.
-    if(lead==="piano"){
-      events.push({t:b*bar,f:hz(chord[0]-12),v:.12,role:"piano"});
-      events.push({t:b*bar+bar*.25,f:hz(chord[1]),v:.052,role:"piano"});
-      events.push({t:b*bar+bar*.50,f:hz(chord[2]),v:.058,role:"piano"});
-      events.push({t:b*bar+bar*.75,f:hz(chord[1]),v:.045,role:"piano"});
-    }else if(harmonyRole){
-      events.push({t:b*bar,f:hz(chord[0]-12),v:.038,role:harmonyRole});
-      events.push({t:b*bar+bar*.5,f:hz(chord[1]),v:.024,role:harmonyRole});
-      events.push({t:b*bar+bar*.75,f:hz(chord[2]),v:.021,role:harmonyRole});
+    const baseT=b*bar;
+    const tones=chordVoicing(c,0);
+
+    for(let r=0;r<roles.length;r++){
+      const role=roles[r], spec=roleSpec[role], baseVel=roleVelocity[role]*(r===0?1.08:0.72);
+      if(!spec)continue;
+
+      if(spec.pattern==="chords"){
+        // Piano: voicing completo, entradas espaciadas, sin convertirse en pad.
+        add(role,baseT,.90,c,spec.oct,baseVel,"chord");
+        add(role,baseT+bar*.33,.72,c+2,spec.oct,baseVel*.72,"chord");
+        add(role,baseT+bar*.66,.72,c+4,spec.oct,baseVel*.64,"chord");
+        add(role,baseT+bar*.82,.55,c+2,spec.oct,baseVel*.48,"chord");
+      } else if(spec.pattern==="arpeggio"){
+        // Guitarra/arpa: arpegio lento derivado del acorde, no notas aleatorias.
+        const seq=[0,1,2,1,3,2,1,0];
+        for(let j=0;j<8;j++){
+          const t=baseT+j*bar/8;
+          const d=tones[seq[(j+r+variant)%seq.length]]===undefined?c:(
+            seq[(j+r+variant)%seq.length]===3?c+6: c+[0,2,4][seq[(j+r+variant)%seq.length]]
+          );
+          add(role,t,.46,d,spec.oct,baseVel*(j%4===0?1:.76),"arpeggio");
+        }
+      } else if(spec.pattern==="sustain"){
+        // Cuerdas: dos voces largas, moviéndose con el acorde.
+        add(role,baseT,3.6,c,spec.oct,baseVel,"sustain");
+        add(role,baseT+.15,3.35,c+2,spec.oct,baseVel*.72,"sustain");
+        if(scale.length>=7) add(role,baseT+.28,3.1,c+4,spec.oct,baseVel*.58,"sustain");
+      } else if(spec.pattern==="pad"){
+        // Synth: acordes lentos; SOLO existe si el usuario pidió synth.
+        add(role,baseT,3.7,c,spec.oct,baseVel*.82,"pad");
+        add(role,baseT+.18,3.5,c+2,spec.oct,baseVel*.56,"pad");
+        add(role,baseT+.34,3.3,c+4,spec.oct,baseVel*.46,"pad");
+      } else if(spec.pattern==="ostinato"){
+        const seq=[0,2,4,2,1,3,4,2];
+        for(let j=0;j<8;j++){
+          const t=baseT+j*bar/8;
+          add(role,t,.32, c+seq[(j+variant+b)%seq.length],spec.oct,baseVel*(j%2?.72:1),"ostinato");
+        }
+      } else if(spec.pattern==="melody"){
+        // Flauta: frase cantabile con silencios, notas objetivo y aproximaciones.
+        const motifs=[
+          [0,1,2,4,5,4,2,1],[0,2,4,5,4,3,1,0],
+          [0,3,2,4,6,5,3,2],[0,2,1,4,3,5,4,1]
+        ];
+        const motif=motifs[(Math.floor(hash01(23)*motifs.length)+variant+b)%motifs.length];
+        for(let j=0;j<8;j++){
+          if(j===1&&b%2===1)continue;
+          if(j===5&&variant%2===0)continue;
+          const t=baseT+j*bar/8;
+          add(role,t,(j===3||j===7)?.78:.50,c+motif[j],spec.oct,baseVel*(j%4===0?1.08:.88),"melody");
+          if(j===2||j===6) add(role,t+bar/16,.22,c+motif[(j+1)%8]+(variant%2?0:1),spec.oct,baseVel*.34,"passing");
+        }
+      }
     }
 
-    // Frase A: ocho posiciones con silencios y duraciones implícitas distintas.
-    if(!lead) continue;
-    const offset=(variant+b*2)%motif.length;
-    for(let j=0;j<8;j++){
-      const idx=(offset+j)%motif.length;
-      const d=motif[idx]+c;
-      const rhythm=(j===3||j===7) ? .72 : (j%3===1 ? .42 : .50);
-      const t=b*bar+j*noteStep;
-      if(t>=dur) continue;
-      const vel=leadVelocity*(j%4===0?1.12:(j%3===0?.82:1));
-      events.push({t,f:hz(degree(d,register)),v:vel,role:lead});
-      // Nota de paso/acercamiento: añade lenguaje melódico sin salir de la escala.
-      if(j===2||j===6){
-        const passing=motif[(idx+1)%motif.length]+c+(variant%2?0:1);
-        events.push({t:t+noteStep*.48,f:hz(degree(passing,register)),v:vel*.42,role:lead});
-      }
-      // Eco una octava arriba en finales de frase.
-      if(j===3||j===7){
-        const answer=motif[(idx+2)%motif.length]+c;
-        events.push({t:t+noteStep*.52,f:hz(degree(answer,register+1)),v:vel*.34,role:lead});
+    // Si el primer instrumento NO es flauta, sigue habiendo una melodía real,
+    // pero la interpreta el instrumento líder. Esto evita que el secuenciador
+    // "invente" una flauta/synth/pad.
+    if(leadRole && !["flute"].includes(leadRole)){
+      const motifs=[
+        [0,1,2,4,5,4,2,1],[0,2,4,5,4,3,1,0],
+        [0,3,2,4,6,5,3,2],[0,2,1,4,3,5,4,1],
+        [0,4,3,2,5,4,2,0]
+      ];
+      const motif=motifs[(Math.floor(hash01(29)*motifs.length)+variant+b)%motifs.length];
+      const oct=(semantic.night||semantic.sleep)?-1:(semantic.energetic?1:0);
+      for(let j=0;j<8;j++){
+        if(j===1&&b%2===1)continue;
+        if(j===5&&variant%2===0)continue;
+        const t=baseT+j*bar/8;
+        add(leadRole,t,(j===3||j===7)?.78:.50,c+motif[j],oct,roleVelocity[leadRole]*(j%4===0?1.1:.88),"melody");
+        if(j===2||j===6) add(leadRole,t+bar/16,.22,c+motif[(j+1)%8]+(variant%2?0:1),oct,roleVelocity[leadRole]*.34,"passing");
       }
     }
 
-    // Cada instrumento adicional solicitado recibe su propia línea musical.
-    // No se mezclan sus timbres ni se sustituyen por synth/pad.
-    for(const role of companionRoles){
-      const cv=(companionVelocity[role]||.055)*(1+(variant%2)*.08);
-      const companionRegister=role==="flute"||role==="harp"||role==="kalimba" ? register+1 : register;
-      const phrase=[0,2,4,3,1,4,2,0];
-      for(let j=0;j<4;j++){
-        const ct=b*bar+j*bar*.24+(variant%2?bar*.035:0);
-        if(ct>=dur) continue;
-        const cd=phrase[(j+variant+b)%phrase.length]+c;
-        events.push({t:ct,f:hz(degree(cd,companionRegister)),v:cv,role});
-      }
-      // Nota sostenida de respuesta para que el instrumento se perciba claramente
-      // sin competir con la melodía principal.
-      const holdT=b*bar+bar*.62;
-      if(holdT<dur) events.push({t:holdT,f:hz(degree(c+2,companionRegister)),v:cv*.72,role});
-    }
-
-    // Respuesta contrapuntística: una segunda línea más lenta y baja, siempre
-    // construida sobre grados del acorde/escala para mantener consonancia.
-    if(lead && b>0){
-      const response=[c+4,c+2,c+1,c+3][(b+variant)%4];
-      for(let k=0;k<3;k++){
-        const rt=b*bar+bar*.33+k*bar*.22;
-        if(rt>=dur) continue;
-        events.push({
-          t:rt,
-          f:hz(degree(response+(k%2),register-1)),
-          v:leadVelocity*.28,
-          role:lead
-        });
-      }
-    }
+    // Segundo/tercer instrumento: respuesta musical, nunca un timbre nuevo.
+    companions.forEach((role,index)=>{
+      const spec=roleSpec[role];
+      if(!spec)return;
+      const responseDegree=c+(index%2?4:2);
+      const responseOct=spec.oct;
+      add(role,baseT+bar*.62,1.15,responseDegree,responseOct,roleVelocity[role]*.42,"response");
+    });
   }
 
-  // Ambientes reales reconocibles, únicamente cuando aparecen en la búsqueda.
-  // Texturas ambientales dedicadas. No son una melodía: son capas de sonido
-  // continuo/irregular que se activan solo cuando el usuario las pide.
+  // -------------------- 5. AMBIENTES --------------------
+  // Los ambientes son buses separados y SOLO se activan si se pidieron.
   const noiseAt=(t,seed=0)=>{
     let x=0;
     const freqs=[37.1,61.7,89.3,127.9,173.6,241.4,337.7,479.2,691.8];
@@ -388,106 +424,89 @@ function makeCompositionWav(track, wavPath){
   const texture=(t)=>{
     let x=0;
     if(semantic.river){
-      // Corriente de agua claramente reconocible: caudal, turbulencia, ondas,
-      // burbujas y pequeños brillos irregulares.
       const flow=.78+.22*Math.sin(2*Math.PI*.047*t+Math.sin(t*.11)*.8);
-      // Agua corriente: predominan flujo continuo, ondas y pequeños reflejos.
-      // Se evita una capa amplia de ruido para que NO suene a ruido blanco.
-      const current=.018*flow*(
-        Math.sin(2*Math.PI*31.7*t)+
-        .55*Math.sin(2*Math.PI*47.3*t+1.1)+
-        .32*Math.sin(2*Math.PI*73.9*t+2.4)
-      );
-      const turbulence=.009*(.55+.45*Math.sin(2*Math.PI*.083*t+1.7))*
-        (Math.sin(2*Math.PI*137*t)+.35*Math.sin(2*Math.PI*211*t+.8));
+      const current=.018*flow*(Math.sin(2*Math.PI*31.7*t)+.55*Math.sin(2*Math.PI*47.3*t+1.1)+.32*Math.sin(2*Math.PI*73.9*t+2.4));
+      const turbulence=.009*(.55+.45*Math.sin(2*Math.PI*.083*t+1.7))*(Math.sin(2*Math.PI*137*t)+.35*Math.sin(2*Math.PI*211*t+.8));
       const ripple=Math.pow(Math.max(0,Math.sin(2*Math.PI*(.63+.08*Math.sin(t*.13))*t+1.1)),18);
       const ripple2=Math.pow(Math.max(0,Math.sin(2*Math.PI*(1.17+.13*Math.sin(t*.21))*t+2.8)),22);
       const bubble=Math.pow(Math.max(0,Math.sin(2*Math.PI*(.29+.07*Math.sin(t*.17))*t+2.1)),30);
-      x += current+turbulence;
-      x += ripple*.030 + ripple2*.018 + bubble*.022;
-      x += .006*Math.sin(2*Math.PI*(820+150*Math.sin(t*.19))*t);
-      x += .0015*grain(t*19.1,71);
+      x+=current+turbulence+ripple*.030+ripple2*.018+bubble*.022;
+      x+=.006*Math.sin(2*Math.PI*(820+150*Math.sin(t*.19))*t)+.0015*grain(t*19.1,71);
     }
     if(semantic.ocean){
       const swell=.5+.5*Math.sin(2*Math.PI*.055*t+Math.sin(t*.07));
       const foam=Math.max(0,Math.sin(2*Math.PI*.23*t+Math.sin(t*.11)));
-      x += swell*(noiseAt(t*.8,11)*.048+grain(t*.45,17)*.012);
-      x += Math.pow(foam,7)*.035;
+      x+=swell*(noiseAt(t*.8,11)*.048+grain(t*.45,17)*.012)+Math.pow(foam,7)*.035;
     }
     if(semantic.rain){
       const rainDensity=.78+.22*Math.sin(2*Math.PI*.17*t);
-      x += grain(t*7.3,19)*.034*rainDensity;
-      x += noiseAt(t*1.9,23)*.026*rainDensity;
-      const drop1=Math.pow(Math.max(0,Math.sin(2*Math.PI*3.17*t+1.2)),32);
-      const drop2=Math.pow(Math.max(0,Math.sin(2*Math.PI*5.73*t+2.7)),38);
-      const drop3=Math.pow(Math.max(0,Math.sin(2*Math.PI*8.41*t+.4)),44);
-      x += drop1*.045*Math.sin(2*Math.PI*(1850+260*Math.sin(t*.31))*t);
-      x += drop2*.034*Math.sin(2*Math.PI*(2650+340*Math.sin(t*.23))*t);
-      x += drop3*.022*Math.sin(2*Math.PI*(3400+420*Math.sin(t*.17))*t);
+      x+=grain(t*7.3,19)*.034*rainDensity+noiseAt(t*1.9,23)*.026*rainDensity;
+      const d1=Math.pow(Math.max(0,Math.sin(2*Math.PI*3.17*t+1.2)),32);
+      const d2=Math.pow(Math.max(0,Math.sin(2*Math.PI*5.73*t+2.7)),38);
+      const d3=Math.pow(Math.max(0,Math.sin(2*Math.PI*8.41*t+.4)),44);
+      x+=d1*.045*Math.sin(2*Math.PI*(1850+260*Math.sin(t*.31))*t);
+      x+=d2*.034*Math.sin(2*Math.PI*(2650+340*Math.sin(t*.23))*t);
+      x+=d3*.022*Math.sin(2*Math.PI*(3400+420*Math.sin(t*.17))*t);
     }
     if(semantic.waterfall){
       const roar=.5+.5*Math.sin(2*Math.PI*.11*t);
-      x += roar*(grain(t*1.7,29)*.052+noiseAt(t*.9,29)*.042);
-      x += .012*Math.sin(2*Math.PI*(105+18*Math.sin(t*.17))*t);
+      x+=roar*(grain(t*1.7,29)*.052+noiseAt(t*.9,29)*.042)+.012*Math.sin(2*Math.PI*(105+18*Math.sin(t*.17))*t);
     }
     if(semantic.forest){
-      x += grain(t*2.1,37)*.010+noiseAt(t,37)*.010;
+      x+=grain(t*2.1,37)*.010+noiseAt(t,37)*.010;
       const bird=Math.pow(Math.max(0,Math.sin(2*Math.PI*.17*t)),18);
-      x += bird*.014*Math.sin(2*Math.PI*(1500+180*Math.sin(t*.27))*t);
+      x+=bird*.014*Math.sin(2*Math.PI*(1500+180*Math.sin(t*.27))*t);
     }
     if(semantic.fireplace){
       const crack=Math.pow(Math.max(0,Math.sin(2*Math.PI*.31*t+Math.sin(t*.7))),22);
-      x += grain(t*3.1,43)*.012+crack*.055*Math.sin(2*Math.PI*700*t);
-    }
-    if(semantic.night){
-      x += .002*Math.sin(2*Math.PI*92*t)*(.65+.35*Math.sin(t*.05));
-    }
-    if(semantic.sunset||semantic.sunrise||semantic.bright){
-      x += .002*Math.sin(2*Math.PI*330*t)*(.7+.3*Math.sin(t*.08));
+      x+=grain(t*3.1,43)*.012+crack*.055*Math.sin(2*Math.PI*700*t);
     }
     return x;
   };
 
+  // -------------------- 6. RENDER + MEZCLA --------------------
   for(let i=0;i<n;i++){
     const t=i/sr;
     let l=0,r=0;
     const pan=.13*Math.sin(2*Math.PI*t/(8+(h%5)));
+
     for(const e of events){
       const nt=t-e.t;
-      if(nt<0) continue;
+      if(nt<0||t>e.end)continue;
       let x=0;
-      if(e.role==="piano")x=piano(e.f,nt,e.v);
-      else if(e.role==="guitar")x=guitar(e.f,nt,e.v);
-      else if(e.role==="strings")x=strings(e.f,nt,e.v);
-      else if(e.role==="flute")x=flute(e.f,nt,e.v);
-      else if(e.role==="synth")x=synth(e.f,nt,e.v);
-      else if(e.role==="harp")x=harp(e.f,nt,e.v);
-      else if(e.role==="kalimba")x=kalimba(e.f,nt,e.v);
-      else if(e.role==="pluck")x=pluck(e.f,nt,e.v);
-      else if(e.role==="pad")x=synth(e.f,nt,e.v*.32);
-      l+=x*(1-pan);r+=x*(1+pan);
+      const renderer=renderers[e.role];
+      if(renderer)x=renderer(e.f,nt,e.v);
+      l+=x*(1-pan); r+=x*(1+pan);
     }
-    // Pedal acústico solo para piano, para que "piano" suene a piano y no a pad.
-    if(lead==="piano"){
+
+    if(leadRole==="piano"){
       for(let b=0;b<4;b++){
         const bt=b*bar;
-        if(t>=bt){ const nt=t-bt; const c=progression[b%progression.length]; l+=pianoPedal(hz(degree(c)-12),nt,.045); r+=pianoPedal(hz(degree(c)-12),nt,.041); }
+        if(t>=bt){
+          const nt=t-bt, c=progression[b%progression.length];
+          l+=pianoPedal(hz(degree(c)-12),nt,.045);
+          r+=pianoPedal(hz(degree(c)-12),nt,.041);
+        }
       }
     }
+
     const tx=texture(t);
-    // Bus ambiental separado y estéreo: la búsqueda de "lluvia/río/océano..."
-    // debe ser audible, no una modulación casi imperceptible.
     const envPan=.08*Math.sin(t*.37);
     l+=tx*(1.35-envPan);
     r+=tx*(1.35+envPan);
+
     if(semantic.sleep||semantic.night){l*=.82;r*=.82;}
     if(semantic.warm){l*=1.02;r*=1.02;}
-    const fadeIn=Math.min(1,t/1.5),fadeOut=Math.min(1,(dur-t)/3),m=fadeIn*fadeOut;
-    l=Math.tanh(l*1.35)*m; r=Math.tanh(r*1.35)*m;
-    samples[i*2]=clamp(l,-.82,.82); samples[i*2+1]=clamp(r,-.82,.82);
+
+    const fadeIn=Math.min(1,t/1.5), fadeOut=Math.min(1,(dur-t)/3), m=fadeIn*fadeOut;
+    l=Math.tanh(l*1.35)*m;
+    r=Math.tanh(r*1.35)*m;
+    samples[i*2]=clamp(l,-.82,.82);
+    samples[i*2+1]=clamp(r,-.82,.82);
   }
 
-  let peak=0;for(const x of samples)peak=Math.max(peak,Math.abs(x));
+  let peak=0;
+  for(const x of samples)peak=Math.max(peak,Math.abs(x));
   const gain=peak>.001?Math.min(1.25,.78/peak):1;
   for(let i=0;i<samples.length;i++)samples[i]*=gain;
   writeWav(wavPath,samples,sr,2);
