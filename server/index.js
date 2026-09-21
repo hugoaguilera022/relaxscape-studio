@@ -281,6 +281,22 @@ function makeCompositionWav(track, wavPath){
   const harmonyRole=lead==="guitar"?"guitar":lead==="strings"?"strings":lead==="flute"?"flute":lead==="synth"?"synth":lead==="harp"?"harp":lead==="kalimba"?"kalimba":"piano";
   const leadVelocity=lead==="piano"?.205:lead==="guitar"?.195:lead==="flute"?.18:lead==="strings"?.17:lead==="harp"?.18:lead==="kalimba"?.18:.16;
 
+  // ENSAMBLE EXPLÍCITO: si la búsqueda pide varios instrumentos, TODOS deben
+  // aparecer en la composición. El primer instrumento lleva la melodía principal;
+  // los demás reciben líneas propias de acompañamiento para que no sean sustituidos
+  // por un único timbre genérico.
+  const requestedRoles=[];
+  if(semantic.piano) requestedRoles.push("piano");
+  if(semantic.guitar) requestedRoles.push("guitar");
+  if(semantic.strings) requestedRoles.push("strings");
+  if(semantic.flute) requestedRoles.push("flute");
+  if(semantic.synth) requestedRoles.push("synth");
+  if(semantic.harp) requestedRoles.push("harp");
+  if(semantic.kalimba) requestedRoles.push("kalimba");
+  if(!requestedRoles.length) requestedRoles.push(lead);
+  const companionRoles=requestedRoles.filter(role=>role!==lead);
+  const companionVelocity={piano:.075,guitar:.065,strings:.060,flute:.065,synth:.045,harp:.070,kalimba:.055};
+
   for(let b=0;b<4;b++){
     const c=progression[b%progression.length];
     const chord=[degree(c,0),degree(c+2,0),degree(c+4,0)];
@@ -317,6 +333,24 @@ function makeCompositionWav(track, wavPath){
         const answer=motif[(idx+2)%motif.length]+c;
         events.push({t:t+noteStep*.52,f:hz(degree(answer,register+1)),v:vel*.34,role:lead});
       }
+    }
+
+    // Cada instrumento adicional solicitado recibe su propia línea musical.
+    // No se mezclan sus timbres ni se sustituyen por synth/pad.
+    for(const role of companionRoles){
+      const cv=(companionVelocity[role]||.055)*(1+(variant%2)*.08);
+      const companionRegister=role==="flute"||role==="harp"||role==="kalimba" ? register+1 : register;
+      const phrase=[0,2,4,3,1,4,2,0];
+      for(let j=0;j<4;j++){
+        const ct=b*bar+j*bar*.24+(variant%2?bar*.035:0);
+        if(ct>=dur) continue;
+        const cd=phrase[(j+variant+b)%phrase.length]+c;
+        events.push({t:ct,f:hz(degree(cd,companionRegister)),v:cv,role});
+      }
+      // Nota sostenida de respuesta para que el instrumento se perciba claramente
+      // sin competir con la melodía principal.
+      const holdT=b*bar+bar*.62;
+      if(holdT<dur) events.push({t:holdT,f:hz(degree(c+2,companionRegister)),v:cv*.72,role});
     }
 
     // Respuesta contrapuntística: una segunda línea más lenta y baja, siempre
