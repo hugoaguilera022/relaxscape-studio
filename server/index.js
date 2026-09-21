@@ -187,39 +187,52 @@ app.post("/api/generate-image", async (req, res) => {
 });
 
 
-async function generateGeminiImageFile(prompt, index) {
+function googleApiError(label, status, data) {
+  const e = data?.error || {};
+  const code = e.code || status;
+  const reason = e.status ? " [" + e.status + "]" : "";
+  return new Error(label + " HTTP " + status + " (" + code + ")" + reason + ": " + (e.message || JSON.stringify(data)));
+}
+
+async function callGoogleInteraction(body, label) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("Falta GEMINI_API_KEY en Render.");
-  const r = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-    body: JSON.stringify({
-      model: "gemini-3.1-flash-image",
-      input: prompt,
-      response_format: { type: "image", mime_type: "image/png", aspect_ratio: "16:9", image_size: "2K" }
-    })
-  });
-  const data = await r.json();
-  if (!r.ok) throw new Error(data.error?.message || JSON.stringify(data));
+  let lastError;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify(body)
+    });
+    const data = await r.json().catch(() => ({}));
+    if (r.ok) return data;
+    lastError = googleApiError(label, r.status, data);
+    if (![429, 500, 502, 503, 504].includes(r.status)) break;
+    await new Promise(resolve => setTimeout(resolve, 1500 * (attempt + 1)));
+  }
+  throw lastError;
+}
+
+async function generateGeminiImageFile(prompt, index) {
+  const data = await callGoogleInteraction({
+    model: "gemini-3.1-flash-image",
+    input: prompt,
+    response_format: { type: "image", mime_type: "image/png", aspect_ratio: "16:9", image_size: "2K" }
+  }, "Gemini imagen");
   const imageData = data.output_image?.data;
-  if (!imageData) throw new Error("Gemini no devolvió una imagen.");
+  if (!imageData) throw new Error("Gemini no devolvió output_image. Respuesta: " + JSON.stringify(data).slice(0, 800));
   const filename = `ai-option-${Date.now()}-${index}.png`;
   fs.writeFileSync(path.join(IMAGE_DIR, filename), Buffer.from(imageData, "base64"));
-  return { name: filename, url: `/media/images/${filename}`, ai: true };
+  return { name: filename, url: `/media/images/${encodeURIComponent(filename)}`, ai: true };
 }
 
 async function generateLyriaMusicFile(prompt, imageFile, index) {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) throw new Error("Falta GEMINI_API_KEY en Render.");
-  const r = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-    body: JSON.stringify({ model: "lyria-3.5", input: prompt, response_format: { type: "audio" } })
-  });
-  const data = await r.json();
-  if (!r.ok) throw new Error("Lyria " + r.status + ": " + (data.error?.message || JSON.stringify(data)));
+  const data = await callGoogleInteraction({
+    model: "lyria-3.5",
+    input: prompt
+  }, "Lyria música");
   const audioData = data.output_audio?.data;
-  if (!audioData) throw new Error("Lyria no devolvió output_audio.");
+  if (!audioData) throw new Error("Lyria no devolvió output_audio. Respuesta: " + JSON.stringify(data).slice(0, 800));
   const filename = "ai-music-option-" + Date.now() + "-" + index + ".mp3";
   fs.writeFileSync(path.join(MUSIC_DIR, filename), Buffer.from(audioData, "base64"));
   return { name: filename, url: "/media/music/" + encodeURIComponent(filename), ai: true };
@@ -241,13 +254,22 @@ app.post("/api/ai-options", async (req, res) => {
     "Create a 2-3 minute deep sleep ambient track. Very soft low pads, sparse piano notes, extremely slow, no vocals, no drums, dark and calming, inspired by a moonlit mountain valley."
   ];
   try {
-    const ir = await Promise.allSettled(imagePrompts.map((p,i)=>generateGeminiImageFile(p,i+1)));
-    const mr = await Promise.allSettled(musicPrompts.map((p,i)=>generateLyriaMusicFile(p,null,i+1)));
-    const images=ir.filter(x=>x.status==="fulfilled").map(x=>x.value);
-    const music=mr.filter(x=>x.status==="fulfilled").map(x=>x.value);
-    const imageErrors=ir.filter(x=>x.status==="rejected").map(x=>x.reason?.message||String(x.reason));
-    const musicErrors=mr.filter(x=>x.status==="rejected").map(x=>x.reason?.message||String(x.reason));
-    if(!images.length&&!music.length) return res.status(502).json({error:"Google no ha podido generar ningún recurso.",images:imageErrors,music:musicErrors});
+    // Secuencial para no disparar límites de tasa de Gemini/Lyria.
+    const images = [];
+    const music = [];
+    const imageErrors = [];
+    const musicErrors = [];
+    for (let i = 0; i < imagePrompts.length; i++) {
+      try { images.push(await generateGeminiImageFile(imagePrompts[i], i + 1)); }
+      catch (e) { imageErrors.push(e.message); }
+    }
+    for (let i = 0; i < musicPrompts.length; i++) {
+      try { music.push(await generateLyriaMusicFile(musicPrompts[i], null, i + 1)); }
+      catch (e) { musicErrors.push(e.message); }
+    }
+    if(!images.length&&!music.length) {
+      return res.status(502).json({error:"Google no ha podido generar ningún recurso.",imageErrors,musicErrors});
+    }
     res.json({images,music,imageErrors,musicErrors});
   } catch(e) { res.status(500).json({error:"Error de generación IA: "+e.message}); }
 });
