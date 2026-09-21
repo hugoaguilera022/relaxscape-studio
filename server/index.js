@@ -1350,33 +1350,29 @@ app.get("/api/external-music-search", async (req,res)=>{
   const input=String(req.query.q||"").trim();
   if(!input) return res.status(400).json({error:"Escribe qué música o sonido quieres buscar."});
   try{
-    const queries=buildFreesoundQueries(input);
+    const queries=buildFreesoundQueries(input).slice(0,2);
     const all=[];
 
-    // Las variantes de búsqueda se hacen EN PARALELO. Antes se esperaban una
-    // detrás de otra y, si Freesound tardaba, Render podía devolver 502 antes
-    // de que Express terminara. Un fallo de una variante nunca cancela las demás.
+    // Mantener la petición muy por debajo del límite de Render: solo se usan
+    // la búsqueda exacta y una variante semántica, ambas en paralelo.
     const results=await Promise.allSettled(queries.map(async query=>{
       const url=new URL("https://freesound.org/apiv2/search/");
       url.searchParams.set("query",query);
-      url.searchParams.set("page_size","8");
+      url.searchParams.set("page_size","12");
       url.searchParams.set("sort","score");
       url.searchParams.set("fields","id,name,tags,username,license,url,duration,previews,description,avg_rating,num_downloads");
       const r=await fetchWithTimeout(url.toString(),{
         headers:{Authorization:"Token "+key,Accept:"application/json"}
-      },12000);
+      },8000);
       const data=await r.json().catch(()=>({}));
-      if(!r.ok){
-        throw new Error(data.detail||data.error||("HTTP "+r.status));
-      }
+      if(!r.ok) throw new Error(data.detail||data.error||("HTTP "+r.status));
       return Array.isArray(data.results)?data.results:[];
     }));
 
     for(let i=0;i<results.length;i++){
       const result=results[i];
-      const query=queries[i];
       if(result.status==="rejected"){
-        console.warn("[Freesound Search] Query skipped:",query,result.reason?.message||result.reason);
+        console.warn("[Freesound Search] Query skipped:",queries[i],result.reason?.message||result.reason);
         continue;
       }
       for(const x of result.value){
@@ -1409,8 +1405,6 @@ app.get("/api/external-music-search", async (req,res)=>{
     res.json({provider:"Freesound",query:input,results:unique.slice(0,12)});
   }catch(e){
     console.error("[Freesound Search] ERROR",e.stack||e.message);
-    // No convertimos un fallo puntual de Freesound en un 502 del servidor:
-    // el frontend puede mostrar el error real y volver a intentar la búsqueda.
     res.json({provider:"Freesound",query:input,results:[],error:"Freesound no respondió correctamente: "+e.message});
   }
 });
