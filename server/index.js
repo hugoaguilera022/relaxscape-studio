@@ -153,24 +153,25 @@ app.post("/api/generate-image", async (req, res) => {
   if (!key) return res.status(400).json({ error: "Falta GEMINI_API_KEY en Render." });
   const prompt = String(req.body.prompt || "Ultra-realistic cinematic peaceful landscape, natural light, no people, no text, photorealistic");
   try {
-    const r = await fetch("https://generativelanguage.googleapis.com/v1/models/gemini-3.1-flash-image:generateContent", {
+    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": key },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt + ". Wide 16:9 landscape composition, suitable for a relaxing video, no text." }] }],
-        generationConfig: {
-          responseModalities: ["IMAGE"],
-          responseFormat: { image: { aspectRatio: "16:9", imageSize: "2K" } }
+        model: "gemini-3.1-flash-image",
+        input: prompt + ". Wide 16:9 landscape composition, suitable for a relaxing video, no text.",
+        response_format: {
+          type: "image",
+          aspect_ratio: "16:9",
+          image_size: "2K"
         }
       })
     });
     const data = await r.json();
     if (!r.ok) return res.status(r.status).json({ error: data.error?.message || "Error generando imagen con Gemini." });
-    const parts = data.candidates?.[0]?.content?.parts || [];
-    const imagePart = parts.find(p => p.inlineData?.data);
-    if (!imagePart) return res.status(500).json({ error: "Gemini terminó pero no devolvió una imagen." });
+    const imageData = data.output_image?.data;
+    if (!imageData) return res.status(500).json({ error: "Gemini terminó pero no devolvió una imagen." });
     const filename = `ai-${Date.now()}.png`;
-    fs.writeFileSync(path.join(IMAGE_DIR, filename), Buffer.from(imagePart.inlineData.data, "base64"));
+    fs.writeFileSync(path.join(IMAGE_DIR, filename), Buffer.from(imageData, "base64"));
     res.json({ name: filename, url: `/media/images/${filename}` });
   } catch (e) {
     res.status(500).json({ error: "Error de Gemini: " + e.message });
