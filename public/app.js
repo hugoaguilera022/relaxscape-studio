@@ -34,11 +34,11 @@ async function ensureAIOptions(){
   if(S.aiReady||S.aiLoading)return;
   S.aiLoading=true;
   const status=$("#aiSelectionStatus"),ig=$("#aiImageGrid"),mg=$("#aiMusicList");
-  if(status)status.textContent="La IA está creando 4 paisajes y 4 músicas originales de alta calidad…";
-  if(ig)ig.innerHTML='<div class="empty">✨ Generando 4 paisajes con Gemini…</div>';
-  if(mg)mg.innerHTML='<div class="empty">♫ Generando 4 músicas con Lyria…</div>';
+  if(status)status.textContent="IA gratuita creando 4 paisajes y 4 músicas originales…";
+  if(ig)ig.innerHTML='<div class="empty">✨ Generando 4 paisajes con IA gratuita…</div>';
+  if(mg)mg.innerHTML='<div class="empty">♫ Generando 4 músicas con IA gratuita…</div>';
   try{
-    const d=await api("/api/ai-options",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
+    const d=await api("/api/ai-options",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({theme:($("#prompt")?.value||"relaxing nature").trim()})});
     S.aiImages=d.images||[];S.aiMusic=d.music||[];S.aiReady=true;
     if(S.aiImages[0])S.image=S.aiImages[0];
     if(S.aiMusic[0])S.music=S.aiMusic[0];
@@ -58,7 +58,7 @@ function renderAICreator(){
     $$("#aiImageGrid .ai-photo").forEach(e=>e.onclick=()=>{S.image={url:e.dataset.url,name:e.dataset.name};renderAICreator()});
   }
   if(mg){
-    mg.innerHTML=S.aiMusic.length?S.aiMusic.map((x,i)=>'<div class="ai-track '+(S.music?.url===x.url?"selected":"")+'" data-url="'+x.url+'" data-name="'+x.name+'"><div><b>♫ Música IA '+(i+1)+'</b><small>Original · Lyria 3.5</small></div><audio controls src="'+x.url+'"></audio></div>').join(""):'<div class="empty">♫ Generando opciones IA…</div>';
+    mg.innerHTML=S.aiMusic.length?S.aiMusic.map((x,i)=>'<div class="ai-track '+(S.music?.url===x.url?"selected":"")+'" data-url="'+x.url+'" data-name="'+x.name+'"><div><b>♫ Música IA '+(i+1)+'</b><small>Original · IA gratuita</small></div><audio controls src="'+x.url+'"></audio></div>').join(""):'<div class="empty">♫ Generando opciones IA…</div>';
     $$("#aiMusicList .ai-track").forEach(e=>e.onclick=ev=>{if(ev.target.tagName==="AUDIO")return;S.music={url:e.dataset.url,name:e.dataset.name};renderAICreator()});
   }
   if($("#aiSelectedPhoto"))$("#aiSelectedPhoto").textContent=S.image?prettyImageName(S.image.name):"Sin foto";
@@ -92,7 +92,7 @@ $("#aiLoadPhotos").onclick=async()=>{
   S.aiReady=false;S.aiImages=[];S.aiMusic=[];S.image=null;S.music=null;
   await ensureAIOptions();
 };
-$("#aiGoMusic").onclick=()=>{$$(".nav").forEach(x=>x.classList.remove("active"));$$$(".tab").forEach(x=>x.classList.remove("active"));document.querySelector('[data-tab="music"]').classList.add("active");$("#music").classList.add("active");};
+$("#aiGoMusic").onclick=()=>{$$(".nav").forEach(x=>x.classList.remove("active"));$(".tab").forEach(x=>x.classList.remove("active"));document.querySelector('[data-tab="music"]').classList.add("active");$("#music").classList.add("active");};
 $("#aiCreateHour").onclick=async()=>{
   if(!S.image||!S.music){$("#aiSelectionStatus").textContent="Selecciona primero una foto y una música.";return}
   const btn=$("#aiCreateHour");btn.disabled=true;$("#aiSelectionStatus").textContent="Creando tu vídeo real de 1 hora… Esto puede tardar unos minutos.";
