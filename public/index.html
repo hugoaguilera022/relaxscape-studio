@@ -38,7 +38,7 @@
   <div class="section-head"><div><p class="eyebrow">CREADOR IA</p><h2>Vídeo relajante de 1 hora</h2><p class="sub">La IA prepara varias imágenes y varias músicas originales. Tú eliges la combinación y RelaxScape crea el MP4 real de 1 hora.</p></div><span class="badge">MP4 · 1080p · 1 HORA</span></div>
   <div class="ai-builder">
     <div class="ai-choice">
-      <div class="choice-head"><div><span class="step">01</span><div><h3>Elige tu foto</h3><p>La IA crea 4 paisajes originales en 2K para que elijas uno.</p></div></div><button id="aiLoadPhotos" class="primary small">✨ Generar opciones IA</button></div>
+      <div class="choice-head"><div><span class="step">01</span><div><h3>Elige tu foto</h3><p>Creamos un paisaje gratuito y una previa musical ambiental para que elijas y escuches antes de crear el vídeo.</p></div></div><button id="aiLoadPhotos" class="primary small">✨ Generar opciones IA</button></div>
       <div id="aiImageGrid" class="ai-gallery"></div>
     </div>
     <div class="ai-choice">
@@ -64,7 +64,7 @@
 </main>
 </div>
 <footer>RelaxScape Studio · Vídeos proporcionados por <a href="https://www.pexels.com/" target="_blank" rel="noopener">Pexels</a> · Usa imágenes y música con derechos de uso adecuados.</footer>
-<script src="/app.js?v=20260921-6"></script>
+<script src="/app.js?v=20260921-7"></script>
 <script>
 document.addEventListener("click",function(e){const b=e.target.closest(".nav");if(!b)return;document.querySelectorAll(".nav").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));const tab=document.getElementById(b.dataset.tab);if(tab)tab.classList.add("active");if(b.dataset.tab==="ai"&&typeof window.ensureAIOptions==="function")window.ensureAIOptions();});
 </script>
