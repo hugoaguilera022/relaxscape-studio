@@ -174,6 +174,7 @@ function renderAICreator(){
   if(mg){
     if(S.externalMusic.length){
       mg.innerHTML='<div class="ai-mix-action"><button type="button" id="createFreesoundMix" class="primary">🎼 Crear mezcla musical con IA</button><small>Combina los resultados de esta búsqueda en una sola pista coherente.</small></div>'+S.externalMusic.map((x,i)=>'<div class="ai-track '+(S.music?.externalId===x.id?"selected":"")+'" data-external-id="'+x.id+'"><div><b>♫ '+escapeHtml(x.name)+'</b><small>Freesound · '+escapeHtml(x.username||"")+' · '+escapeHtml(x.license||"")+' · '+formatDuration(x.duration)+'</small></div><div class="ai-track-actions"><audio controls preload="metadata" src="'+x.preview+'"></audio><button type="button" class="preview-download" data-download-external="'+x.id+'">↓ Descargar previa</button><a class="preview-download" href="'+x.sourceUrl+'" target="_blank" rel="noopener">↗ Ver fuente</a></div></div>').join("");
+      $("#createFreesoundMix").onclick=createFreesoundAIMix;
       $("#aiMusicList .ai-track").forEach(e=>e.onclick=ev=>{
         if(ev.target.tagName==="AUDIO" || ev.target.tagName==="A" || ev.target.closest("[data-download-external]"))return;
         const x=S.externalMusic.find(v=>String(v.id)===String(e.dataset.externalId));
