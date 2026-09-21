@@ -551,6 +551,41 @@ async function generateAIImage(prompt, index=0) {
   return generateHuggingFaceLandscape(prompt, index);
 }
 
+app.post("/api/ai-images", async (req, res) => {
+  const theme = String(req.body?.theme || "peaceful lake, misty mountains, soft dawn light").trim().slice(0, 700);
+  const images = [];
+  const errors = [];
+  const jobs = Array.from({ length: 4 }, (_, i) =>
+    Promise.race([
+      generateAIImage(theme, i),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("La generación tardó demasiado")), 90000))
+    ]).then(item => ({ ok: true, item, index: i }))
+      .catch(error => ({ ok: false, error, index: i }))
+  );
+  const results = await Promise.all(jobs);
+  for (const result of results) {
+    if (result.ok) images.push(result.item);
+    else errors.push("Imagen " + (result.index + 1) + ": " + result.error.message);
+  }
+  if (!images.length) return res.status(502).json({ error: "No se pudo generar el paisaje IA.", imageErrors: errors });
+  res.json({ images, imageErrors: errors, provider: "Hugging Face Inference Providers · FLUX.1-schnell" });
+});
+
+app.post("/api/ai-music", async (req, res) => {
+  const musicPrompt = String(req.body?.musicPrompt || "deep relaxation ambient music").trim().slice(0, 220);
+  const generationId = ++aiMusicGenerationId;
+  aiMusicTracks = aiTracksForBackground(musicPrompt, generationId);
+  aiMusicTracks.forEach(t => { try { fs.rmSync(path.join(MUSIC_DIR, t.file), { force: true }); } catch {} });
+  aiMusicErrors = [];
+  aiMusicPreparing = true;
+  ensureBuiltinMusic(aiMusicTracks).catch(e => {
+    if (generationId === aiMusicGenerationId) aiMusicErrors.push(e.message || String(e));
+  }).finally(() => {
+    if (generationId === aiMusicGenerationId) aiMusicPreparing = false;
+  });
+  res.json({ music: getAIMusicOptions(), musicReady: false, musicPreparing: true });
+});
+
 app.post("/api/ai-options", async (req, res) => {
   const theme = String(req.body?.theme || "peaceful lake, misty mountains, soft dawn light").trim().slice(0, 500);
   const musicPrompt = String(req.body?.musicPrompt || theme).trim().slice(0, 220);
