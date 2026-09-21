@@ -253,7 +253,7 @@ app.post("/api/generate-ai-music", async (req, res) => {
   try {
     const r = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
       method: "POST",
-      headers: geminiHeaders(key),
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
       body: JSON.stringify({ model: "lyria-3.5", input: prompt, response_format: { type: "audio" } })
     });
     const data = await r.json();
