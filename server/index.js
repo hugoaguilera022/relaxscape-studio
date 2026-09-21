@@ -47,7 +47,7 @@ function safe(name) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-const MUSIC_ENGINE_VERSION = "v11-search-intent-music";
+const MUSIC_ENGINE_VERSION = "v12-strict-prompt-instrument-mapping";
 
 const BUILTIN_MUSIC = [
   ["relax-piano.mp3","Piano nocturno","Sueño",261.63,329.63,392],
@@ -99,11 +99,16 @@ function makeCompositionWav(track, wavPath){
   const flowing=/ocean|water|river|rain|waterfall|waves/.test(profile);
   const nature=/forest|mountain|nature|bamboo|garden|birds/.test(profile);
   const dream=/dream|sleep|night|star|moon|meditat|zen/.test(profile);
-  const strings=/string|cello|violin|orchestra|cinematic/.test(profile);
+  const strings=/string|strings|cello|violin|orchestra|cinematic/.test(profile);
   const flute=/flute|bamboo|wind|ethereal/.test(profile);
   const guitar=/guitar|acoustic|nylon/.test(profile);
   const water=/water|ocean|rain|river|waterfall|waves|stream/.test(profile);
   const natureFocus=/forest|nature|birds|mountain|garden|bamboo/.test(profile);
+  // El instrumento principal depende de lo que pidió el usuario.
+  // No dejamos que el piano aparezca por defecto en búsquedas de guitarra/flauta/cuerdas.
+  const explicitPiano=/piano|pianistic|felt piano|teclas/.test(profile);
+  const hasPrimaryInstrument=explicitPiano||guitar||flute||strings;
+  const pianoMain=explicitPiano || !hasPrimaryInstrument;
   const bpmSet=flowing?[42,46,50,54]:dream?[38,40,43,46]:nature?[44,48,52,56]:[40,44,48,52];
   const bpm=bpmSet[variant], beat=60/bpm, bar=beat*4;
   const hz=m=>440*Math.pow(2,(m-69)/12);
@@ -291,12 +296,14 @@ function makeCompositionWav(track, wavPath){
     const bv=activeBass ? bass(activeBass.f,bt,activeBass.v) : 0;
     left+=bv; right+=bv;
 
-    for(const ev of events){
-      const nt=t-ev.t;
-      if(nt>=0 && nt<3.8){
-        const v=piano(ev.f,nt,ev.v);
-        const ep=.06*Math.sin(2*Math.PI*(ev.t+t)/23);
-        left+=v*(1-ep); right+=v*(1+ep);
+    if(pianoMain){
+      for(const ev of events){
+        const nt=t-ev.t;
+        if(nt>=0 && nt<3.8){
+          const v=piano(ev.f,nt,ev.v);
+          const ep=.06*Math.sin(2*Math.PI*(ev.t+t)/23);
+          left+=v*(1-ep); right+=v*(1+ep);
+        }
       }
     }
     // Timbre adaptado a la búsqueda: instrumento y ambiente cambian con el prompt.
@@ -314,7 +321,7 @@ function makeCompositionWav(track, wavPath){
       for(const ev of mainEvents){
         const nt=t-ev.t;
         if(nt>=0 && nt<2.9){
-          const vv=flute ? fluteVoice(ev.f,nt,.028) : guitarVoice(ev.f,nt,.024);
+          const vv=flute ? fluteVoice(ev.f,nt,.055) : guitarVoice(ev.f,nt,.050);
           left+=vv*.94; right+=vv*1.04;
         }
       }
@@ -669,16 +676,16 @@ function aiTracksForBackground(prompt=""){
   const seedBase=parseInt(hashText(p),36)||1;
   const bases=[[196,246.94,293.66],[174.61,220,261.63],[146.83,196,246.94],[164.81,220,277.18]];
   const variations=[
-    "variation 1: same requested sound, closest interpretation, intimate and legato",
-    "variation 2: same requested sound, deeper harmony, longer sustained notes and wider space",
-    "variation 3: same requested sound, slightly more melodic movement while preserving the requested instruments",
-    "variation 4: same requested sound, cinematic development and a gentle final resolution"
+    "variation 1: exact requested instrumentation, closest interpretation, intimate and legato",
+    "variation 2: exact requested instrumentation, deeper harmony, longer sustained notes and wider space",
+    "variation 3: exact requested instrumentation, slightly more melodic movement while preserving the requested instruments",
+    "variation 4: exact requested instrumentation, cinematic development and a gentle final resolution"
   ];
   return bases.map((f,i)=>{
     const b=BUILTIN_MUSIC[i];
     const shift=((seedBase+i*7)%7)-3;
     return {...b,
-      file:"ai-prompt-"+hashText(p)+"-v11-"+(i+1)+".mp3",
+      file:"ai-prompt-"+hashText(p)+"-v12-"+(i+1)+".mp3",
       label:"IA · "+(i+1),
       variant:i,
       f1:f[0]*Math.pow(2,shift/12),f2:f[1]*Math.pow(2,shift/12),f3:f[2]*Math.pow(2,shift/12),
