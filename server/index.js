@@ -441,7 +441,7 @@ app.post("/api/ai-options", async (req, res) => {
       try {
         const r = await fetchWithTimeout(
           "https://api.pexels.com/v1/search?query=" + encodeURIComponent(theme + " peaceful nature") +
-          "&per_page=40&orientation=landscape&size=large&locale=en-US",
+          "&per_page=20&orientation=landscape&size=large&locale=en-US",
           { headers: { Authorization: key } }, 5000
         );
         if (!r.ok) {
@@ -456,8 +456,8 @@ app.post("/api/ai-options", async (req, res) => {
           // Elegimos 4 fotos distintas y las descargamos simultáneamente.
           const selected = pool.slice(0, 4);
           const results = await Promise.allSettled(selected.map(async (photo, i) => {
-            const src = photo.src?.large2x || photo.src?.large;
-            const img = await fetchWithTimeout(src, {}, 5000);
+            const src = photo.src?.large || photo.src?.large2x;
+            const img = await fetchWithTimeout(src, {}, 3000);
             if (!img.ok) throw new Error("Pexels foto HTTP " + img.status);
             const filename = "free-ai-option-" + Date.now() + "-" + (i + 1) + ".jpg";
             fs.writeFileSync(path.join(IMAGE_DIR, filename), Buffer.from(await img.arrayBuffer()));
@@ -547,27 +547,37 @@ app.post("/api/ai-options", async (req, res) => {
       ].join(" ")
     ];
 
-    try {
-      if (process.env.GEMINI_API_KEY) {
-        const results = await Promise.allSettled(
-          aiPrompts.map((prompt, i) => generateLyriaMusicFile(prompt, i + 1))
-        );
-        for (const result of results) {
-          if (result.status === "fulfilled") music.push(result.value);
-          else musicErrors.push("Opción musical: " + (result.reason?.message || "falló"));
+    // La respuesta inicial debe ser rápida. Las 4 opciones locales se generan
+    // inmediatamente; la IA musical no bloquea la creación de los 4 paisajes.
+    // El usuario puede previsualizar y elegir sin esperar a un proveedor externo.
+    const fastFallbackTracks = [
+      { ...BUILTIN_MUSIC.find(t => t.file === "relax-piano.mp3"), label: "Piano nocturno" },
+      { ...BUILTIN_MUSIC.find(t => t.file === "relax-ocean.mp3"), label: "Piano y océano" },
+      { ...BUILTIN_MUSIC.find(t => t.file === "relax-rain.mp3"), label: "Piano y lluvia" },
+      { ...BUILTIN_MUSIC.find(t => t.file === "relax-dream.mp3"), label: "Piano soñador" }
+    ];
+
+    for (let i = 0; i < fastFallbackTracks.length; i++) {
+      try {
+        const t = fastFallbackTracks[i];
+        const previewName = "relaxscape-ai-style-preview-" + Date.now() + "-" + (i + 1) + ".wav";
+        const previewPath = path.join(MUSIC_DIR, previewName);
+        makeCompositionWav(t, previewPath);
+        if (fs.existsSync(previewPath)) {
+          music.push({
+            name: previewName,
+            url: "/media/music/" + encodeURIComponent(previewName),
+            ai: false,
+            provider: "RelaxScape Ambient Engine",
+            generated: true,
+            fallback: true,
+            label: t.label,
+            category: t.category
+          });
         }
-      } else if (process.env.POLLINATIONS_API_KEY) {
-        const results = await Promise.allSettled(
-          aiPrompts.map((prompt, i) => generatePollinationsMusicFile(prompt, i + 1))
-        );
-        for (const result of results) {
-          if (result.status === "fulfilled") music.push(result.value);
-          else musicErrors.push("Opción musical: " + (result.reason?.message || "falló"));
-        }
+      } catch (e) {
+        musicErrors.push("Previa local " + (i + 1) + ": " + e.message);
       }
-    } catch (e) {
-      console.error("[AI options] IA musical no disponible:", e.message);
-      musicErrors.push("IA musical: " + e.message);
     }
 
     // Fallback local: si la IA no está disponible o agota cuota, NO mostramos
@@ -604,33 +614,6 @@ app.post("/api/ai-options", async (req, res) => {
       }
     }
 
-    if (music.length < 4) {
-      musicErrors.push("El proveedor IA no devolvió las 4 opciones; se completó la selección con previas locales.");
-      const used = new Set(music.map(x => x.name));
-      const extras = BUILTIN_MUSIC
-        .filter(t => !used.has(t.file))
-        .slice(0, 4 - music.length);
-      for (let i = 0; i < extras.length; i++) {
-        try {
-          const t = extras[i];
-          const previewName = "relaxscape-extra-preview-" + Date.now() + "-" + (i + 1) + ".wav";
-          const previewPath = path.join(MUSIC_DIR, previewName);
-          makeCompositionWav(t, previewPath);
-          music.push({
-            name: previewName,
-            url: "/media/music/" + encodeURIComponent(previewName),
-            ai: false,
-            provider: "RelaxScape Ambient Engine",
-            generated: true,
-            fallback: true,
-            label: t.label,
-            category: t.category
-          });
-        } catch (e) {
-          musicErrors.push("Opción extra " + (i + 1) + ": " + e.message);
-        }
-      }
-    }
     res.json({
       images,
       music,
