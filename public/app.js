@@ -103,6 +103,23 @@ $("#aiCreateHour").onclick=async()=>{
   finally{btn.disabled=false}
 };
 $("#closeResult").onclick=()=>$("#result").classList.add("hidden");
+
+async function createRelaxMix(hours){
+  const status=$("#mixStatus"), b=hours===1?$("#mix1h"):$("#mix2h");
+  if(b)b.disabled=true;
+  if(status)status.textContent="Preparando una mezcla larga con toda la biblioteca…";
+  try{
+    const d=await api("/api/generate-relax-mix",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({durationHours:hours})});
+    const item={name:d.name,url:d.url};
+    S.music=[item,...S.music.filter(x=>x.url!==item.url)];
+    S.music=item;
+    renderMusic();picker();update();
+    if(status)status.textContent="✓ Mezcla de "+hours+" hora"+(hours===1?"":"s")+" creada con "+(d.tracks?.length||24)+" pistas y transiciones suaves.";
+  }catch(e){if(status)status.textContent=e.message}
+  finally{if(b)b.disabled=false}
+}
+$("#mix1h").onclick=()=>createRelaxMix(1);
+$("#mix2h").onclick=()=>createRelaxMix(2);
 $("#refresh").onclick=load;$("#loadPexels").onclick=loadPexels;
 $$("#landscapeCategories button").forEach(b=>b.onclick=()=>{$("#prompt").value=b.dataset.q;loadPexels()});
 $$("#musicFilters button").forEach(b=>b.onclick=()=>{$$("#musicFilters button").forEach(x=>x.classList.remove("active"));b.classList.add("active");S.musicCategory=b.dataset.cat;renderMusic()});
