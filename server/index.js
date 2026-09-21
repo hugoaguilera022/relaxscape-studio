@@ -135,7 +135,15 @@ function makeCompositionWav(track, wavPath){
     dark:has("dark","oscuro","deep","profundo"),
     bright:has("bright","luminoso","sunrise","amanecer","sun"),
     cinematic:has("cinematic","cinemático","film","orchestral"),
-    warm:has("warm","cálido","calido","cozy","acogedor")
+    warm:has("warm","cálido","calido","cozy","acogedor"),
+    flamenco:has("flamenco","palmas","guitarra española","rumba"),
+    lofi:has("lofi","lo-fi","chillhop"),
+    classical:has("classical","clásica","clásico","piano clásico"),
+    jazz:has("jazz","swing","blues"),
+    trap:has("trap","808","hip hop","hip-hop"),
+    upbeat:has("upbeat","energético","energética","rápido","alegre"),
+    sad:has("sad","triste","melancólico","melancolia","melancolía"),
+    dreamy:has("dreamy","dream","etéreo","etereo","soñador","soñadora")
   };
 
   // FNV-1a completo + PRNG determinista. Dos búsquedas distintas producen
@@ -151,20 +159,37 @@ function makeCompositionWav(track, wavPath){
     [0,2,4,7,9], [0,2,3,5,7,9,10], [0,2,3,5,7,8,10],
     [0,2,4,6,7,9,11], [0,1,3,5,7,8,10], [0,2,3,6,7,9,10]
   ];
+  // PERFIL MUSICAL DERIVADO DE TODA LA FRASE, no solo de "relax".
+  // El hash completo de la búsqueda modifica de forma audible tonalidad,
+  // registro, tempo, progresión y motivo. Así dos búsquedas distintas no
+  // pueden caer en la misma plantilla musical por casualidad con tanta facilidad.
+  const phraseHash=h;
+  const hash01=(shift=0)=>(((phraseHash>>>shift)%997)/996);
   let scale=pick(scaleSets);
-  if(semantic.dark||semantic.night) scale=[0,2,3,5,7,8,10];
-  if(semantic.bright||semantic.sunset) scale=pick([[0,2,4,7,9],[0,2,4,6,7,9,11]]);
+  if(semantic.dark||semantic.night||semantic.sad) scale=[0,2,3,5,7,8,10];
+  if(semantic.bright||semantic.sunset||semantic.upbeat) scale=[0,2,4,5,7,9,11];
   if(semantic.ocean) scale=pick([[0,2,4,7,9],[0,2,3,5,7,9,10]]);
-  let root=42+Math.floor(rnd()*24);
-  if(semantic.ocean) root=50+Math.floor(rnd()*10);
-  if(semantic.night||semantic.sleep) root-=5;
-  if(semantic.bright||semantic.sunset) root+=5;
+  if(semantic.flamenco) scale=[0,1,4,5,7,8,10];
+  if(semantic.jazz) scale=[0,2,4,5,7,9,10];
+  if(semantic.classical) scale=pick([[0,2,4,5,7,9,11],[0,2,3,5,7,9,11]]);
+  if(semantic.trap) scale=[0,3,5,7,10];
+  if(semantic.dreamy||semantic.meditation) scale=[0,2,4,7,9];
 
-  let bpm=34+Math.floor(rnd()*17);
-  if(semantic.sleep) bpm=32+Math.floor(rnd()*7);
-  if(semantic.meditation) bpm=36+Math.floor(rnd()*8);
-  if(semantic.ocean) bpm=38+Math.floor(rnd()*9);
-  if(semantic.cinematic) bpm=40+Math.floor(rnd()*8);
+  let root=36+Math.floor(hash01(0)*36);
+  if(semantic.ocean) root=45+Math.floor(hash01(8)*14);
+  if(semantic.night||semantic.sleep) root-=7;
+  if(semantic.bright||semantic.sunset) root+=7;
+  if(semantic.flamenco) root=40+Math.floor(hash01(4)*14);
+
+  let bpm=30+Math.floor(hash01(12)*30);
+  if(semantic.sleep) bpm=30+Math.floor(hash01(16)*7);
+  if(semantic.meditation) bpm=34+Math.floor(hash01(16)*9);
+  if(semantic.ocean) bpm=38+Math.floor(hash01(16)*10);
+  if(semantic.cinematic) bpm=36+Math.floor(hash01(16)*12);
+  if(semantic.flamenco) bpm=82+Math.floor(hash01(16)*18);
+  if(semantic.jazz) bpm=58+Math.floor(hash01(16)*22);
+  if(semantic.trap) bpm=68+Math.floor(hash01(16)*18);
+  if(semantic.upbeat) bpm=82+Math.floor(hash01(16)*28);
   const beat=60/bpm, bar=beat*4;
   const degree=(d,o=0)=>root+scale[((d%scale.length)+scale.length)%scale.length]+12*o;
 
@@ -214,18 +239,27 @@ function makeCompositionWav(track, wavPath){
   const events=[];
   // Tres barras son suficientes para una previa de 18 s y reducen muchísimo
   // el coste de CPU en Render.
-  const progressionOptions=[
-    [0,3,5,4,0,2,3,1,0],[0,5,3,4,1,0,3,5,0],[0,2,4,1,3,5,2,4,0],
-    [0,4,2,5,3,1,4,2,0],[0,1,4,3,5,2,1,4,0],[0,5,1,4,2,3,5,1,0]
-  ];
-  const progression=pick(progressionOptions);
+  const progressionOptions=semantic.flamenco
+    ? [[0,1,2,1,0,5,4,1,0],[0,5,4,3,2,1,0,1,0]]
+    : semantic.jazz
+    ? [[0,3,6,2,5,1,4,3,0],[0,2,5,1,4,6,3,2,0]]
+    : semantic.sad
+    ? [[0,5,3,4,0,5,2,4,0],[0,3,6,4,1,5,3,4,0]]
+    : semantic.trap
+    ? [[0,0,5,0,3,0,6,5,0],[0,3,0,5,0,6,0,5,0]]
+    : [[0,3,5,4,0,2,3,1,0],[0,5,3,4,1,0,3,5,0],[0,2,4,1,3,5,2,4,0],
+       [0,4,2,5,3,1,4,2,0],[0,1,4,3,5,2,1,4,0],[0,5,1,4,2,3,5,1,0]];
+  // Elegimos la progresión desde la huella completa de la búsqueda.
+  const progression=progressionOptions[Math.floor(hash01(20)*progressionOptions.length)];
   const motifPool=[
     [0,1,2,4,2,1,3,2],[0,2,4,3,1,4,2,0],[0,3,2,4,5,3,1,0],
     [0,1,4,2,3,5,4,2],[0,4,3,1,2,5,3,0],[0,2,1,3,5,4,2,1]
   ];
   const motif=pick(motifPool);
-  const noteStep=pick([beat/2,beat,beat*1.5]);
-  const register=pick([0,0,1,1,2]);
+  let noteStep=pick([beat/2,beat,beat*1.5]);
+  if(semantic.flamenco||semantic.jazz) noteStep=beat/2;
+  if(semantic.trap) noteStep=beat/2;
+  const register=semantic.night||semantic.sleep ? -1 : (semantic.flamenco||semantic.upbeat ? 1 : Math.floor(hash01(24)*3));
 
   for(let b=0;b<3;b++){
     const chord=progression[b];
@@ -245,7 +279,7 @@ function makeCompositionWav(track, wavPath){
     }
     // Motif changes every bar; never just repeats one fixed four-bar phrase.
     const offset=Math.floor(rnd()*motif.length);
-    const density=3+Math.floor(rnd()*5);
+    const density=semantic.trap ? 7 : (semantic.flamenco||semantic.jazz ? 5+Math.floor(rnd()*3) : 3+Math.floor(hash01(28)*5));
     for(let j=0;j<density;j++){
       const idx=(offset+j+(b%3))%motif.length;
       const d=motif[idx]+chord;
@@ -265,8 +299,16 @@ function makeCompositionWav(track, wavPath){
     if(semantic.rain){
       const drop=(Math.sin(2*Math.PI*73*t)+.6*Math.sin(2*Math.PI*127*t)+.28*Math.sin(2*Math.PI*211*t));
       const shimmer=.5+.5*Math.sin(2*Math.PI*.73*t);
-      x+=drop*(.0018+.0015*shimmer);
-      x+=.0010*Math.sin(2*Math.PI*(4.5+.7*Math.sin(t*.17))*t);
+      x+=drop*(.006+.004*shimmer);
+      x+=.003*Math.sin(2*Math.PI*(4.5+.7*Math.sin(t*.17))*t);
+    }
+    if(semantic.flamenco){
+      const pulse=Math.sin(2*Math.PI*(bpm/60)*t);
+      x+=pulse*0.0018;
+    }
+    if(semantic.trap){
+      const pulse=Math.sin(2*Math.PI*(bpm/60)*t);
+      x+=pulse*0.0012;
     }
     if(semantic.ocean){
       const swell=.5+.5*Math.sin(2*Math.PI*.055*t+Math.sin(t*.07));
