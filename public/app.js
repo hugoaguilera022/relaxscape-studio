@@ -48,9 +48,9 @@ async function ensureAIOptions(){
     if(S.aiImages[0])S.image=S.aiImages[0];
     if(S.aiMusic[0])S.music=S.aiMusic[0];
     renderAICreator();
-    if(S.aiImages.length && S.aiMusic.length>=4){
-      S.aiReady=true;
-      if(status)status.textContent="✓ 4 paisajes y 4 músicas listas.";
+    if(S.aiImages.length){
+      S.aiReady=!!(S.aiImages.length&&S.aiMusic.length>=4);
+      if(status)status.textContent=S.aiReady?"✓ 4 paisajes y 4 músicas listas.":"✓ Paisajes listos · generando las 4 músicas…";
     }else{
       if(status)status.textContent="✓ Paisajes listos. Generando las 4 músicas…";
       await waitForAIMusic();
