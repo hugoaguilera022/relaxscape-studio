@@ -463,16 +463,42 @@ app.post("/api/upload/music", musicUpload.single("music"), (req, res) => {
   res.json({ name: req.file.filename, url: `/media/music/${encodeURIComponent(req.file.filename)}` });
 });
 
+async function generateHuggingFaceLandscape(prompt, index=0) {
+  const token = process.env.HF_TOKEN;
+  if (!token) throw new Error("Falta HF_TOKEN en Render. Añade tu token de Hugging Face como variable de entorno.");
+  const client = new InferenceClient(token);
+  const variations = [
+    "wide cinematic establishing shot, peaceful composition, realistic natural light, foreground depth",
+    "wide cinematic landscape, atmospheric perspective, natural color, realistic photography, different camera angle",
+    "wide cinematic landscape, subtle mist, detailed foreground, soft realistic lighting, photorealistic",
+    "wide cinematic landscape, tranquil premium travel photography, realistic textures, natural depth and light"
+  ];
+  const finalPrompt = String(prompt || "peaceful nature landscape").slice(0, 700)
+    + ", " + variations[index % variations.length]
+    + ", ultra realistic landscape photography, 16:9, no people, no text, no logo";
+  const imageBlob = await client.textToImage({
+    model: "black-forest-labs/FLUX.1-schnell",
+    inputs: finalPrompt,
+    parameters: { width: 1024, height: 576, num_inference_steps: 4 }
+  });
+  const filename = "ai-landscape-" + Date.now() + "-" + index + ".png";
+  fs.writeFileSync(path.join(IMAGE_DIR, filename), Buffer.from(await imageBlob.arrayBuffer()));
+  return {
+    name: filename,
+    url: "/media/images/" + encodeURIComponent(filename),
+    ai: true,
+    provider: "Hugging Face · FLUX.1-schnell",
+    fallback: false,
+    label: "Paisaje IA " + (index + 1)
+  };
+}
+
 app.post("/api/generate-image", async (req, res) => {
   const prompt = String(req.body.prompt || "Ultra-realistic cinematic peaceful landscape, natural light, no people, no text, photorealistic");
   try {
-    const item = await generatePollinationsImageFile(
-      prompt + ". Wide 16:9 composition, suitable for a premium relaxing video, no text.",
-      1
-    );
-    res.json(item);
+    res.json(await generateHuggingFaceLandscape(prompt, 0));
   } catch (e) {
-    res.status(502).json({ error: "Error de generación IA gratuita: " + e.message });
+    res.status(502).json({ error: "Error de generación IA: " + e.message });
   }
 });
 
@@ -521,35 +547,8 @@ function getAIMusicOptions(){
   return [];
 }
 
-async function generatePollinationsAIImage(prompt, index=0) {
-  const key = process.env.POLLINATIONS_API_KEY;
-  if (!key) throw new Error("Falta POLLINATIONS_API_KEY en Render para generar imágenes IA.");
-  const variations = [
-    "wide cinematic establishing shot, calm composition, soft natural light, photorealistic",
-    "wide cinematic landscape, different camera angle and depth, atmospheric perspective, photorealistic",
-    "wide cinematic landscape, foreground depth, subtle mist and realistic natural lighting, photorealistic",
-    "wide cinematic landscape, alternate time-of-day feeling, rich detail and peaceful atmosphere, photorealistic"
-  ];
-  const finalPrompt = String(prompt || "peaceful nature landscape") + ", " + variations[index % variations.length] + ", no people, no text, no logos, premium relaxation video background";
-  const url = "https://gen.pollinations.ai/image/" + encodeURIComponent(finalPrompt)
-    + "?model=flux&width=1920&height=1080&nologo=true&seed=" + (Date.now() + index * 7919);
-  const r = await fetch(url, { headers: { Authorization: "Bearer " + key } });
-  if (!r.ok) {
-    const raw = await r.text();
-    throw new Error("Pollinations Image HTTP " + r.status + ": " + raw.slice(0, 300));
-  }
-  const contentType = r.headers.get("content-type") || "image/jpeg";
-  const ext = contentType.includes("png") ? "png" : "jpg";
-  const filename = "ai-landscape-" + Date.now() + "-" + index + "." + ext;
-  fs.writeFileSync(path.join(IMAGE_DIR, filename), Buffer.from(await r.arrayBuffer()));
-  return {
-    name: filename,
-    url: "/media/images/" + encodeURIComponent(filename),
-    ai: true,
-    provider: "Pollinations AI",
-    fallback: false,
-    label: "Imagen IA " + (index + 1)
-  };
+async function generateAIImage(prompt, index=0) {
+  return generateHuggingFaceLandscape(prompt, index);
 }
 
 app.post("/api/ai-options", async (req, res) => {
@@ -558,64 +557,26 @@ app.post("/api/ai-options", async (req, res) => {
   const images = [];
   const imageErrors = [];
 
-  // 1) Primero buscamos fotos reales relacionadas con la búsqueda.
-  // Esto debe ser rápido y no depender de la generación IA.
-  try {
-    const key = process.env.PEXELS_API_KEY;
-    if (!key) throw new Error("Falta PEXELS_API_KEY en Render.");
-    const r = await fetchWithTimeout(
-      "https://api.pexels.com/v1/search?query=" + encodeURIComponent(theme + " peaceful nature") +
-      "&per_page=40&orientation=landscape&size=large&locale=en-US",
-      { headers: { Authorization: key } }, 7000
-    );
-    if (!r.ok) throw new Error("Pexels HTTP " + r.status);
-    const data = await r.json();
-    const pool = (data.photos || []).filter(p => p.src?.large2x || p.src?.large).sort(() => Math.random() - 0.5);
-    for (const photo of pool) {
-      if (images.length >= 4) break;
-      const src = photo.src?.large2x || photo.src?.large;
-      if (!src) continue;
-      images.push({
-        name: "pexels-" + photo.id,
-        url: src,
-        sourceUrl: photo.url || src,
-        ai: false,
-        provider: "Pexels",
-        fallback: true,
-        label: "Foto " + (images.length + 1)
-      });
-    }
-  } catch (e) {
-    imageErrors.push("Pexels: " + e.message);
+  // Generación IA real: las cuatro imágenes salen directamente de la búsqueda
+  // del usuario mediante FLUX.1-schnell en Hugging Face.
+  const jobs = Array.from({ length: 4 }, (_, i) =>
+    Promise.race([
+      generateAIImage(theme, i),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("timeout 90s")), 90000))
+    ]).then(item => ({ ok: true, item, index: i }))
+      .catch(error => ({ ok: false, error, index: i }))
+  );
+  const results = await Promise.all(jobs);
+  for (const result of results) {
+    if (result.ok) images.push(result.item);
+    else imageErrors.push("Imagen IA " + (result.index + 1) + ": " + result.error.message);
   }
 
-  // 2) Pollinations queda como respaldo, pero NO puede bloquear la respuesta
-  // inicial durante minutos. Si Pexels no entrega las 4, usamos fallback local.
-  if (images.length < 4 && process.env.POLLINATIONS_API_KEY) {
-    const needed = 4 - images.length;
-    const jobs = Array.from({ length: needed }, (_, j) => {
-      const i = images.length + j;
-      return Promise.race([
-        generatePollinationsAIImage(theme, i),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout 15s")), 15000))
-      ]).then(item => ({ ok: true, item, index: i }))
-        .catch(error => ({ ok: false, error, index: i }));
+  if (!images.length) {
+    return res.status(502).json({
+      error: "No se pudo generar ningún paisaje IA. Revisa HF_TOKEN en Render.",
+      imageErrors
     });
-    const results = await Promise.all(jobs);
-    for (const result of results) {
-      if (result.ok) images.push(result.item);
-      else imageErrors.push("Imagen IA " + (result.index + 1) + ": " + result.error.message);
-    }
-  }
-
-  // 3) Último respaldo: imágenes SVG locales basadas en la búsqueda.
-  if (images.length < 4) {
-    const needed = 4 - images.length;
-    for (let i = 0; i < needed; i++) {
-      const filename = "relaxscape-local-landscape-" + Date.now() + "-" + i + ".svg";
-      images.push(makeFallbackLandscape(filename, theme));
-    }
-    imageErrors.push("Se completaron las opciones restantes con un fondo local.");
   }
 
   // 4) Preparamos la generación musical en segundo plano.
