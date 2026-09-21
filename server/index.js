@@ -445,6 +445,32 @@ app.post("/api/generate-relax-mix", async (req, res) => {
   }
 });
 
+app.post("/api/generate-selected-long-music", async (req,res)=>{
+  const { music, durationHours=1 }=req.body||{};
+  if(!music) return res.status(400).json({error:"Selecciona una música de previa."});
+  const hours=Number(durationHours);
+  if(![1,2].includes(hours)) return res.status(400).json({error:"La duración debe ser de 1 o 2 horas."});
+  const name=decodeURIComponent(String(music).split("/").pop());
+  const source=path.join(MUSIC_DIR,name);
+  if(!fs.existsSync(source)) return res.status(404).json({error:"No se encontró la previa musical seleccionada."});
+  const stamp=Date.now(), work=path.join(MUSIC_DIR,"long-"+stamp), base=path.join(work,"base.mp3");
+  const finalName="relaxscape-selected-"+hours+"h-"+stamp+".mp3", out=path.join(MUSIC_DIR,finalName);
+  fs.mkdirSync(work,{recursive:true});
+  try{
+    // Convertimos la previa en un bloque de 6 minutos con un crossfade
+    // central y después lo repetimos hasta completar exactamente la duración.
+    await runFfmpeg(["-y","-i",source,"-i",source,
+      "-filter_complex","[0:a]aresample=44100,volume=.96[a0];[1:a]aresample=44100,volume=.96[a1];[a0][a1]acrossfade=d=8:c1=tri:c2=tri[base]",
+      "-map","[base]","-c:a","libmp3lame","-b:a","160k",base]);
+    await runFfmpeg(["-y","-stream_loop","-1","-i",base,"-t",String(hours*3600),
+      "-c:a","libmp3lame","-b:a","160k","-ar","44100",out]);
+    res.json({name:finalName,url:"/media/music/"+encodeURIComponent(finalName),hours,sourcePreview:name,provider:"RelaxScape Ambient Engine"});
+  }catch(e){
+    console.error("Error creando música larga desde previa:",e.message);
+    res.status(500).json({error:"No se pudo crear el audio largo: "+e.message});
+  }finally{fs.rmSync(work,{recursive:true,force:true})}
+});
+
 app.post("/api/generate-video", async (req, res) => {
   const { image, music, durationHours = 1 } = req.body || {};
   if (!image || !music) return res.status(400).json({ error: "Selecciona una imagen y una pista de música." });
