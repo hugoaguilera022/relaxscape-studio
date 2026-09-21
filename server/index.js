@@ -1368,73 +1368,106 @@ app.get("/api/external-music-search", async (req,res)=>{
   }
 });
 
+
+const FREESOUND_MIX_JOBS = new Map();
+
+function buildAIGenPrompt(query){
+  const q=String(query||"").trim().slice(0,480);
+  return [
+    "Instrumental music only, no vocals, no spoken word.",
+    "Generate an original, professionally produced piece that STRICTLY follows this user search:",
+    q || "relaxing ambient piano",
+    "The requested genre/style is the primary constraint. Preserve its authentic rhythm, harmony, instrumentation, sound palette and production language.",
+    "Create a coherent long-form composition with an intro, evolving sections, recurring motifs, tasteful variation, transitions, dynamics and a resolved ending.",
+    "Do not turn it into generic ambient music unless ambient is explicitly requested.",
+    "Clean professional mix, natural instrument timbres, controlled low end, detailed stereo image, musical phrasing."
+  ].join(" ");
+}
+
+async function startReplicateMusicGeneration(query){
+  const token=process.env.REPLICATE_API_TOKEN;
+  if(!token) throw new Error("Falta REPLICATE_API_TOKEN en Render. Añade tu clave de Replicate para activar la generación musical IA.");
+  const input={
+    prompt:buildAIGenPrompt(query), lyrics:"[Instrumental]", duration:600,
+    thinking:true, key_scale:"", batch_size:1, audio_format:"mp3",
+    guidance_scale:7, time_signature:"auto", inference_steps:8, shift:3, seed:-1
+  };
+  const r=await fetchWithTimeout("https://api.replicate.com/v1/models/fishaudio/ace-step-1.5/predictions",{
+    method:"POST",
+    headers:{"Authorization":"Bearer "+token,"Content-Type":"application/json","Prefer":"wait=1","Cancel-After":"15m"},
+    body:JSON.stringify({input})
+  },15000);
+  const text=await r.text(); let data={}; try{data=JSON.parse(text)}catch{}
+  if(!r.ok) throw new Error(data?.detail||data?.error||text.slice(0,300)||"Replicate rechazó la generación.");
+  return data;
+}
+
+async function finalizeReplicateMusicJob(job){
+  const token=process.env.REPLICATE_API_TOKEN;
+  const r=await fetchWithTimeout("https://api.replicate.com/v1/predictions/"+encodeURIComponent(job.predictionId),{
+    headers:{"Authorization":"Bearer "+token}
+  },15000);
+  const data=await r.json();
+  job.status=data.status;
+  if(data.status==="failed"||data.status==="canceled") throw new Error(data.error||"La generación musical IA falló.");
+  if(data.status!=="succeeded") return false;
+  const raw=Array.isArray(data.output)?data.output[0]:data.output;
+  const audioUrl=typeof raw==="string"?raw:(raw?.url||raw?.href);
+  if(!audioUrl) throw new Error("Replicate terminó la generación pero no devolvió audio.");
+  const audio=await fetchWithTimeout(audioUrl,{},30000);
+  if(!audio.ok) throw new Error("No se pudo descargar el audio generado por la IA.");
+  const stamp=Date.now(), source=path.join(MUSIC_DIR,"replicate-ai-source-"+stamp+".mp3");
+  const finalName="relaxscape-ai-"+stamp+".mp3", out=path.join(MUSIC_DIR,finalName);
+  fs.writeFileSync(source,Buffer.from(await audio.arrayBuffer()));
+  const looped=path.join(MUSIC_DIR,"replicate-ai-loop-"+stamp+".mp3");
+  const hours=Number(job.durationHours)||1;
+  await runFfmpeg([
+    "-y","-stream_loop","-1","-i",source,"-t",String(hours*3600),
+    "-af","afade=t=in:st=0:d=4,afade=t=out:st="+Math.max(0,hours*3600-5)+":d=5,loudnorm=I=-16:TP=-1.5:LRA=8",
+    "-c:a","libmp3lame","-b:a","192k",looped
+  ]);
+  fs.renameSync(looped,out); fs.rmSync(source,{force:true});
+  job.result={name:finalName,url:"/media/music/"+encodeURIComponent(finalName),hours,provider:"ACE-Step 1.5 vía Replicate",generatedFromSearch:true,query:job.query};
+  job.status="succeeded"; return true;
+}
+
 app.post("/api/generate-freesound-ai-mix", async (req,res)=>{
-  const {tracks=[],query="",durationHours=1}=req.body||{};
-  const hours=Number(durationHours);
-  if(!Array.isArray(tracks)||!tracks.length) return res.status(400).json({error:"No hay resultados de Freesound para mezclar."});
+  const {query="",durationHours=1}=req.body||{}, cleanQuery=String(query||"").trim(), hours=Number(durationHours);
+  if(!cleanQuery) return res.status(400).json({error:"Escribe primero el género, estilo o descripción musical."});
   if(![1,2].includes(hours)) return res.status(400).json({error:"La duración debe ser de 1 o 2 horas."});
-  const selected=tracks.slice(0,6).filter(x=>x?.preview);
-  if(!selected.length) return res.status(400).json({error:"Las previas seleccionadas no son válidas."});
-  const stamp=Date.now(),work=path.join(MUSIC_DIR,"freesound-ai-mix-"+stamp);
-  const finalName="relaxscape-ai-mix-"+stamp+".mp3",out=path.join(MUSIC_DIR,finalName);
-  fs.mkdirSync(work,{recursive:true});
-  const isAmbient=x=>{
-    const s=(String(x.name||"")+" "+(x.tags||[]).join(" ")).toLowerCase();
-    return /rain|river|water|stream|ocean|sea|forest|birds|fire|fireplace|nature|ambience|ambient|wind|rainforest|nature/.test(s);
-  };
-  const isInstrument=x=>{
-    const s=(String(x.name||"")+" "+(x.tags||[]).join(" ")).toLowerCase();
-    return /piano|flute|guitar|violin|strings|cello|harp|kalimba|melody|music|instrument|chord|synth|pad/.test(s);
-  };
+  if(!process.env.REPLICATE_API_TOKEN) return res.status(503).json({error:"Falta REPLICATE_API_TOKEN en Render. Añade tu clave de Replicate para activar la generación musical IA."});
   try{
-    const downloaded=[];
-    for(let i=0;i<selected.length;i++){
-      const x=selected[i];
-      const r=await fetchWithTimeout(x.preview,{},15000);
-      if(!r.ok) continue;
-      const file=path.join(work,"source-"+i+".mp3");
-      fs.writeFileSync(file,Buffer.from(await r.arrayBuffer()));
-      downloaded.push({...x,file});
-    }
-    if(!downloaded.length) throw new Error("No se pudieron descargar las previas.");
-    const ambience=downloaded.find(isAmbient);
-    const instruments=downloaded.filter(isInstrument);
-    const musicTracks=(instruments.length?instruments:downloaded.filter(x=>x!==ambience)).slice(0,4);
-    const pool=musicTracks.length?musicTracks:downloaded.slice(0,4);
-    const sections=[];
-    for(let i=0;i<pool.length;i++){
-      const x=pool[i];
-      const section=path.join(work,"section-"+i+".mp3");
-      const vol=ambience&&ambience.id!==x.id ? "0.72" : "0.82";
-      await runFfmpeg(["-y","-stream_loop","-1","-i",x.file,"-t","45","-af","aresample=48000,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,highpass=f=35,lowpass=f=18000,volume="+vol+",afade=t=in:st=0:d=3,afade=t=out:st=41:d=4","-ac","2","-ar","48000","-c:a","libmp3lame","-b:a","192k",section]);
-      sections.push(section);
-    }
-    const musicBase=path.join(work,"music-base.mp3");
-    if(sections.length===1){
-      fs.copyFileSync(sections[0],musicBase);
-    }else{
-      const inputs=[]; for(const s of sections) inputs.push("-i",s);
-      const filters=[]; let current="[0:a]";
-      for(let i=1;i<sections.length;i++){
-        const next="[m"+i+"]";
-        filters.push(current+"["+i+":a]acrossfade=d=4:c1=tri:c2=tri"+next);
-        current=next;
-      }
-      await runFfmpeg(["-y",...inputs,"-filter_complex",filters.join(";"),"-map",current,"-ac","2","-ar","48000","-c:a","libmp3lame","-b:a","192k",musicBase]);
-    }
-    const finalBase=path.join(work,"final-base.mp3");
-    if(ambience){
-      await runFfmpeg(["-y","-stream_loop","-1","-i",musicBase,"-stream_loop","-1","-i",ambience.file,"-t","180","-filter_complex","[0:a]aresample=48000,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,volume=0.92[m];[1:a]aresample=48000,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,lowpass=f=9000,volume=0.16,afade=t=in:st=0:d=5[amb];[m][amb]amix=inputs=2:duration=first:dropout_transition=5:weights=1 0.18,loudnorm=I=-18:TP=-2:LRA=7[out]","-map","[out]","-c:a","libmp3lame","-b:a","192k",finalBase]);
-    }else{
-      fs.copyFileSync(musicBase,finalBase);
-    }
-    await runFfmpeg(["-y","-stream_loop","-1","-i",finalBase,"-t",String(hours*3600),"-c:a","copy",out]);
-    res.json({name:finalName,url:"/media/music/"+encodeURIComponent(finalName),hours,provider:"Freesound + RelaxScape AI Mix",generatedFromSearch:true,query,sourceTracks:downloaded.map(x=>({id:x.id,name:x.name,license:x.license,sourceUrl:x.sourceUrl}))});
+    const prediction=await startReplicateMusicGeneration(cleanQuery);
+    const jobId="music-"+Date.now()+"-"+Math.random().toString(36).slice(2,9);
+    const job={id:jobId,predictionId:prediction.id,status:prediction.status||"starting",query:cleanQuery,durationHours:hours,result:null,error:null,createdAt:Date.now()};
+    FREESOUND_MIX_JOBS.set(jobId,job);
+    return res.json({jobId,status:job.status,provider:"ACE-Step 1.5 vía Replicate"});
   }catch(e){
-    console.error("[Freesound AI Mix] ERROR",e.stack||e.message);
-    res.status(500).json({error:"No se pudo crear la mezcla: "+e.message});
-  }finally{fs.rmSync(work,{recursive:true,force:true});}
+    console.error("[AI Music] start ERROR",e.stack||e.message);
+    return res.status(500).json({error:e.message});
+  }
 });
+
+app.get("/api/generate-freesound-ai-mix-status", async (req,res)=>{
+  const job=FREESOUND_MIX_JOBS.get(String(req.query.jobId||""));
+  if(!job) return res.status(404).json({error:"No se encontró la generación musical."});
+  try{
+    if(!["succeeded","failed","canceled"].includes(job.status)) await finalizeReplicateMusicJob(job);
+  }catch(e){
+    job.status="failed"; job.error=e.message;
+    console.error("[AI Music] status ERROR",e.stack||e.message);
+  }
+  if(Date.now()-job.createdAt>20*60*1000 && !["succeeded","failed","canceled"].includes(job.status)){
+    job.status="failed"; job.error="La generación musical superó el tiempo máximo.";
+  }
+  if(job.status==="succeeded") return res.json({status:"succeeded",result:job.result,query:job.query});
+  if(job.status==="failed"||job.status==="canceled"){
+    FREESOUND_MIX_JOBS.delete(job.id);
+    return res.status(500).json({status:job.status,error:job.error||"Generación cancelada."});
+  }
+  return res.json({status:job.status,query:job.query});
+});
+
 
 app.post("/api/import-external-music", async (req,res)=>{
   const {preview,name="Freesound preview",soundId,sourceUrl,username,license}=req.body||{};
