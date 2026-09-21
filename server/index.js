@@ -534,77 +534,56 @@ async function generatePollinationsMusicFile(prompt, index) {
 }
 
 
-async function generateLyriaMusicFile(prompt, index=1) {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) throw new Error("GEMINI_API_KEY no configurada");
+async function generateLyriaMusicFile(prompt,index=1){
+  const key=process.env.GEMINI_API_KEY;
+  if(!key) throw new Error("GEMINI_API_KEY no configurada");
 
-  const p = String(prompt || "relajación ambiental profunda").toLowerCase();
-  const has = (...words) => words.some(w => p.includes(w));
-
-  // No fijamos siempre el piano: el instrumento y la textura salen de la búsqueda.
-  let soundProfile;
-  if (has("guitarra","acústica","acustica","nylon","guitar")) {
-    soundProfile = "realistic warm nylon acoustic guitar as the main instrument, fingerpicked slowly, intimate close microphone, soft finger noise, natural wood resonance, sparse arpeggios";
-  } else if (has("flauta","flute","bambú","bambu","wind")) {
-    soundProfile = "realistic airy bamboo flute as the main instrument, breathy natural tone, very sparse long notes, gentle expressive phrasing, soft room ambience";
-  } else if (has("violín","violin","cello","cuerdas","strings","orquesta","orchestral")) {
-    soundProfile = "realistic warm legato strings as the main sound, intimate chamber ensemble, very soft bow texture, long sustained consonant chords, subtle evolving harmony";
-  } else if (has("agua","water","océano","oceano","mar","olas","waves","lluvia","rain","río","rio","cascada","waterfall")) {
-    soundProfile = "deep natural water ambience as the main texture, soft distant waves or flowing water, with only sparse atmospheric musical tones, no obvious piano";
-  } else if (has("sintetizador","synth","electrónica","electronica","ambient")) {
-    soundProfile = "premium analog ambient synthesizers, warm evolving pads, soft granular air, slowly changing harmonies, wide clean stereo field";
-  } else if (has("piano","pianístico","pianistica","teclas","felt")) {
-    soundProfile = "real professionally recorded felt piano as the main instrument, close intimate microphone, sparse slow notes, long natural decay, warm pedal resonance";
-  } else {
-    soundProfile = "deep relaxation ambient ensemble with soft felt piano, warm sustained pads and subtle organic textures, with the instruments clearly separated and never dominant";
-  }
-
-  const variants = [
-    "version A: closest and most minimal interpretation, very sparse arrangement",
-    "version B: slightly deeper harmony, longer sustained notes and wider room",
-    "version C: gentle melodic movement with the same requested sound palette",
-    "version D: subtle evolving texture and a very soft final resolution"
+  // Perfil fijo de referencia: piano de relajación larga, limpio, cálido y muy espacioso.
+  // El texto del usuario modifica la atmósfera, pero no convierte la pista en otro género.
+  const atmosphere=String(prompt||"").slice(0,220);
+  const variants=[
+    "soft felt piano, close natural recording, sparse single notes, long pedal resonance",
+    "soft felt piano, gentle two-note phrases, warm room tone, long sustained harmony",
+    "soft felt piano, sparse melodic phrases, subtle warm pad far behind, very wide reverb",
+    "soft felt piano, extremely gentle arpeggios, natural pedal resonance, deep spacious ambience"
   ];
-  const detail = variants[(Math.max(1, Number(index))-1)%variants.length];
-
-  const finalPrompt = [
-    "Instrumental deep relaxation music for a long meditation and nature video.",
-    soundProfile + ".",
-    detail + ".",
-    "Reference aesthetic: premium long-form relaxation music, calm, spacious, organic and continuous, designed as background rather than a song.",
-    "Very slow 40-55 BPM feel, consonant harmony, gentle voice leading, long phrases, low dynamic range and no sudden changes.",
-    "Clean professional recording and mix: natural stereo depth, detailed transients, controlled low end, smooth high frequencies, no hiss, no clipping, no distortion, no harshness.",
-    "No vocals, no lyrics, no drums, no percussion, no EDM, no pop structure, no hook, no dramatic cinematic impacts, no rhythmic groove.",
-    "Create an original composition; do not reproduce any existing melody or recording."
+  const finalPrompt=[
+    "Instrumental relaxation music.",
+    "Style reference: long-form healing meditation piano ambience similar in mood and sonic character to the supplied relaxation reference.",
+    "Main instrument MUST be soft acoustic felt piano.",
+    variants[(Math.max(1,Number(index))-1)%variants.length]+".",
+    "Slow approximately 45 BPM feel.",
+    "Very sparse playing, long silences, long natural decay, sustained consonant chords, gentle voice leading.",
+    "Warm intimate piano recording blended into a large clean spacious reverb.",
+    "Continuous ambient meditation background, not a conventional song.",
+    "No drums, no percussion, no beat, no bass groove, no vocals, no lyrics, no pop structure, no cinematic impacts.",
+    "Very low dynamics, peaceful and emotionally neutral, no sudden transitions.",
+    "Clean professional stereo recording, detailed piano, smooth highs, controlled lows, no distortion, no clipping.",
+    "User atmosphere: "+atmosphere+".",
+    "Create an original composition and do not reproduce any existing melody or recording."
   ].join(" ");
 
-  const r = await fetchWithTimeout("https://generativelanguage.googleapis.com/v1beta/interactions", {
+  const r=await fetchWithTimeout("https://generativelanguage.googleapis.com/v1beta/interactions",{
     method:"POST",
     headers:{"Content-Type":"application/json","x-goog-api-key":key},
     body:JSON.stringify({model:"lyria-3.5",input:finalPrompt,response_format:{type:"audio"}})
   },180000);
-
-  const data=await r.json();
-  if(!r.ok) throw new Error(data.error?.message || ("Lyria 3.5 HTTP "+r.status));
-  const b64=data.output_audio?.data || data.steps?.flatMap(s=>s.content||[]).find(x=>x.type==="audio")?.data;
+  const data=await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(data.error?.message||("Lyria 3.5 HTTP "+r.status));
+  const b64=data.output_audio?.data||data.steps?.flatMap(s=>s.content||[]).find(x=>x.type==="audio")?.data;
   if(!b64) throw new Error("Lyria 3.5 no devolvió audio.");
 
-  const rawName="ai-lyria35-raw-"+Date.now()+"-"+index+".bin";
-  const rawPath=path.join(MUSIC_DIR,rawName);
-  fs.writeFileSync(rawPath,Buffer.from(b64,"base64"));
-
-  const cleanName="ai-lyria35-"+hashText(finalPrompt)+"-"+index+".mp3";
-  const cleanPath=path.join(MUSIC_DIR,cleanName);
+  const raw=path.join(MUSIC_DIR,".lyria-"+Date.now()+"-"+index+".bin");
+  fs.writeFileSync(raw,Buffer.from(b64,"base64"));
+  const outName="ai-reference-relax-"+hashText(finalPrompt)+"-"+index+".mp3";
+  const out=path.join(MUSIC_DIR,outName);
   try{
-    await runFfmpeg(["-y","-i",rawPath,
-      "-af","highpass=f=28,lowpass=f=18000,acompressor=threshold=-28dB:ratio=1.4:attack=30:release=350:makeup=1,alimiter=limit=0.95",
-      "-ar","44100","-ac","2","-c:a","libmp3lame","-b:a","320k",cleanPath]);
-    fs.rmSync(rawPath,{force:true});
-    return {name:cleanName,url:"/media/music/"+encodeURIComponent(cleanName),ai:true,provider:"Google Lyria 3.5",generated:true,fallback:false};
-  }catch(e){
-    fs.rmSync(rawPath,{force:true});
-    throw new Error("No se pudo convertir el audio de Lyria: "+e.message);
-  }
+    await runFfmpeg(["-y","-i",raw,
+      "-af","highpass=f=30,lowpass=f=18000,acompressor=threshold=-30dB:ratio=1.3:attack=35:release=400:makeup=1,alimiter=limit=0.94",
+      "-ar","44100","-ac","2","-c:a","libmp3lame","-b:a","320k",out]);
+  }finally{fs.rmSync(raw,{force:true})}
+  if(!fs.existsSync(out)||fs.statSync(out).size<4096) throw new Error("El audio generado no es válido.");
+  return {name:outName,url:"/media/music/"+encodeURIComponent(outName),ai:true,provider:"Google Lyria 3.5",generated:true,fallback:false};
 }
 function makeFallbackLandscape(filename, theme="nature") {
   const safeTheme = String(theme).replace(/[&<>"]/g, "");
