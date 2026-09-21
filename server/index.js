@@ -403,9 +403,7 @@ async function ensureBuiltinMusic(tracks=BUILTIN_MUSIC){
           fs.rmSync(generatedPath,{force:true});
           console.log("[Lyria 3.5] LISTA:",track.file);
         }catch(lyriaError){
-          console.warn("[Lyria 3.5] No disponible, usando motor local diferenciado:",lyriaError.message);
-          makeCompositionWav(track,wav);
-          await runFfmpeg(["-y","-i",wav,"-t","12","-af","highpass=f=28,lowpass=f=16500,acompressor=threshold=-22dB:ratio=2:attack=35:release=220:makeup=1,alimiter=limit=0.92","-c:a","libmp3lame","-b:a","192k","-ar","44100",out]);
+          throw new Error("No hay generador de música IA disponible. No se mostrará un synth local como sustituto.");
         }
       }
       if(!valid(track)) throw new Error("FFmpeg no creó un MP3 válido");
@@ -559,7 +557,7 @@ async function generatePollinationsImageFile(prompt, index) {
 async function generatePollinationsMusicFile(prompt, index) {
   const seed = Math.floor(Math.random()*4294967295);
   const params = new URLSearchParams({
-    model: "elevenlabs/music-v2.5",
+    model: "elevenmusic",
     duration: "30",
     instrumental: "true",
     seed: String(seed),
