@@ -55,7 +55,7 @@ function safe(name) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-const MUSIC_ENGINE_VERSION = "v24-freeform-musicgpt-style";
+const MUSIC_ENGINE_VERSION = "v25-free-music-engine";
 
 const BUILTIN_MUSIC = [
   ["relax-piano.mp3","Piano nocturno","Sueño",261.63,329.63,392],
@@ -403,7 +403,27 @@ async function ensureBuiltinMusic(tracks=BUILTIN_MUSIC){
           fs.rmSync(generatedPath,{force:true});
           console.log("[Lyria 3.5] LISTA:",track.file);
         }catch(lyriaError){
-          throw new Error("No hay generador de música IA disponible. No se mostrará un synth local como sustituto.");
+          // Fallback gratuito local: nunca dejamos Crear IA sin música.
+          // Cada opción recibe una identidad instrumental y armónica diferente.
+          const fallbackProfiles = [
+            "felt piano, nylon acoustic guitar, intimate cello, airy flute, warm wooden room, organic acoustic ambient, rich major 7/9 harmony, slow expressive melody, no drums, no percussion",
+            "cinematic strings, cello, viola, layered legato violins, deep spacious hall, suspended minor 9 harmony, long orchestral swells, low register movement, no guitar lead, no flute lead, no piano lead, no drums",
+            "warm analog synthesizer, evolving granular pads, glassy high textures, soft sub bass, stereo modulation, ethereal electronic ambient, changing harmonic layers, modern spacious production, no piano lead, no orchestral wall, no drums",
+            "bamboo flute, nylon guitar, resonant plucked textures, light bowed strings, organic outdoor ambience, modal world ambient, long melodic breaths, subtle rubato, natural room detail, no synth lead, no piano lead, no drums"
+          ];
+          const fallbackProfile = fallbackProfiles[(Number(track.variant || 1) - 1) % fallbackProfiles.length];
+          const fallbackTrack = { ...track, musicProfile: fallbackProfile };
+          await new Promise(resolve => setImmediate(resolve));
+          makeCompositionWav(fallbackTrack, wav);
+          await runFfmpeg([
+            "-y","-i",wav,
+            "-af","highpass=f=28,lowpass=f=18500,acompressor=threshold=-30dB:ratio=1.25:attack=35:release=400:makeup=1,alimiter=limit=0.94",
+            "-ar","44100","-ac","2","-c:a","libmp3lame","-b:a","320k",out
+          ]);
+          track.provider = "RelaxScape Free Music Engine";
+          track.generated = true;
+          track.fallback = true;
+          console.log("[RelaxScape Free Music Engine] LISTA:",track.file,"variante",track.variant);
         }
       }
       if(!valid(track)) throw new Error("FFmpeg no creó un MP3 válido");
@@ -705,9 +725,9 @@ function getAIMusicOptions(){
         name:t.file,
         url:"/media/music/"+encodeURIComponent(t.file),
         ai:true,
-        provider:"Google Lyria 3.5",
+        provider:t.provider || "RelaxScape Free Music Engine",
         generated:true,
-        fallback:false,
+        fallback:Boolean(t.fallback),
         label:t.label,
         category:t.category
       };
