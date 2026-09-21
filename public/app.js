@@ -57,7 +57,7 @@ async function ensureAIOptions(){
   }finally{S.aiLoading=false;renderAICreator()}
 }
 async function waitForAIMusic(){
-  for(let attempt=0;attempt<48;attempt++){
+  for(let attempt=0;attempt<144;attempt++){
     await new Promise(r=>setTimeout(r,2500));
     try{
       const d=await api("/api/ai-options-status");
@@ -72,10 +72,10 @@ async function waitForAIMusic(){
         return;
       }
       if(d.musicErrors?.length){ if($("#aiSelectionStatus"))$("#aiSelectionStatus").textContent="Error de música: "+d.musicErrors[0]; return; }
-      if($("#aiSelectionStatus"))$("#aiSelectionStatus").textContent="✓ Paisajes listos · generando música "+Math.min(4,attempt+1)+"/4…";
+      if($("#aiSelectionStatus"))$("#aiSelectionStatus").textContent="✓ Paisajes listos · generando música "+Math.min(4,Math.floor(attempt/4)+1)+"/4…";
     }catch(e){}
   }
-  if($("#aiSelectionStatus"))$("#aiSelectionStatus").textContent="Las fotos están listas; la música todavía está preparándose. Espera unos segundos y pulsa Generar opciones IA.";
+  if($("#aiSelectionStatus"))$("#aiSelectionStatus").textContent="Las fotos están listas; la música todavía está preparándose. Déjala terminar; las 4 pistas se generan en segundo plano.";
 }
 function renderAICreator(){
   const ig=$("#aiImageGrid"),mg=$("#aiMusicList");
