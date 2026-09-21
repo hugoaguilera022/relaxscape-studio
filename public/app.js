@@ -58,7 +58,7 @@ function renderAICreator(){
     $$("#aiImageGrid .ai-photo").forEach(e=>e.onclick=()=>{S.image={url:e.dataset.url,name:e.dataset.name};renderAICreator()});
   }
   if(mg){
-    mg.innerHTML=S.aiMusic.length?S.aiMusic.map((x,i)=>'<div class="ai-track '+(S.music?.url===x.url?"selected":"")+'" data-url="'+x.url+'" data-name="'+x.name+'"><div><b>♫ Música IA '+(i+1)+'</b><small>Original · IA gratuita</small></div><audio controls src="'+x.url+'"></audio></div>').join(""):'<div class="empty">♫ Generando opciones IA…</div>';
+    mg.innerHTML=S.aiMusic.length?S.aiMusic.map((x,i)=>'<div class="ai-track '+(S.music?.url===x.url?"selected":"")+'" data-url="'+x.url+'" data-name="'+x.name+'"><div><b>♫ Música original '+(i+1)+'</b><small>Previa 3 min · melodía · ritmo · texturas</small></div><audio controls preload="none" src="'+x.url+'"></audio></div>').join(""):'<div class="empty">♫ Generando opciones IA…</div>';
     $$("#aiMusicList .ai-track").forEach(e=>e.onclick=ev=>{if(ev.target.tagName==="AUDIO")return;S.music={url:e.dataset.url,name:e.dataset.name};renderAICreator()});
   }
   if($("#aiSelectedPhoto"))$("#aiSelectedPhoto").textContent=S.image?prettyImageName(S.image.name):"Sin foto";
@@ -95,10 +95,15 @@ $("#aiLoadPhotos").onclick=async()=>{
 $("#aiGoMusic").onclick=()=>{$$(".nav").forEach(x=>x.classList.remove("active"));$(".tab").forEach(x=>x.classList.remove("active"));document.querySelector('[data-tab="music"]').classList.add("active");$("#music").classList.add("active");};
 $("#aiCreateHour").onclick=async()=>{
   if(!S.image||!S.music){$("#aiSelectionStatus").textContent="Selecciona primero una foto y una música.";return}
-  const btn=$("#aiCreateHour");btn.disabled=true;$("#aiSelectionStatus").textContent="Creando tu vídeo real de 1 hora… Esto puede tardar unos minutos.";
+  const btn=$("#aiCreateHour");btn.disabled=true;
   try{
-    const d=await api("/api/generate-video",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image:S.image.url,music:S.music.url,durationHours:1})});
-    $("#video").src=d.url;$("#download").href=d.url;$("#result").classList.remove("hidden");$("#aiSelectionStatus").textContent="¡Vídeo terminado! Ya puedes reproducirlo o descargarlo.";await load();
+    $("#aiSelectionStatus").textContent="1/2 · Preparando 1 hora a partir de la previa musical…";
+    const long=await api("/api/generate-selected-long-music",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({music:S.music.url,durationHours:1})});
+    $("#aiSelectionStatus").textContent="2/2 · Creando tu vídeo Full HD de 1 hora…";
+    const d=await api("/api/generate-video",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image:S.image.url,music:long.url,durationHours:1})});
+    $("#video").src=d.url;$("#download").href=d.url;$("#result").classList.remove("hidden");
+    $("#aiSelectionStatus").textContent="¡Vídeo terminado! La música larga se ha creado desde la previa que escuchaste.";
+    await load();
   }catch(e){$("#aiSelectionStatus").textContent=e.message}
   finally{btn.disabled=false}
 };
