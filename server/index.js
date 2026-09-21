@@ -156,7 +156,7 @@ async function generatePexelsVideo(prompt, aspectRatio, key, durationHours = 1) 
 
   const orientation = aspectRatio === "9:16" ? "portrait" : "landscape";
   const search = await fetch(
-    `https://api.pexels.com/v1/videos/search?query=${encodeURIComponent(query)}&per_page=20&orientation=${orientation}&size=large&locale=es-ES`,
+    `https://api.pexels.com/v1/videos/search?query=${encodeURIComponent(query)}&per_page=10&orientation=${orientation}&size=medium&locale=en-US`,
     { headers: { Authorization: key } }
   );
   const data = await search.json();
@@ -172,8 +172,8 @@ async function generatePexelsVideo(prompt, aspectRatio, key, durationHours = 1) 
   const targetWidth = aspectRatio === "9:16" ? 1080 : 1920;
   const targetHeight = aspectRatio === "9:16" ? 1920 : 1080;
 
-  // Priorizamos 1080p para mantener la generación rápida en Render.
-  // Solo usamos 4K si no existe ningún archivo 1080p compatible.
+  // Equilibrio entre calidad y velocidad: usamos archivos MEDIUM y evitamos 4K,
+  // porque construir un vídeo de 1–2 horas con un archivo 4K tarda demasiado en Render.
   const candidates = [];
   for (const video of videos) {
     for (const file of video.video_files || []) {
