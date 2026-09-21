@@ -161,15 +161,16 @@ app.post("/api/generate-image", async (req, res) => {
         input: prompt + ". Wide 16:9 landscape composition, suitable for a relaxing video, no text.",
         response_format: {
           type: "image",
+          mime_type: "image/png",
           aspect_ratio: "16:9",
           image_size: "2K"
         }
       })
     });
     const data = await r.json();
-    if (!r.ok) return res.status(r.status).json({ error: data.error?.message || "Error generando imagen con Gemini." });
+    if (!r.ok) return res.status(r.status).json({ error: data.error?.message || JSON.stringify(data) });
     const imageData = data.output_image?.data;
-    if (!imageData) return res.status(500).json({ error: "Gemini terminó pero no devolvió una imagen." });
+    if (!imageData) return res.status(500).json({ error: "Gemini no devolvió output_image. Respuesta: " + JSON.stringify(data).slice(0, 500) });
     const filename = `ai-${Date.now()}.png`;
     fs.writeFileSync(path.join(IMAGE_DIR, filename), Buffer.from(imageData, "base64"));
     res.json({ name: filename, url: `/media/images/${filename}` });
