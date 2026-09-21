@@ -186,6 +186,84 @@ app.post("/api/generate-image", async (req, res) => {
   }
 });
 
+
+async function generateGeminiImageFile(prompt, index) {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error("Falta GEMINI_API_KEY en Render.");
+  const r = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+    body: JSON.stringify({
+      model: "gemini-3.1-flash-image",
+      input: prompt,
+      response_format: { type: "image", mime_type: "image/png", aspect_ratio: "16:9", image_size: "2K" }
+    })
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error?.message || JSON.stringify(data));
+  const imageData = data.output_image?.data;
+  if (!imageData) throw new Error("Gemini no devolvió una imagen.");
+  const filename = `ai-option-${Date.now()}-${index}.png`;
+  fs.writeFileSync(path.join(IMAGE_DIR, filename), Buffer.from(imageData, "base64"));
+  return { name: filename, url: `/media/images/${filename}`, ai: true };
+}
+
+async function generateLyriaMusicFile(prompt, imageFile, index) {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error("Falta GEMINI_API_KEY en Render.");
+  const imagePath = path.join(IMAGE_DIR, imageFile.name);
+  const imageB64 = fs.readFileSync(imagePath).toString("base64");
+  const r = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+    body: JSON.stringify({
+      model: "lyria-3.5",
+      input: [
+        { type: "text", text: prompt },
+        { type: "image", mime_type: "image/png", data: imageB64 }
+      ],
+      response_format: { type: "audio" }
+    })
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error?.message || JSON.stringify(data));
+  const audioData = data.output_audio?.data;
+  if (!audioData) throw new Error("Lyria no devolvió audio.");
+  const filename = `ai-music-option-${Date.now()}-${index}.mp3`;
+  fs.writeFileSync(path.join(MUSIC_DIR, filename), Buffer.from(audioData, "base64"));
+  return { name: filename, url: `/media/music/${filename}`, ai: true };
+}
+
+app.post("/api/ai-options", async (req, res) => {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) return res.status(400).json({ error: "Falta GEMINI_API_KEY en Render." });
+  const imagePrompts = [
+    "Ultra-realistic cinematic alpine lake at sunrise, crystal clear water, mist over mountains, soft golden light, peaceful luxury wellness atmosphere, no people, no buildings, no text, photorealistic, 16:9 composition.",
+    "Ultra-realistic cinematic tropical beach at sunset, calm turquoise ocean, gentle waves, warm sky, peaceful meditation atmosphere, no people, no buildings, no text, photorealistic, 16:9 composition.",
+    "Ultra-realistic cinematic misty pine forest after light rain, soft volumetric light, deep green tones, tranquil mindfulness atmosphere, no people, no buildings, no text, photorealistic, 16:9 composition.",
+    "Ultra-realistic cinematic mountain valley under a starry night sky, subtle moonlight, calm lake reflections, deep blue tones, peaceful sleep atmosphere, no people, no buildings, no text, photorealistic, 16:9 composition."
+  ];
+  const musicPrompts = [
+    "Create a 2-3 minute instrumental ambient relaxation track inspired by this alpine sunrise. Soft piano, warm pads, subtle nature-like texture, very slow tempo, no vocals, no drums, seamless-feeling ending, suitable for sleep and meditation.",
+    "Create a 2-3 minute instrumental ocean relaxation track inspired by this sunset beach. Gentle piano, airy pads, soft chimes, very slow tempo, no vocals, no strong percussion, calm and spacious, suitable for meditation and sleep.",
+    "Create a 2-3 minute instrumental forest meditation track inspired by this misty rainy forest. Warm sustained pads, delicate piano, subtle bells, very slow tempo, no vocals, no beat, peaceful and unobtrusive, suitable for relaxation.",
+    "Create a 2-3 minute deep sleep ambient track inspired by this moonlit mountain valley. Very soft low pads, sparse piano notes, subtle harmonic movement, extremely slow, no vocals, no drums, dark and calming, suitable for sleeping."
+  ];
+  try {
+    const images = [];
+    for (let i = 0; i < imagePrompts.length; i++) {
+      images.push(await generateGeminiImageFile(imagePrompts[i], i + 1));
+    }
+    const musicResults = [];
+    for (let i = 0; i < musicPrompts.length; i++) {
+      musicResults.push(await generateLyriaMusicFile(musicPrompts[i], images[i], i + 1));
+    }
+    res.json({ images, music: musicResults });
+  } catch (e) {
+    res.status(500).json({ error: "No se pudieron generar las opciones IA: " + e.message });
+  }
+});
+
 function runFfmpeg(args) {
   return new Promise((resolve, reject) => {
     const p = spawn(ffmpegPath, args);
