@@ -99,7 +99,7 @@ function makeCompositionWav(track, wavPath){
   // Motor musical procedural: la búsqueda controla de forma fuerte la composición.
   // No reutiliza una melodía fija: hash + variante determinan estructura, armonía,
   // instrumento principal, registro, tempo, motivo, densidad y movimiento estéreo.
-  const sr=12000, dur=36, n=sr*dur, samples=new Float32Array(n*2);
+  const sr=24000, dur=42, n=sr*dur, samples=new Float32Array(n*2);
   const variant=((Number(track.variant||1)-1)%4+4)%4;
   const brief=String(track.userSearch||track.originalMusicPrompt||track.musicProfile||"relaxscape").toLowerCase();
   const hz=m=>440*Math.pow(2,(m-69)/12);
@@ -173,7 +173,20 @@ function makeCompositionWav(track, wavPath){
   if(variant===3) lead=semantic.flute?"flute":pick(["flute","guitar","pluck"]);
   if(semantic.guitar) lead=variant===2?"pluck":"guitar";
 
-  const piano=(f,t,v=1)=>t<0||t>5?0:v*Math.min(1,t/.012)*Math.exp(-t/1.8)*(.72*Math.sin(2*Math.PI*f*t)+.20*Math.sin(4*Math.PI*f*t)+.06*Math.sin(6*Math.PI*f*t));
+  const piano=(f,t,v=1)=>{
+    if(t<0||t>7)return 0;
+    const attack=Math.min(1,t/.008);
+    const decay=Math.exp(-t*(1.15+Math.min(f,1200)/2200));
+    const hammer=Math.exp(-t/0.055);
+    const body=Math.exp(-t/3.8);
+    const inharm=1+0.000015*f;
+    const p=attack*(.58*hammer+.42*body);
+    return v*p*(.72*Math.sin(2*Math.PI*f*inharm*t)+.18*Math.sin(2*Math.PI*2.01*f*t)+.065*Math.sin(2*Math.PI*3.02*f*t)+.025*Math.sin(2*Math.PI*4.05*f*t));
+  };
+  const pianoPedal=(f,t,v=1)=>{
+    if(t<0||t>8)return 0;
+    return v*(1-Math.exp(-t/.03))*Math.exp(-t/6.5)*(.45*Math.sin(2*Math.PI*f*t)+.12*Math.sin(2*Math.PI*2.01*f*t)+.035*Math.sin(2*Math.PI*3.02*f*t));
+  };
   const guitar=(f,t,v=1)=>t<0||t>4?0:v*Math.min(1,t/.008)*Math.exp(-t/1.9)*(.68*Math.sin(2*Math.PI*f*t)+.22*Math.sin(4*Math.PI*f*t)+.07*Math.sin(6*Math.PI*f*t));
   const pluck=(f,t,v=1)=>t<0||t>3?0:v*Math.min(1,t/.006)*Math.exp(-t/1.45)*(.62*Math.sin(2*Math.PI*f*t)+.25*Math.sin(4*Math.PI*f*t)+.10*Math.sin(8*Math.PI*f*t));
   const strings=(f,t,v=1)=>t<0?0:v*(1-Math.exp(-t/1.2))*Math.exp(-t/9)*(.42*Math.sin(2*Math.PI*f*t)+.36*Math.sin(4*Math.PI*f*t)+.16*Math.sin(6*Math.PI*f*t)+.06*Math.sin(8*Math.PI*f*t));
@@ -202,7 +215,11 @@ function makeCompositionWav(track, wavPath){
     const chord2=degree(chord+2,0);
     const chord3=degree(chord+4,0);
     // Sustained harmonic bed.
-    events.push({t:b*bar,f:hz(chordRoot-12),v:.045+ rnd()*.025,role:"strings"});
+    events.push({t:b*bar,f:hz(chordRoot-12),v:.035+rnd()*.018,role:"strings"});
+    if(lead==="piano" || semantic.piano){
+      events.push({t:b*bar,f:hz(chordRoot-24),v:.055+rnd()*.025,role:"pedal"});
+      events.push({t:b*bar+bar*.25,f:hz(chord2-12),v:.028,role:"pedal"});
+    }
     events.push({t:b*bar,f:hz(chord2),v:.025+ rnd()*.018,role:"strings"});
     events.push({t:b*bar,f:hz(chord3),v:.022+ rnd()*.016,role:"strings"});
     // Motif changes every bar; never just repeats one fixed four-bar phrase.
@@ -219,6 +236,7 @@ function makeCompositionWav(track, wavPath){
   }
 
   // Texturas ligadas directamente al paisaje/búsqueda.
+  const reverbDelay=(src,delay,decay,t)=>src*Math.exp(-delay*decay);
   const texture=(t)=>{
     let x=0;
     if(semantic.rain){
@@ -239,12 +257,13 @@ function makeCompositionWav(track, wavPath){
   for(let i=0;i<n;i++){
     const t=i/sr;
     let l=0,r=0;
-    const pan=.30*Math.sin(2*Math.PI*t/(7+rnd()*6));
+    const pan=.18*Math.sin(2*Math.PI*t/(9+((h%7))));
     for(const e of events){
       const nt=t-e.t;
       if(nt<0) continue;
       let x=0;
       if(e.role==="piano")x=piano(e.f,nt,e.v);
+      else if(e.role==="pedal")x=pianoPedal(e.f,nt,e.v);
       else if(e.role==="guitar")x=guitar(e.f,nt,e.v);
       else if(e.role==="pluck")x=pluck(e.f,nt,e.v);
       else if(e.role==="strings")x=strings(e.f,nt,e.v);
@@ -256,7 +275,10 @@ function makeCompositionWav(track, wavPath){
     const tx=texture(t);l+=tx*(1+pan);r+=tx*(1-pan);
     if(semantic.night||semantic.sleep){l*=.78;r*=.78;}
     if(semantic.bright||semantic.sunset){const x=.0018*Math.sin(2*Math.PI*1450*t);l+=x;r+=x*.8;}
-    const fadeIn=Math.min(1,t/2),fadeOut=Math.min(1,(dur-t)/3),m=fadeIn*fadeOut;
+    const fadeIn=Math.min(1,t/2),fadeOut=Math.min(1,(dur-t)/4),m=fadeIn*fadeOut;
+    // Saturación muy ligera + filtrado de graves/agudos para un acabado más natural.
+    const room=1+0.035*Math.sin(2*Math.PI*.21*t);
+    l*=room;r*=room;
     l=Math.tanh(l*1.55)*m;r=Math.tanh(r*1.55)*m;
     samples[i*2]=clamp(l,-.78,.78);samples[i*2+1]=clamp(r,-.78,.78);
   }
