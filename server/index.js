@@ -130,85 +130,106 @@ async function generatePexelsVideo(prompt, aspectRatio, key, durationHours = 1) 
   const hours = Number(durationHours);
   if (![1, 2].includes(hours)) throw new Error("La duración debe ser de 1 o 2 horas.");
 
+  console.log("[Pexels] Buscando:", query);
+
   const search = await fetch(
-    `https://api.pexels.com/v1/videos/search?query=${encodeURIComponent(query)}&per_page=40&orientation=${aspectRatio === "9:16" ? "portrait" : "landscape"}&size=small`,
+    `https://api.pexels.com/v1/videos/search?query=${encodeURIComponent(query)}&per_page=20&orientation=${aspectRatio === "9:16" ? "portrait" : "landscape"}&size=small`,
     { headers: { Authorization: key } }
   );
   const data = await search.json();
-  if (!search.ok) throw new Error(data.error || "Pexels rechazó la búsqueda.");
+  if (!search.ok) throw new Error(data.error || `Pexels respondió HTTP ${search.status}.`);
   const videos = (data.videos || []).filter(v => v.video_files?.length && Number(v.duration || 0) >= 5);
-  if (!videos.length) throw new Error("Pexels no encontró clips para esa descripción. Prueba con otra descripción.");
+  if (!videos.length) throw new Error("Pexels no encontró clips. Prueba una descripción como: bosque, océano, lluvia, montañas.");
 
-  const selected = videos.slice(0, Math.min(6, videos.length));
-  const downloaded = [];
-
-  for (let i = 0; i < selected.length; i++) {
-    const video = selected[i];
-    const files = [...video.video_files].sort((a,b) => {
-      const score = f => {
-        const orientation = aspectRatio === "9:16" ? (f.height > f.width ? 3 : 0) : (f.width >= f.height ? 3 : 0);
-        const hd = Math.abs((f.width || 0) - 1280) < 400 ? 1 : 0;
-        return orientation + hd + Math.min((f.width || 0) / 1280, 1);
-      };
-      return score(b) - score(a);
-    });
-    const url = files[0]?.link;
-    if (!url) continue;
-    const r = await fetch(url);
-    if (!r.ok) continue;
-    const file = path.join(VIDEO_DIR, `pexels-src-${Date.now()}-${i}.mp4`);
-    fs.writeFileSync(file, Buffer.from(await r.arrayBuffer()));
-    downloaded.push({ file, sourceUrl: video.url });
-  }
-
-  if (!downloaded.length) throw new Error("No se pudieron descargar los clips de Pexels.");
-
+  // Pocos clips para que Render no se quede sin RAM/CPU durante la creación.
+  const selected = videos.slice(0, Math.min(3, videos.length));
   const stamp = Date.now();
-  const montage = path.join(VIDEO_DIR, `pexels-montage-${stamp}.mp4`);
-  const finalName = `relaxscape-${stamp}-${hours}h.mp4`;
-  const finalPath = path.join(VIDEO_DIR, finalName);
-
-  const inputs = [];
-  const filters = [];
-  downloaded.forEach((item,i) => {
-    inputs.push("-i", item.file);
-    const size = aspectRatio === "9:16"
-      ? "scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2"
-      : "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2";
-    filters.push(`[${i}:v]fps=24,${size},format=yuv420p[v${i}]`);
-  });
-  filters.push(downloaded.map((_,i)=>`[v${i}]`).join("")+`concat=n=${downloaded.length}:v=1:a=0[v]`);
+  const normalized = [];
+  const sources = [];
 
   try {
-    // Solo codificamos los clips una vez. El montaje corto se puede repetir
-    // por stream copy, evitando volver a codificar una hora completa.
-    await runFfmpeg([
-      "-y", ...inputs,
-      "-filter_complex", filters.join(";"),
-      "-map","[v]","-an",
-      "-c:v","libx264","-preset","ultrafast","-crf","28",
-      "-movflags","+faststart", montage
-    ]);
+    for (let i = 0; i < selected.length; i++) {
+      const video = selected[i];
+      const files = [...video.video_files].sort((a,b) => {
+        const score = f => {
+          const vertical = f.height > f.width;
+          const wanted = aspectRatio === "9:16" ? vertical : !vertical;
+          const distance = Math.abs((f.width || 0) - (aspectRatio === "9:16" ? 720 : 1280));
+          return (wanted ? 100000 : 0) - distance;
+        };
+        return score(b) - score(a);
+      });
 
-    await runFfmpeg([
-      "-y","-stream_loop","-1","-i",montage,
-      "-t",String(hours*3600),
-      "-an","-c:v","copy","-movflags","+faststart",finalPath
-    ]);
+      const url = files[0]?.link;
+      if (!url) continue;
+
+      console.log(`[Pexels] Descargando clip ${i + 1}/${selected.length}`);
+      const r = await fetch(url);
+      if (!r.ok) continue;
+
+      const source = path.join(VIDEO_DIR, `pexels-src-${stamp}-${i}.mp4`);
+      const segment = path.join(VIDEO_DIR, `pexels-segment-${stamp}-${i}.mp4`);
+      fs.writeFileSync(source, Buffer.from(await r.arrayBuffer()));
+
+      const size = aspectRatio === "9:16"
+        ? "scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2"
+        : "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2";
+
+      console.log(`[FFmpeg] Normalizando clip ${i + 1}/${selected.length}`);
+      await runFfmpeg([
+        "-y","-i",source,
+        "-vf",`${size},fps=24,format=yuv420p`,
+        "-an","-c:v","libx264","-preset","ultrafast","-crf","30",
+        "-movflags","+faststart",segment
+      ]);
+
+      try { fs.unlinkSync(source); } catch {}
+      normalized.push(segment);
+      sources.push(video.url);
+    }
+
+    if (!normalized.length) throw new Error("Pexels encontró vídeos pero no pudo descargar ninguno.");
+
+    const concatFile = path.join(VIDEO_DIR, `pexels-concat-${stamp}.txt`);
+    const montage = path.join(VIDEO_DIR, `pexels-montage-${stamp}.mp4`);
+    const finalName = `relaxscape-${stamp}-${hours}h.mp4`;
+    const finalPath = path.join(VIDEO_DIR, finalName);
+
+    fs.writeFileSync(concatFile, normalized.map(f => `file '${f.replace(/'/g, "'\\''")}'`).join("\n"));
+
+    try {
+      console.log("[FFmpeg] Uniendo clips...");
+      await runFfmpeg([
+        "-y","-f","concat","-safe","0","-i",concatFile,
+        "-an","-c:v","copy","-movflags","+faststart",montage
+      ]);
+
+      console.log(`[FFmpeg] Creando vídeo de ${hours} hora(s)...`);
+      await runFfmpeg([
+        "-y","-stream_loop","-1","-i",montage,
+        "-t",String(hours * 3600),
+        "-an","-c:v","copy","-movflags","+faststart",finalPath
+      ]);
+    } finally {
+      try { fs.unlinkSync(concatFile); } catch {}
+      try { fs.unlinkSync(montage); } catch {}
+    }
+
+    return {
+      name: finalName,
+      url: `/media/videos/${finalName}`,
+      source: "Pexels",
+      sourceUrl: sources[0],
+      clips: normalized.length,
+      durationHours: hours
+    };
   } finally {
-    for (const item of downloaded) { try { fs.unlinkSync(item.file); } catch {} }
-    try { fs.unlinkSync(montage); } catch {}
+    for (const file of normalized) {
+      try { fs.unlinkSync(file); } catch {}
+    }
   }
-
-  return {
-    name: finalName,
-    url: `/media/videos/${finalName}`,
-    source: "Pexels",
-    sourceUrl: downloaded[0]?.sourceUrl,
-    clips: downloaded.length,
-    durationHours: hours
-  };
 }
+
 app.post("/api/generate-ai-video", async (req, res) => {
   const key = process.env.PEXELS_API_KEY;
   if (!key) return res.status(400).json({ error: "Añade PEXELS_API_KEY en Render. La API de Pexels es gratuita y permite buscar vídeos sin pagar." });
