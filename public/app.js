@@ -43,6 +43,8 @@ async function ensureAIOptions(){
     if(S.aiImages[0])S.image=S.aiImages[0];
     if(S.aiMusic[0])S.music=S.aiMusic[0];
     renderAICreator();
+    const problems=[...(d.imageErrors||[]).map(x=>"Imagen: "+x),...(d.musicErrors||[]).map(x=>"Música: "+x)];
+    if(status&&problems.length)status.textContent="Se generaron "+S.aiImages.length+" imágenes y "+S.aiMusic.length+" músicas. "+problems[0];
   }catch(e){
     if(status)status.textContent=e.message;
     if(ig)ig.innerHTML='<div class="empty">No se pudieron generar las imágenes IA.</div>';
