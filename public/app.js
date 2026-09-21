@@ -51,8 +51,9 @@ async function ensureAIOptions(){
     if(S.aiImages.length){
       S.aiReady=!!(S.aiImages.length&&S.aiMusic.length>=4);
       if(status)status.textContent=S.aiReady?"✓ 4 paisajes y 4 músicas listas.":"✓ Paisajes listos · generando las 4 músicas…";
+      if(!S.aiReady) await waitForAIMusic();
     }else{
-      if(status)status.textContent="✓ Paisajes listos. Generando las 4 músicas…";
+      if(status)status.textContent="Preparando opciones…";
       await waitForAIMusic();
     }
   }catch(e){
