@@ -167,6 +167,7 @@ function makeCompositionWav(track, wavPath){
     energetic:has("energetico","energetica","upbeat","rapido","fast","intenso")
   };
 
+  // INSTRUMENTOS = solo los solicitados explícitamente. El estilo nunca añade uno.
   const requestedRoles=[];
   if(semantic.piano) requestedRoles.push("piano");
   if(semantic.guitar) requestedRoles.push("guitar");
@@ -260,10 +261,9 @@ function makeCompositionWav(track, wavPath){
   );
   const renderers={piano,guitar,strings,flute,synth,harp,kalimba};
 
-  // -------------------- 4. SECUENCIA --------------------
-  // Cada evento es independiente del render:
-  // {t, dur, f, v, role, kind}. Esto permite que la misma composición pueda
-  // cambiar de timbre/mezcla sin volver a inventar las notas.
+  // -------------------- 4. SECUENCIA MUSICAL --------------------
+  // Primero se construye una partitura interna. El audio se renderiza DESPUÉS.
+  // La búsqueda determina forma, densidad, registro, fraseo y función de cada rol.
   const events=[];
   const add=(role,t,durBeats,degreeIndex,octave,velocity,kind="note")=>{
     if(!role||t>=dur)return;
@@ -287,6 +287,10 @@ function makeCompositionWav(track, wavPath){
         ? [[0,5,3,4],[0,3,6,4],[0,5,1,4]]
         : [[0,5,3,4],[0,3,5,4],[0,4,2,5],[0,2,5,3]];
   const progression=progressionPool[(Math.floor(hash01(19)*progressionPool.length)+variant-1+progressionPool.length)%progressionPool.length];
+  const phraseShape=variant%2 ? [0,1,2,3,2,1,0,1] : [0,1,3,4,3,2,1,0];
+  const phraseBars=semantic.slow||semantic.meditation||semantic.sleep||semantic.ambient ? 8 : 4;
+  const totalBars=Math.min(8,Math.max(4,phraseBars));
+  const sectionChange=(b)=>b===0?"A":b<totalBars/2?"A2":b===Math.floor(totalBars/2)?"B":"B2";
 
   // La armonía base se reparte entre los instrumentos pedidos.
   // Con un solo instrumento, ese instrumento lleva la armonía y la melodía.
@@ -317,8 +321,9 @@ function makeCompositionWav(track, wavPath){
     kalimba:{oct:1,pattern:"ostinato"}
   };
 
-  // 4 compases = una frase. Cada instrumento obtiene un patrón coherente.
-  for(let b=0;b<4;b++){
+  // 8 compases máximos: A -> A2 -> B -> B2.
+  // Así cada versión tiene desarrollo real en vez de repetir el mismo compás.
+  for(let b=0;b<totalBars;b++){
     const c=progression[b%progression.length];
     const baseT=b*bar;
     const tones=chordVoicing(c,0);
@@ -406,6 +411,13 @@ function makeCompositionWav(track, wavPath){
     });
   }
 
+  // Cadencia final: la pieza termina musicalmente, no con un corte arbitrario.
+  if(leadRole){
+    const finalC=progression[(totalBars-1)%progression.length];
+    const finalT=(totalBars-1)*bar+bar*.72;
+    add(leadRole,finalT,.95,finalC,-1,roleVelocity[leadRole]*.55,"cadence");
+  }
+
   // -------------------- 5. AMBIENTES --------------------
   // Los ambientes son buses separados y SOLO se activan si se pidieron.
   const noiseAt=(t,seed=0)=>{
@@ -480,7 +492,7 @@ function makeCompositionWav(track, wavPath){
     }
 
     if(leadRole==="piano"){
-      for(let b=0;b<4;b++){
+      for(let b=0;b<totalBars;b++){
         const bt=b*bar;
         if(t>=bt){
           const nt=t-bt, c=progression[b%progression.length];
