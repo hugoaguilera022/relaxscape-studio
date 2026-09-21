@@ -195,12 +195,15 @@ function makeCompositionWav(track, wavPath){
   const degree=(d,o=0)=>root+scale[((d%scale.length)+scale.length)%scale.length]+12*o;
 
   const explicitLead=semantic.piano?"piano":semantic.guitar?"guitar":semantic.flute?"flute":semantic.strings?"strings":semantic.synth?"synth":semantic.harp?"harp":semantic.kalimba?"kalimba":null;
-  // Si el usuario pide un instrumento concreto, ese instrumento NO se sustituye
-  // por un pad/synth genérico: también lleva la armonía principal.
 
-  const lead=explicitLead || (semantic.flamenco?"guitar":semantic.forest?"flute":semantic.cinematic?"strings":semantic.night||semantic.sleep?"piano":semantic.ocean||semantic.river?"piano":"piano");
+  // REGLA ESTRICTA DE INSTRUMENTACIÓN:
+  // el género, mood, paisaje o estilo JAMÁS pueden añadir un instrumento que
+  // el usuario no haya pedido. Antes se introducía piano/guitarra/flauta/cuerdas
+  // automáticamente por "noche", "río", "cinematic", etc.; eso se elimina.
+  // Los instrumentos existentes en la búsqueda son la única fuente sonora tonal.
+  const lead=explicitLead;
 
-  // Timbres dedicados: el instrumento pedido es claramente protagonista.
+  // Timbres dedicados: solo se renderizan instrumentos explícitamente pedidos.
   const piano=(f,t,v=1)=>{
     if(t<0||t>7)return 0;
     const a=1-Math.exp(-t/.006), hammer=Math.exp(-t/.045), body=Math.exp(-t/3.2);
@@ -278,13 +281,10 @@ function makeCompositionWav(track, wavPath){
   const motif=motifs[(Math.floor(hash01(23)*motifs.length)+variant-1)%motifs.length];
   const register=semantic.night||semantic.sleep?-1:(semantic.flamenco||semantic.energetic?1:0);
   const noteStep=semantic.flamenco||semantic.jazz||semantic.trap?beat/2:beat/2;
-  const harmonyRole=lead==="guitar"?"guitar":lead==="strings"?"strings":lead==="flute"?"flute":lead==="synth"?"synth":lead==="harp"?"harp":lead==="kalimba"?"kalimba":"piano";
-  const leadVelocity=lead==="piano"?.205:lead==="guitar"?.195:lead==="flute"?.18:lead==="strings"?.17:lead==="harp"?.18:lead==="kalimba"?.18:.16;
+  const harmonyRole=lead==="guitar"?"guitar":lead==="strings"?"strings":lead==="flute"?"flute":lead==="synth"?"synth":lead==="harp"?"harp":lead==="kalimba"?"kalimba":lead==="piano"?"piano":null;
+  const leadVelocity=lead==="piano"?.205:lead==="guitar"?.195:lead==="flute"?.18:lead==="strings"?.17:lead==="harp"?.18:lead==="kalimba"?.18:lead==="synth"?.16:0;
 
-  // ENSAMBLE EXPLÍCITO: si la búsqueda pide varios instrumentos, TODOS deben
-  // aparecer en la composición. El primer instrumento lleva la melodía principal;
-  // los demás reciben líneas propias de acompañamiento para que no sean sustituidos
-  // por un único timbre genérico.
+  // ENSAMBLE EXPLÍCITO Y CERRADO: SOLO instrumentos presentes en la búsqueda.
   const requestedRoles=[];
   if(semantic.piano) requestedRoles.push("piano");
   if(semantic.guitar) requestedRoles.push("guitar");
@@ -293,27 +293,26 @@ function makeCompositionWav(track, wavPath){
   if(semantic.synth) requestedRoles.push("synth");
   if(semantic.harp) requestedRoles.push("harp");
   if(semantic.kalimba) requestedRoles.push("kalimba");
-  if(!requestedRoles.length) requestedRoles.push(lead);
   const companionRoles=requestedRoles.filter(role=>role!==lead);
   const companionVelocity={piano:.075,guitar:.065,strings:.060,flute:.065,synth:.045,harp:.070,kalimba:.055};
 
   for(let b=0;b<4;b++){
     const c=progression[b%progression.length];
     const chord=[degree(c,0),degree(c+2,0),degree(c+4,0)];
-    // Bajo/armonía con inversiones y pequeñas anticipaciones para que el acorde
-    // tenga movimiento y no sea una sucesión de notas aisladas.
+    // Armonía SOLO si existe un instrumento solicitado.
     if(lead==="piano"){
       events.push({t:b*bar,f:hz(chord[0]-12),v:.12,role:"piano"});
       events.push({t:b*bar+bar*.25,f:hz(chord[1]),v:.052,role:"piano"});
       events.push({t:b*bar+bar*.50,f:hz(chord[2]),v:.058,role:"piano"});
       events.push({t:b*bar+bar*.75,f:hz(chord[1]),v:.045,role:"piano"});
-    }else{
+    }else if(harmonyRole){
       events.push({t:b*bar,f:hz(chord[0]-12),v:.038,role:harmonyRole});
       events.push({t:b*bar+bar*.5,f:hz(chord[1]),v:.024,role:harmonyRole});
       events.push({t:b*bar+bar*.75,f:hz(chord[2]),v:.021,role:harmonyRole});
     }
 
     // Frase A: ocho posiciones con silencios y duraciones implícitas distintas.
+    if(!lead) continue;
     const offset=(variant+b*2)%motif.length;
     for(let j=0;j<8;j++){
       const idx=(offset+j)%motif.length;
@@ -355,7 +354,7 @@ function makeCompositionWav(track, wavPath){
 
     // Respuesta contrapuntística: una segunda línea más lenta y baja, siempre
     // construida sobre grados del acorde/escala para mantener consonancia.
-    if(b>0){
+    if(lead && b>0){
       const response=[c+4,c+2,c+1,c+3][(b+variant)%4];
       for(let k=0;k<3;k++){
         const rt=b*bar+bar*.33+k*bar*.22;
