@@ -272,64 +272,77 @@ function makeCompositionWav(track, wavPath){
   writeWav(wavPath,samples,sr,2);
 }
 
+async function generateElevenMusic(prompt, musicLengthMs=60000, options={}) {
+  const key = process.env.ELEVENLABS_API_KEY;
+  if (!key) throw new Error("Falta ELEVENLABS_API_KEY en Render. Añade una API key de ElevenLabs para generar música IA real.");
+
+  const modelId = process.env.ELEVEN_MUSIC_MODEL || "music_v2_5";
+  const body = {
+    prompt: String(prompt || "").slice(0, 4100),
+    music_length_ms: Math.max(3000, Math.min(600000, Number(musicLengthMs) || 60000)),
+    model_id: modelId,
+    force_instrumental: options.forceInstrumental !== false,
+    output_format: process.env.ELEVEN_MUSIC_FORMAT || "mp3_48000_192"
+  };
+
+  const r = await fetch("https://api.elevenlabs.io/v1/music", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "xi-api-key": key },
+    body: JSON.stringify(body)
+  });
+
+  if (!r.ok) {
+    const raw = await r.text();
+    let detail = raw;
+    try {
+      const data = JSON.parse(raw);
+      detail = data.detail?.message || data.detail?.status || data.message || raw;
+    } catch {}
+    throw new Error("ElevenLabs Music HTTP " + r.status + ": " + detail);
+  }
+
+  const buffer = Buffer.from(await r.arrayBuffer());
+  if (!buffer.length) throw new Error("ElevenLabs devolvió un audio vacío.");
+  return buffer;
+}
+
 async function ensureBuiltinMusic(tracks=[]) {
-  const token = process.env.HF_TOKEN || process.env.HUGGINGFACE_API_KEY;
-  if (!token) throw new Error("Falta HF_TOKEN en Render. Crea un token de Hugging Face con permiso de Inference Providers.");
-
-  const hf = new InferenceClient(token);
-  const model = process.env.HF_MUSIC_MODEL || "stabilityai/stable-audio-3-small-music";
-
   const generateOne = async (track) => {
     const out = path.join(MUSIC_DIR, track.file);
     try {
       fs.rmSync(out, { force:true });
-      const basePrompt = String(track.userMusicBrief || track.musicProfile || "").trim();
-      const variationPrompts = [
-        "Create a completely original composition with a memorable but very gentle melodic motif, intimate lead instrument, evolving harmony and spacious stereo depth.",
-        "Create a completely original composition with a different melodic contour, wider harmonic movement, long sustained layers and a slow cinematic evolution.",
-        "Create a completely original composition with a different instrumental hierarchy, subtle environmental texture, deep low ambience and gradual changes in density.",
-        "Create a completely original composition with the most contrasting arrangement possible while staying faithful to the requested mood, instruments, environment and peaceful relaxation genre."
-      ];
+      const basePrompt = String(track.musicProfile || track.userMusicBrief || "").trim();
+      if (!basePrompt) throw new Error("La búsqueda musical está vacía.");
+
       const prompt = [
         basePrompt,
-        variationPrompts[((Number(track.variant || 1)-1)%4+4)%4],
-        "Professional high-quality instrumental ambient music.",
-        "No vocals, no speech, no abrupt transitions, no aggressive elements, no harsh percussion unless explicitly requested.",
-        "The user's search description is the source of truth for the musical content. Do not replace it with a generic preset.",
-        "Generate real musical content with melody, harmony, texture and evolving arrangement, not a static tone or simple oscillator."
+        "Create a completely original instrumental composition for RelaxScape.",
+        "The user's search is the source of truth: preserve its requested environment, instruments, mood and atmosphere.",
+        "Professional studio-quality production, detailed melody and harmony, evolving arrangement, natural dynamics and spacious stereo depth.",
+        "No vocals, no lyrics, no speech, no abrupt transitions, no aggressive elements.",
+        "This must be a real musical composition, not a static drone, generic preset or one-bar loop.",
+        "Create a fresh performance that is different from previous generations."
       ].join(" ");
 
-      console.log("[Hugging Face Music] Generando", track.label, "con búsqueda:", basePrompt);
-      let audio;
-      try {
-        audio = await hf.textToAudio({ model, inputs: prompt });
-      } catch (firstError) {
-        console.warn("[Hugging Face Music] Stable Audio 3 no disponible, probando Stable Audio Open:", firstError?.message || firstError);
-        audio = await hf.textToAudio({
-          model: "stabilityai/stable-audio-open-1.0",
-          inputs: prompt
-        });
-      }
-
-      const buffer = Buffer.from(await audio.arrayBuffer());
-      if (!buffer.length) throw new Error("Hugging Face devolvió audio vacío.");
-      fs.writeFileSync(out, buffer);
-
-      track.provider = "Hugging Face · Stable Audio";
+      console.log("[ElevenLabs Music] Generando", track.label, "con búsqueda:", track.userMusicBrief || basePrompt);
+      const audio = await generateElevenMusic(prompt, 60000, { forceInstrumental:true });
+      fs.writeFileSync(out, audio);
+      track.provider = "ElevenLabs Music " + (process.env.ELEVEN_MUSIC_MODEL || "music_v2_5");
       track.generated = true;
       track.fallback = false;
-      console.log("[Hugging Face Music] LISTA:", track.file, buffer.length, "bytes");
+      track.musicPrompt = basePrompt;
+      console.log("[ElevenLabs Music] LISTA:", track.file, audio.length, "bytes");
       return true;
     } catch (e) {
       aiMusicErrors.push(track.label + ": " + (e?.message || String(e)));
-      console.error("[Hugging Face Music] ERROR", track.file, e?.stack || e?.message || e);
+      console.error("[ElevenLabs Music] ERROR", track.file, e?.stack || e?.message || e);
       return false;
     }
   };
 
   const results = [];
   for (const track of tracks) results.push(await generateOne(track));
-  console.log("[Hugging Face Music] Terminadas:", results.filter(Boolean).length, "/", tracks.length);
+  console.log("[ElevenLabs Music] Terminadas:", results.filter(Boolean).length, "/", tracks.length);
   return results;
 }
 
@@ -680,29 +693,59 @@ app.post("/api/generate-relax-mix", async (req, res) => {
 });
 
 app.post("/api/generate-selected-long-music", async (req,res)=>{
-  const { music, durationHours=1 }=req.body||{};
+  const { music, durationHours=1, musicPrompt="" }=req.body||{};
   if(!music) return res.status(400).json({error:"Selecciona una música de previa."});
   const hours=Number(durationHours);
   if(![1,2].includes(hours)) return res.status(400).json({error:"La duración debe ser de 1 o 2 horas."});
+
   const name=decodeURIComponent(String(music).split("/").pop());
   const source=path.join(MUSIC_DIR,name);
   if(!fs.existsSync(source)) return res.status(404).json({error:"No se encontró la previa musical seleccionada."});
-  const stamp=Date.now(), work=path.join(MUSIC_DIR,"long-"+stamp), base=path.join(work,"base.mp3");
-  const finalName="relaxscape-selected-"+hours+"h-"+stamp+".mp3", out=path.join(MUSIC_DIR,finalName);
+
+  const selectedTrack=aiMusicTracks.find(t=>t.file===name);
+  const basePrompt=String(selectedTrack?.musicProfile || selectedTrack?.userMusicBrief || musicPrompt || "").trim();
+  if(!basePrompt) return res.status(400).json({error:"No se pudo recuperar la búsqueda que originó la música. Vuelve a generar las opciones IA."});
+
+  const stamp=Date.now();
+  const work=path.join(MUSIC_DIR,"long-"+stamp);
+  const base=path.join(work,"base.mp3");
+  const finalName="relaxscape-selected-"+hours+"h-"+stamp+".mp3";
+  const out=path.join(MUSIC_DIR,finalName);
   fs.mkdirSync(work,{recursive:true});
+
   try{
-    // Convertimos la previa en un bloque de 6 minutos con un crossfade
-    // central y después lo repetimos hasta completar exactamente la duración.
-    await runFfmpeg(["-y","-i",source,"-i",source,
-      "-filter_complex","[0:a]aresample=44100,volume=.96[a0];[1:a]aresample=44100,volume=.96[a1];[a0][a1]acrossfade=d=8:c1=tri:c2=tri[base]",
-      "-map","[base]","-c:a","libmp3lame","-b:a","160k",base]);
-    await runFfmpeg(["-y","-stream_loop","-1","-i",base,"-t",String(hours*3600),
-      "-c:a","libmp3lame","-b:a","160k","-ar","44100",out]);
-    res.json({name:finalName,url:"/media/music/"+encodeURIComponent(finalName),hours,sourcePreview:name,provider:"RelaxScape Ambient Engine"});
+    const longPrompt=[
+      basePrompt,
+      "Create a long-form instrumental relaxation composition of exactly 10 minutes.",
+      "Develop several distinct sections with smooth musical continuity, evolving melody, harmony, instrumentation and texture.",
+      "Keep the same musical identity throughout, but do not repeat the same short phrase or loop.",
+      "Very smooth transitions, gentle dynamics, no vocals, no speech, no abrupt changes, no aggressive percussion.",
+      "The result will be used as the musical bed for a one-hour relaxing landscape video."
+    ].join(" ");
+
+    const audio=await generateElevenMusic(longPrompt,600000,{forceInstrumental:true});
+    fs.writeFileSync(base,audio);
+
+    await runFfmpeg([
+      "-y","-stream_loop","-1","-i",base,
+      "-t",String(hours*3600),
+      "-c:a","libmp3lame","-b:a","192k","-ar","48000",out
+    ]);
+
+    res.json({
+      name:finalName,
+      url:"/media/music/"+encodeURIComponent(finalName),
+      hours,
+      sourcePreview:name,
+      provider:"ElevenLabs Music "+(process.env.ELEVEN_MUSIC_MODEL||"music_v2_5"),
+      generatedFromSearch:true
+    });
   }catch(e){
-    console.error("Error creando música larga desde previa:",e.message);
-    res.status(500).json({error:"No se pudo crear el audio largo: "+e.message});
-  }finally{fs.rmSync(work,{recursive:true,force:true})}
+    console.error("Error creando música larga IA:",e.stack||e.message);
+    res.status(500).json({error:"No se pudo crear la música larga con IA: "+e.message});
+  }finally{
+    fs.rmSync(work,{recursive:true,force:true});
+  }
 });
 
 app.post("/api/generate-video", async (req, res) => {
