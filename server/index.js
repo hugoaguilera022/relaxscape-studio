@@ -643,25 +643,27 @@ let aiMusicTracks = [];
 let aiMusicErrors = [];
 
 function getAIMusicOptions(){
-  const defs = aiMusicTracks.length ? aiMusicTracks : [
-    { ...BUILTIN_MUSIC[0], label:"Piano nocturno" },
-    { ...BUILTIN_MUSIC[1], label:"Piano y océano" },
-    { ...BUILTIN_MUSIC[16], label:"Piano y lluvia" },
-    { ...BUILTIN_MUSIC[3], label:"Piano soñador" }
-  ];
-  return defs.map(t => {
-    if(!t || !t.file || !fs.existsSync(path.join(MUSIC_DIR,t.file))) return null;
-    return {
-      name:t.file,
-      url:"/media/music/"+encodeURIComponent(t.file),
-      ai:true,
-      provider:"RelaxScape Ambient Engine",
-      generated:true,
-      fallback:false,
-      label:t.label,
-      category:t.category
-    };
-  }).filter(Boolean);
+  // IMPORTANTE: cuando el usuario ha pedido una nueva música, NO mostramos
+  // las pistas antiguas de la biblioteca como si fueran las 4 opciones IA.
+  // Ese fallback hacía que cualquier descripción pareciera generar siempre
+  // el mismo piano antes de que Lyria terminara.
+  if(aiMusicTracks.length){
+    return aiMusicTracks.map(t => {
+      if(!t || !t.file || !fs.existsSync(path.join(MUSIC_DIR,t.file))) return null;
+      return {
+        name:t.file,
+        url:"/media/music/"+encodeURIComponent(t.file),
+        ai:true,
+        provider:"Google Lyria 3.5",
+        generated:true,
+        fallback:false,
+        label:t.label,
+        category:t.category
+      };
+    }).filter(Boolean);
+  }
+
+  return [];
 }
 
 app.post("/api/ai-options", async (req, res) => {
