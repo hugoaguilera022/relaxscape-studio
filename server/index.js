@@ -278,6 +278,19 @@ async function generatePollinationsMusicFile(prompt, index) {
 }
 
 
+function makeFallbackLandscape(filename, theme="nature") {
+  const safeTheme = String(theme).replace(/[&<>"]/g, "");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#102a43"/><stop offset="0.55" stop-color="#4b7a8f"/><stop offset="1" stop-color="#d8b47a"/></linearGradient><linearGradient id="water" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#294f63"/><stop offset="1" stop-color="#0b2638"/></linearGradient></defs>
+  <rect width="1920" height="1080" fill="url(#sky)"/><circle cx="1510" cy="270" r="115" fill="#ffe7ad" opacity=".9"/>
+  <path d="M0 720 L360 410 L610 690 L900 300 L1280 720 L1530 430 L1920 760 L1920 1080 L0 1080Z" fill="#183747"/>
+  <path d="M0 790 L430 570 L760 800 L1080 500 L1410 820 L1700 600 L1920 790 L1920 1080 L0 1080Z" fill="#102936"/>
+  <path d="M0 820 Q480 760 960 830 T1920 810 L1920 1080 L0 1080Z" fill="url(#water)" opacity=".95"/>
+  <text x="70" y="1010" fill="#fff" opacity=".55" font-family="Arial" font-size="34">RelaxScape · ${safeTheme}</text></svg>`;
+  fs.writeFileSync(path.join(IMAGE_DIR, filename), svg);
+  return { name: filename, url: "/media/images/" + encodeURIComponent(filename), ai: false, provider: "RelaxScape local fallback", fallback: true, label: "Paisaje relajante" };
+}
+
 app.post("/api/ai-options", async (req, res) => {
   const theme = String(req.body?.theme || "relaxing nature").trim().slice(0, 120);
 
@@ -342,11 +355,17 @@ app.post("/api/ai-options", async (req, res) => {
       imageErrors.push("Falta PEXELS_API_KEY en Render.");
     }
 
+    if (!images.length) {
+      const filename = "relaxscape-local-landscape-" + Date.now() + ".svg";
+      images.push(makeFallbackLandscape(filename, theme));
+      imageErrors.push("Pexels no respondió; se activó el paisaje local de respaldo.");
+    }
+
     // La música se prepara después de las imágenes, independientemente de
     // que Pexels tenga clave o de que alguna búsqueda haya fallado.
     const existingMusic = BUILTIN_MUSIC.filter(t => fs.existsSync(path.join(MUSIC_DIR, t.file)));
     const musicTracks = [...(existingMusic.length ? existingMusic : BUILTIN_MUSIC)]
-      .sort(() => Math.random() - 0.5).slice(0, 2);
+      .sort(() => Math.random() - 0.5).slice(0, 1);
     try {
       await ensureBuiltinMusic(musicTracks);
     } catch (e) {
