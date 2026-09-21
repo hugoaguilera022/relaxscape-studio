@@ -224,9 +224,22 @@ function makeCompositionWav(track, wavPath){
   const strings=(f,t,v=1)=>t<0?0:v*(1-Math.exp(-t/.75))*Math.exp(-t/8.5)*(
     .48*Math.sin(2*Math.PI*f*t)+.30*Math.sin(4*Math.PI*f*t)+.14*Math.sin(6*Math.PI*f*t)+.05*Math.sin(8*Math.PI*f*t)
   );
-  const flute=(f,t,v=1)=>t<0||t>5?0:v*(1-Math.exp(-t/.13))*Math.exp(-t/3.2)*(
-    .82*Math.sin(2*Math.PI*f*(1+.003*Math.sin(2*Math.PI*4.7*t))*t)+.13*Math.sin(4*Math.PI*f*t)+.035*Math.sin(6*Math.PI*f*t)
-  );
+  const flute=(f,t,v=1)=>{
+    if(t<0||t>7)return 0;
+    // Flauta de aire: fundamental muy dominante, armónicos suaves y vibrato lento.
+    // El ruido de respiración es estrecho y filtrado para no parecer ruido blanco.
+    const attack=1-Math.exp(-t/.16);
+    const body=Math.exp(-t/4.8);
+    const vib=1+.0045*Math.sin(2*Math.PI*5.1*t);
+    const breath=(Math.sin(2*Math.PI*37*t)+.55*Math.sin(2*Math.PI*61*t+.7)+.25*Math.sin(2*Math.PI*89*t+1.4))/1.8;
+    const airEnv=Math.exp(-t/1.7)*(0.018+0.010*Math.sin(2*Math.PI*.7*t));
+    return v*attack*body*(
+      .91*Math.sin(2*Math.PI*f*vib*t)+
+      .065*Math.sin(2*Math.PI*2*f*vib*t)+
+      .018*Math.sin(2*Math.PI*3*f*vib*t)+
+      breath*airEnv
+    );
+  };
   const synth=(f,t,v=1)=>t<0?0:v*(1-Math.exp(-t/.8))*Math.exp(-t/11)*(
     .42*Math.sin(2*Math.PI*f*t)+.22*Math.sin(2*Math.PI*f*1.006*t)+.16*Math.sin(2*Math.PI*f*.994*t)+.08*Math.sin(2*Math.PI*f/2*t)
   );
@@ -345,18 +358,22 @@ function makeCompositionWav(track, wavPath){
       // Corriente de agua claramente reconocible: caudal, turbulencia, ondas,
       // burbujas y pequeños brillos irregulares.
       const flow=.78+.22*Math.sin(2*Math.PI*.047*t+Math.sin(t*.11)*.8);
-      const current=.055*flow*(
-        noiseAt(t*.92,3)*.72+
-        noiseAt(t*1.73+1.3,7)*.38+
-        grain(t*5.7,13)*.16
+      // Agua corriente: predominan flujo continuo, ondas y pequeños reflejos.
+      // Se evita una capa amplia de ruido para que NO suene a ruido blanco.
+      const current=.018*flow*(
+        Math.sin(2*Math.PI*31.7*t)+
+        .55*Math.sin(2*Math.PI*47.3*t+1.1)+
+        .32*Math.sin(2*Math.PI*73.9*t+2.4)
       );
+      const turbulence=.009*(.55+.45*Math.sin(2*Math.PI*.083*t+1.7))*
+        (Math.sin(2*Math.PI*137*t)+.35*Math.sin(2*Math.PI*211*t+.8));
       const ripple=Math.pow(Math.max(0,Math.sin(2*Math.PI*(.63+.08*Math.sin(t*.13))*t+1.1)),18);
       const ripple2=Math.pow(Math.max(0,Math.sin(2*Math.PI*(1.17+.13*Math.sin(t*.21))*t+2.8)),22);
       const bubble=Math.pow(Math.max(0,Math.sin(2*Math.PI*(.29+.07*Math.sin(t*.17))*t+2.1)),30);
-      x += current;
+      x += current+turbulence;
       x += ripple*.030 + ripple2*.018 + bubble*.022;
-      x += .010*Math.sin(2*Math.PI*(820+150*Math.sin(t*.19))*t);
-      x += .004*grain(t*19.1,71);
+      x += .006*Math.sin(2*Math.PI*(820+150*Math.sin(t*.19))*t);
+      x += .0015*grain(t*19.1,71);
     }
     if(semantic.ocean){
       const swell=.5+.5*Math.sin(2*Math.PI*.055*t+Math.sin(t*.07));
