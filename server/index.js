@@ -507,26 +507,23 @@ app.post("/api/ai-options", async (req, res) => {
       const pool = (data.photos || [])
         .filter(p => p.src?.large2x || p.src?.large)
         .sort(() => Math.random() - 0.5);
+
+      // No descargamos las fotos aquí. Devolvemos la URL de Pexels directamente
+      // para que la respuesta sea inmediata. /api/generate-video ya sabe descargar
+      // una URL externa cuando el usuario selecciona una foto.
       for (let i = 0; i < pool.length && images.length < 4; i++) {
         const photo = pool[i];
-        try {
-          const src = photo.src?.large2x || photo.src?.large;
-          const img = await fetchWithTimeout(src, {}, 12000);
-          if (!img.ok) continue;
-          const filename = "pexels-ai-fallback-" + photo.id + "-" + Date.now() + "-" + i + ".jpg";
-          fs.writeFileSync(path.join(IMAGE_DIR, filename), Buffer.from(await img.arrayBuffer()));
-          images.push({
-            name: filename,
-            url: "/media/images/" + encodeURIComponent(filename),
-            sourceUrl: photo.url || src,
-            ai: false,
-            provider: "Pexels fallback",
-            fallback: true,
-            label: "Foto respaldo " + (images.length + 1)
-          });
-        } catch (e) {
-          imageErrors.push("Foto respaldo " + photo.id + ": " + e.message);
-        }
+        const src = photo.src?.large2x || photo.src?.large;
+        if (!src) continue;
+        images.push({
+          name: "pexels-" + photo.id,
+          url: src,
+          sourceUrl: photo.url || src,
+          ai: false,
+          provider: "Pexels",
+          fallback: true,
+          label: "Foto " + (images.length + 1)
+        });
       }
     } catch (e) {
       imageErrors.push("Pexels fallback: " + e.message);
