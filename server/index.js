@@ -66,6 +66,33 @@ app.post("/api/upload/image", imageUpload.single("image"), (req, res) => {
   res.json({ name: req.file.filename, url: `/media/images/${encodeURIComponent(req.file.filename)}` });
 });
 
+app.get("/api/pexels-landscapes", async (req, res) => {
+  const key = process.env.PEXELS_API_KEY;
+  if (!key) return res.status(400).json({ error: "Falta PEXELS_API_KEY en Render." });
+  const query = String(req.query.query || "peaceful nature landscape").slice(0, 100);
+  try {
+    const search = await fetch(`https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=40&page=${1 + Math.floor(Math.random() * 5)}&orientation=landscape&size=large&locale=en-US`, { headers: { Authorization: key } });
+    const data = await search.json();
+    if (!search.ok) return res.status(search.status).json({ error: "Pexels: " + (data.error || data.message || ("HTTP " + search.status)) });
+    const photos = (data.photos || [])
+      .filter(p => p.width >= 1920 && p.height >= 1080 && (p.src?.large2x || p.src?.large))
+      .sort((a,b) => (b.width*b.height) - (a.width*a.height))
+      .slice(0, 8);
+    if (!photos.length) return res.status(404).json({ error: "Pexels no encontró suficientes fotos Full HD para este paisaje." });
+    const saved = [];
+    for (const photo of photos) {
+      const url = photo.src?.large2x || photo.src?.large;
+      const r = await fetch(url);
+      if (!r.ok) continue;
+      const filename = `pexels-${photo.id}-${Date.now()}.jpg`;
+      fs.writeFileSync(path.join(IMAGE_DIR, filename), Buffer.from(await r.arrayBuffer()));
+      saved.push({ name: filename, url: `/media/images/${encodeURIComponent(filename)}`, photographer: photo.photographer || "Pexels", sourceUrl: photo.url });
+    }
+    if (!saved.length) return res.status(502).json({ error: "No se pudieron descargar las fotos de Pexels." });
+    res.json({ images: saved });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post("/api/upload/music", musicUpload.single("music"), (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No se recibió ninguna pista." });
   res.json({ name: req.file.filename, url: `/media/music/${encodeURIComponent(req.file.filename)}` });
@@ -109,7 +136,7 @@ app.post("/api/generate-video", async (req, res) => {
   const musicPath = path.join(MUSIC_DIR, musicName);
   if (!fs.existsSync(imagePath) || !fs.existsSync(musicPath)) return res.status(404).json({ error: "No se encontró el archivo seleccionado." });
   const hours = Number(durationHours);
-  if (![1, 2].includes(hours)) return res.status(400).json({ error: "La duración debe ser de 1 o 2 horas." });
+  if (hours !== 1) return res.status(400).json({ error: "RelaxScape genera vídeos de 1 hora." });
   const filename = `relaxscape-${Date.now()}-${hours}h.mp4`;
   const out = path.join(VIDEO_DIR, filename);
   try {
@@ -269,7 +296,7 @@ async function generatePexelsVideo(prompt, aspectRatio, key, durationHours = 1) 
 
 app.post("/api/generate-ai-video", async (req, res) => {
   const key = process.env.PEXELS_API_KEY;
-  if (!key) return res.status(400).json({ error: "Añade PEXELS_API_KEY en Render. La API de Pexels es gratuita y permite buscar vídeos sin pagar." });
+  if (!key) return res.status(400).json({ error: "Añade PEXELS_API_KEY en Render. La API de Pexels es gratuita y permite seleccionar paisajes de alta calidad." });
   const prompt = req.body.prompt || "peaceful cinematic nature landscape, relaxing atmosphere, no people, no text";
   const aspectRatio = req.body.aspectRatio === "9:16" ? "9:16" : "16:9";
   try {
