@@ -56,6 +56,17 @@ function safe(name) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
+// Fetch con timeout real para que una API externa nunca bloquee la generación.
+async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 const MUSIC_ENGINE_VERSION = "v26-local-only-music-engine";
 
 const BUILTIN_MUSIC = [
@@ -490,7 +501,7 @@ app.post("/api/ai-options", async (req, res) => {
     const r = await fetchWithTimeout(
       "https://api.pexels.com/v1/search?query=" + encodeURIComponent(theme + " peaceful nature") +
       "&per_page=40&orientation=landscape&size=large&locale=en-US",
-      { headers: { Authorization: key } }, 10000
+      { headers: { Authorization: key } }, 7000
     );
     if (!r.ok) throw new Error("Pexels HTTP " + r.status);
     const data = await r.json();
@@ -513,8 +524,8 @@ app.post("/api/ai-options", async (req, res) => {
     imageErrors.push("Pexels: " + e.message);
   }
 
-  // 2) Si Pexels no está disponible, intentamos Pollinations.
-  // Tiene timeout individual para no dejar la interfaz esperando indefinidamente.
+  // 2) Pollinations queda como respaldo, pero NO puede bloquear la respuesta
+  // inicial durante minutos. Si Pexels no entrega las 4, usamos fallback local.
   if (images.length < 4 && process.env.POLLINATIONS_API_KEY) {
     const needed = 4 - images.length;
     const jobs = Array.from({ length: needed }, (_, j) => {
