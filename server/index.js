@@ -556,22 +556,43 @@ async function generatePollinationsImageFile(prompt, index) {
 
 async function generatePollinationsMusicFile(prompt, index) {
   const seed = Math.floor(Math.random()*4294967295);
-  const params = new URLSearchParams({
-    model: "elevenmusic",
-    duration: "30",
-    instrumental: "true",
-    seed: String(seed),
-    response_format: "mp3"
-  });
-  const url = "https://gen.pollinations.ai/audio/" + encodeURIComponent(String(prompt).slice(0,900)) + "?" + params.toString();
-  const r = await fetchWithTimeout(url, { headers: pollinationsHeaders() }, 60000);
-  if (!r.ok) throw new Error("Pollinations Music HTTP " + r.status);
+  const input = String(prompt || "professional relaxing ambient music").trim().slice(0, 900);
+  // Pollinations documenta la generación musical mediante el endpoint OpenAI-compatible.
+  // El alias elevenmusic es válido, pero aquí enviamos JSON POST para evitar que el gateway
+  // interprete la consulta GET como TTS u otra modalidad de audio.
+  const r = await fetchWithTimeout("https://gen.pollinations.ai/v1/audio/speech", {
+    method: "POST",
+    headers: { ...pollinationsHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "elevenmusic",
+      input,
+      duration: 30,
+      instrumental: true,
+      seed,
+      response_format: "mp3"
+    })
+  }, 90000);
   const type = r.headers.get("content-type") || "";
-  if (!type.includes("audio") && !type.includes("mpeg") && !type.includes("octet-stream")) throw new Error("Pollinations no devolvió audio musical.");
+  if (!r.ok) {
+    const detail = await r.text().catch(() => "");
+    throw new Error("Pollinations Music HTTP " + r.status + (detail ? ": " + detail.slice(0, 300) : ""));
+  }
+  if (!type.includes("audio") && !type.includes("mpeg") && !type.includes("octet-stream")) {
+    throw new Error("Pollinations no devolvió audio musical (" + type + ").");
+  }
   const filename = "ai-free-music-" + Date.now() + "-" + index + "-" + seed + ".mp3";
-  fs.writeFileSync(path.join(MUSIC_DIR, filename), Buffer.from(await r.arrayBuffer()));
-  if (fs.statSync(path.join(MUSIC_DIR, filename)).size < 4096) throw new Error("Pollinations devolvió un audio vacío.");
-  return { name: filename, url: "/media/music/" + encodeURIComponent(filename), ai: true, provider: "ElevenLabs Music v2.5 vía Pollinations", generated: true, fallback: false, seed };
+  const filePath = path.join(MUSIC_DIR, filename);
+  fs.writeFileSync(filePath, Buffer.from(await r.arrayBuffer()));
+  if (fs.statSync(filePath).size < 4096) throw new Error("Pollinations devolvió un audio vacío.");
+  return {
+    name: filename,
+    url: "/media/music/" + encodeURIComponent(filename),
+    ai: true,
+    provider: "ElevenLabs Music vía Pollinations",
+    generated: true,
+    fallback: false,
+    seed
+  };
 }
 
 
