@@ -130,7 +130,9 @@ function makeCompositionWav(track, wavPath){
 
   // Semilla musical real: cada búsqueda/sesión y cada variante cambia la composición.
   // No se usa solo para el nombre del archivo; afecta tonalidad, tempo, progresión y melodía.
-  const seedText=String(track.generationSeed||track.sessionNonce||track.musicProfile||track.userMusicBrief||"relaxscape");
+  // La búsqueda original manda; la sesión solo añade variación entre generaciones.
+  const searchIdentity=String(track.userSearch||track.originalMusicPrompt||track.musicPrompt||"relaxscape");
+  const seedText=searchIdentity+"|variant="+variant+"|session="+String(track.generationSeed||track.sessionNonce||"");
   let seedHash=2166136261;
   for(const ch of seedText){ seedHash^=ch.charCodeAt(0); seedHash=Math.imul(seedHash,16777619); }
   const seed=Math.abs((seedHash>>>0)+variant*997+Math.floor((Number(track.f1)||220)*7+(Number(track.f2)||330)*3+(Number(track.f3)||392)))%997;
@@ -421,6 +423,7 @@ function getAIMusicOptions(){
         url:"/media/music/"+encodeURIComponent(t.file),
         ai:true,
         provider:t.provider || "RelaxScape Free Music Engine",
+        search:t.userSearch || t.originalMusicPrompt || "",
         generated:true,
         fallback:Boolean(t.fallback),
         label:t.label,
@@ -604,8 +607,9 @@ const SONIC_PALETTES = [
 ];
 
 function aiTracksForBackground(prompt="", generationId=0){
-  const requestedDetails=musicIntentProfile(prompt);
-  const p="professional deep-relaxation ambient music for peace, calm and stress relief. Keep the overall genre peaceful, slow and non-aggressive, but adapt the composition to the user search: "+requestedDetails+". Use the requested instruments, environment, mood and atmosphere when compatible. No drums, no percussion, no aggressive bass, no abrupt changes unless the user explicitly requests them.";
+  const originalSearch=String(prompt||"").trim().slice(0,220);
+  const requestedDetails=musicIntentProfile(originalSearch);
+  const p="professional deep-relaxation ambient music based directly on this user search: ["+originalSearch+"]. Translate the subject, place, weather, time of day, emotion, instruments and atmosphere in the search into musical decisions. "+requestedDetails+". No drums, no percussion, no aggressive bass, no abrupt changes unless the user explicitly requests them.";
   const seed=Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8);
   const sessionNonce="session-"+generationId+"-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,10);
   const paletteOrder=[...SONIC_PALETTES].sort(()=>Math.random()-0.5).slice(0,4);
@@ -619,8 +623,10 @@ function aiTracksForBackground(prompt="", generationId=0){
     const b=BUILTIN_MUSIC[i];
     return {
       ...b,
+      userSearch:originalSearch,
+      originalMusicPrompt:originalSearch,
       userMusicBrief:p,
-      file:"ai-freeform-"+seed+"-"+(i+1)+".mp3",
+      file:"ai-freeform-"+seed+"-"+hashText(originalSearch)+"-"+(i+1)+".mp3",
       label:"IA · "+(i+1),
       variant:i+1,
       forceRegenerate:true,
@@ -630,7 +636,7 @@ function aiTracksForBackground(prompt="", generationId=0){
         "USER MUSIC BRIEF: "+p,
         "This is a fresh generation. Do not reuse, imitate or follow the arrangement of any previous generation.",
         "UNIQUE GENERATION NONCE: "+sessionNonce+". Treat this as a hard instruction to create a newly composed performance, not a cached or repeated result.",
-        "The user's description is the source of truth. Follow its genre, instruments, melody, harmony, rhythm, structure, production and atmosphere.",
+        "ORIGINAL USER SEARCH: ["+originalSearch+"]. This exact search is the source of truth. Musical decisions must respond to it; do not replace it with a generic relaxation preset.",
         "Use the widest compatible professional sonic range: acoustic, orchestral, electronic, textural and environmental colors may be combined when they fit the brief.",
         "Sonic palette for this option: "+paletteOrder[i].brief+". Treat this as a production palette, not a requirement to add instruments that conflict with the user brief.",
         "Do not reduce the request to a generic relaxing preset.",
@@ -747,6 +753,8 @@ app.post("/api/generate-selected-long-music", async (req,res)=>{
     for(let i=0;i<4;i++){
       const track={
         ...(selectedTrack||{}),
+        userSearch:String(selectedTrack?.userSearch||selectedTrack?.originalMusicPrompt||basePrompt),
+        originalMusicPrompt:String(selectedTrack?.originalMusicPrompt||selectedTrack?.userSearch||basePrompt),
         userMusicBrief:basePrompt,
         musicProfile:basePrompt,
         variant:i+1,
