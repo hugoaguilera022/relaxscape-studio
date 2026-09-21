@@ -137,7 +137,8 @@ function renderAICreator(){
   if(mg){
     if(S.externalMusic.length){
       mg.innerHTML=S.externalMusic.map((x,i)=>'<div class="ai-track '+(S.music?.externalId===x.id?"selected":"")+'" data-external-id="'+x.id+'"><div><b>♫ '+escapeHtml(x.name)+'</b><small>Freesound · '+escapeHtml(x.username||"")+' · '+escapeHtml(x.license||"")+' · '+formatDuration(x.duration)+'</small></div><div class="ai-track-actions"><audio controls preload="metadata" src="'+x.preview+'"></audio><a class="preview-download" href="'+x.sourceUrl+'" target="_blank" rel="noopener">↗ Ver fuente</a></div></div>').join("");
-      $$("#aiMusicList .ai-track").forEach(e=>e.onclick=()=>{
+      $("#aiMusicList .ai-track").forEach(e=>e.onclick=ev=>{
+        if(ev.target.tagName==="AUDIO" || ev.target.tagName==="A")return;
         const x=S.externalMusic.find(v=>String(v.id)===String(e.dataset.externalId));
         if(x)selectExternalMusic(x);
       });
