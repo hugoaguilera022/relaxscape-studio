@@ -205,8 +205,9 @@ app.post("/api/mux-video-audio", async (req, res) => {
   const out = path.join(VIDEO_DIR, filename);
   try {
     await runFfmpeg([
-      "-y","-i",videoPath,"-stream_loop","-1","-i",musicPath,
-      "-map","0:v:0","-map","1:a:0","-c:v","copy","-c:a","aac","-b:a","192k","-shortest",out
+      "-y","-stream_loop","-1","-i",videoPath,"-stream_loop","-1","-i",musicPath,
+      "-t",String(hours * 3600),
+      "-map","0:v:0","-map","1:a:0","-c:v","libx264","-preset","veryfast","-crf","24","-c:a","aac","-b:a","160k",out
     ]);
     res.json({ name: filename, url: `/media/videos/${filename}` });
   } catch (e) { res.status(500).json({ error: "No se pudo mezclar vídeo y música: " + e.message }); }
