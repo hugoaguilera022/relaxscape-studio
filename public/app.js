@@ -34,9 +34,9 @@ async function ensureAIOptions(){
   if(S.aiReady||S.aiLoading)return;
   S.aiLoading=true;
   const status=$("#aiSelectionStatus"),ig=$("#aiImageGrid"),mg=$("#aiMusicList");
-  if(status)status.textContent="IA gratuita creando 4 paisajes y 4 músicas originales…";
-  if(ig)ig.innerHTML='<div class="empty">✨ Generando 4 paisajes con IA gratuita…</div>';
-  if(mg)mg.innerHTML='<div class="empty">♫ Generando 4 músicas con IA gratuita…</div>';
+  if(status)status.textContent="IA gratuita preparando paisajes y música ambiental…";
+  if(ig)ig.innerHTML='<div class="empty">✨ Generando paisajes gratuitos…</div>';
+  if(mg)mg.innerHTML='<div class="empty">♫ Generando música ambiental…</div>';
   try{
     const d=await api("/api/ai-options",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({theme:($("#prompt")?.value||"relaxing nature").trim()})});
     S.aiImages=d.images||[];S.aiMusic=d.music||[];S.aiReady=!!(S.aiImages.length&&S.aiMusic.length);
@@ -91,6 +91,7 @@ $("#generate").onclick=async()=>{if(!S.image||!S.music){$("#builderStatus").text
 $("#aiLoadPhotos").onclick=async()=>{
   S.aiReady=false;S.aiImages=[];S.aiMusic=[];S.image=null;S.music=null;
   await ensureAIOptions();
+  if(!S.aiReady) setTimeout(()=>ensureAIOptions(),1500);
 };
 $("#aiGoMusic").onclick=()=>{$$(".nav").forEach(x=>x.classList.remove("active"));$(".tab").forEach(x=>x.classList.remove("active"));document.querySelector('[data-tab="music"]').classList.add("active");$("#music").classList.add("active");};
 $("#aiCreateHour").onclick=async()=>{
