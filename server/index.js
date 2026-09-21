@@ -464,30 +464,51 @@ app.post("/api/upload/music", musicUpload.single("music"), (req, res) => {
 });
 
 async function generateHuggingFaceLandscape(prompt, index=0) {
-  const token = process.env.HF_TOKEN;
-  if (!token) throw new Error("Falta HF_TOKEN en Render. Añade tu token de Hugging Face como variable de entorno.");
+  const token = String(process.env.HF_TOKEN || "").trim();
+  if (!token) throw new Error("HF_TOKEN no está configurado en Render.");
+
   const client = new InferenceClient(token);
   const variations = [
-    "wide cinematic establishing shot, peaceful composition, realistic natural light, foreground depth",
-    "wide cinematic landscape, atmospheric perspective, natural color, realistic photography, different camera angle",
+    "wide cinematic establishing shot, peaceful composition, realistic natural light, strong foreground depth",
+    "wide cinematic landscape, atmospheric perspective, natural color, realistic professional photography, different camera angle",
     "wide cinematic landscape, subtle mist, detailed foreground, soft realistic lighting, photorealistic",
     "wide cinematic landscape, tranquil premium travel photography, realistic textures, natural depth and light"
   ];
-  const finalPrompt = String(prompt || "peaceful nature landscape").slice(0, 700)
-    + ", " + variations[index % variations.length]
-    + ", ultra realistic landscape photography, 16:9, no people, no text, no logo";
+
+  const userPrompt = String(prompt || "peaceful lake, misty mountains, soft dawn light").trim().slice(0, 700);
+  const finalPrompt = [
+    userPrompt,
+    variations[index % variations.length],
+    "photorealistic landscape photography",
+    "cinematic natural lighting",
+    "wide 16:9 composition",
+    "no people, no buildings, no text, no logo"
+  ].join(", ");
+
+  // Hugging Face recomienda Inference Providers con selección automática.
+  // No enviamos parámetros específicos de tamaño/pasos para evitar incompatibilidades
+  // entre proveedores; el proveedor se encarga de los parámetros soportados.
   const imageBlob = await client.textToImage({
     model: "black-forest-labs/FLUX.1-schnell",
     inputs: finalPrompt,
-    parameters: { width: 1024, height: 576, num_inference_steps: 4 }
+    provider: "auto"
   });
+
+  if (!imageBlob || typeof imageBlob.arrayBuffer !== "function") {
+    throw new Error("Hugging Face no devolvió una imagen válida.");
+  }
+
   const filename = "ai-landscape-" + Date.now() + "-" + index + ".png";
-  fs.writeFileSync(path.join(IMAGE_DIR, filename), Buffer.from(await imageBlob.arrayBuffer()));
+  const buffer = Buffer.from(await imageBlob.arrayBuffer());
+  if (!buffer.length) throw new Error("Hugging Face devolvió una imagen vacía.");
+
+  fs.writeFileSync(path.join(IMAGE_DIR, filename), buffer);
+
   return {
     name: filename,
     url: "/media/images/" + encodeURIComponent(filename),
     ai: true,
-    provider: "Hugging Face · FLUX.1-schnell",
+    provider: "Hugging Face Inference Providers · FLUX.1-schnell",
     fallback: false,
     label: "Paisaje IA " + (index + 1)
   };
@@ -555,20 +576,37 @@ app.post("/api/ai-images", async (req, res) => {
   const theme = String(req.body?.theme || "peaceful lake, misty mountains, soft dawn light").trim().slice(0, 700);
   const images = [];
   const errors = [];
-  const jobs = Array.from({ length: 4 }, (_, i) =>
-    Promise.race([
-      generateAIImage(theme, i),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("La generación tardó demasiado")), 90000))
-    ]).then(item => ({ ok: true, item, index: i }))
-      .catch(error => ({ ok: false, error, index: i }))
-  );
-  const results = await Promise.all(jobs);
-  for (const result of results) {
-    if (result.ok) images.push(result.item);
-    else errors.push("Imagen " + (result.index + 1) + ": " + result.error.message);
+
+  // Generamos una a una para evitar saturar/rate-limit del proveedor.
+  // Las cuatro peticiones siguen usando exactamente el mismo prompt de imagen;
+  // solo cambia la variación visual.
+  for (let i = 0; i < 4; i++) {
+    try {
+      const item = await Promise.race([
+        generateAIImage(theme, i),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("La generación tardó más de 90 segundos")), 90000))
+      ]);
+      images.push(item);
+    } catch (error) {
+      const detail = error?.message || error?.cause?.message || String(error);
+      console.error("[AI Images] ERROR", i + 1, detail);
+      errors.push("Imagen " + (i + 1) + ": " + detail);
+    }
   }
-  if (!images.length) return res.status(502).json({ error: "No se pudo generar el paisaje IA.", imageErrors: errors });
-  res.json({ images, imageErrors: errors, provider: "Hugging Face Inference Providers · FLUX.1-schnell" });
+
+  if (!images.length) {
+    return res.status(502).json({
+      error: "No se pudo generar ningún paisaje IA.",
+      imageErrors: errors,
+      hint: "Comprueba HF_TOKEN, el permiso Inference Providers y el acceso al modelo FLUX.1-schnell en Hugging Face."
+    });
+  }
+
+  res.json({
+    images,
+    imageErrors: errors,
+    provider: "Hugging Face Inference Providers · FLUX.1-schnell"
+  });
 });
 
 app.post("/api/ai-music", async (req, res) => {
