@@ -1,4 +1,4 @@
-const S={images:[],music:[],videos:[],image:null,music:null,hours:1,schedule:true,musicCategory:"Todas"};
+const S={images:[],music:[],aiImages:[],aiMusic:[],videos:[],image:null,music:null,hours:1,schedule:true,musicCategory:"Todas",aiReady:false,aiLoading:false};
 const $=s=>document.querySelector(s), $$=s=>document.querySelectorAll(s);
 async function api(url,opt){const r=await fetch(url,opt);let d={};let raw="";try{raw=await r.text();d=raw?JSON.parse(raw):{}}catch{};if(!r.ok)throw Error(d.error||`Error ${r.status}${raw?`: ${raw.slice(0,180)}`:""}`);return d}
 async function load(){
@@ -30,19 +30,38 @@ async function loadPexels(){
   }catch(e){$("#builderStatus").textContent=e.message}
 }
 function render(){renderImages();renderMusic();renderVideos();renderAICreator();$("#statVideos").textContent=S.videos.length;update();picker();}
+async function ensureAIOptions(){
+  if(S.aiReady||S.aiLoading)return;
+  S.aiLoading=true;
+  const status=$("#aiSelectionStatus"),ig=$("#aiImageGrid"),mg=$("#aiMusicList");
+  if(status)status.textContent="La IA está creando 4 paisajes y 4 músicas originales de alta calidad…";
+  if(ig)ig.innerHTML='<div class="empty">✨ Generando 4 paisajes con Gemini…</div>';
+  if(mg)mg.innerHTML='<div class="empty">♫ Generando 4 músicas con Lyria…</div>';
+  try{
+    const d=await api("/api/ai-options",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
+    S.aiImages=d.images||[];S.aiMusic=d.music||[];S.aiReady=true;
+    if(S.aiImages[0])S.image=S.aiImages[0];
+    if(S.aiMusic[0])S.music=S.aiMusic[0];
+    renderAICreator();
+  }catch(e){
+    if(status)status.textContent=e.message;
+    if(ig)ig.innerHTML='<div class="empty">No se pudieron generar las imágenes IA.</div>';
+    if(mg)mg.innerHTML='<div class="empty">No se pudo generar la música IA.</div>';
+  }finally{S.aiLoading=false}
+}
 function renderAICreator(){
-  const ig=$("#aiImageGrid"), mg=$("#aiMusicList");
+  const ig=$("#aiImageGrid"),mg=$("#aiMusicList");
   if(ig){
-    ig.innerHTML=S.images.length?S.images.slice(0,12).map(x=>`<button class="ai-photo ${S.image?.url===x.url?"selected":""}" data-url="${x.url}" data-name="${x.name}"><img src="${x.url}" alt=""><span>${x.name}</span></button>`).join(""):'<div class="empty">No hay fotos. Pulsa «Nuevos paisajes».</div>';
-    $$("#aiImageGrid .ai-photo").forEach(e=>e.onclick=()=>{S.image={url:e.dataset.url,name:e.dataset.name};render()});
+    ig.innerHTML=S.aiImages.length?S.aiImages.map((x,i)=>'<button class="ai-photo '+(S.image?.url===x.url?"selected":"")+'" data-url="'+x.url+'" data-name="'+x.name+'"><img src="'+x.url+'" alt="Paisaje IA '+(i+1)+'"><span>Opción IA '+(i+1)+' · 2K</span></button>').join(""):'<div class="empty">✨ Generando opciones IA…</div>';
+    $$("#aiImageGrid .ai-photo").forEach(e=>e.onclick=()=>{S.image={url:e.dataset.url,name:e.dataset.name};renderAICreator()});
   }
   if(mg){
-    mg.innerHTML=S.music.length?S.music.slice(0,12).map(x=>`<div class="ai-track ${S.music?.url===x.url?"selected":""}" data-url="${x.url}" data-name="${x.name}"><div><b>♫ ${prettyMusicName(x.name)}</b><small>${musicCategory(x.name)}</small></div><audio controls src="${x.url}"></audio></div>`).join(""):'<div class="empty">No hay música disponible.</div>';
-    $$("#aiMusicList .ai-track").forEach(e=>e.onclick=ev=>{if(ev.target.tagName==="AUDIO")return;S.music={url:e.dataset.url,name:e.dataset.name};render()});
+    mg.innerHTML=S.aiMusic.length?S.aiMusic.map((x,i)=>'<div class="ai-track '+(S.music?.url===x.url?"selected":"")+'" data-url="'+x.url+'" data-name="'+x.name+'"><div><b>♫ Música IA '+(i+1)+'</b><small>Original · Lyria 3.5</small></div><audio controls src="'+x.url+'"></audio></div>').join(""):'<div class="empty">♫ Generando opciones IA…</div>';
+    $$("#aiMusicList .ai-track").forEach(e=>e.onclick=ev=>{if(ev.target.tagName==="AUDIO")return;S.music={url:e.dataset.url,name:e.dataset.name};renderAICreator()});
   }
-  if($("#aiSelectedPhoto")) $("#aiSelectedPhoto").textContent=S.image?prettyImageName(S.image.name):"Sin foto";
-  if($("#aiSelectedMusic")) $("#aiSelectedMusic").textContent=S.music?prettyMusicName(S.music.name):"Sin música";
-  if($("#aiSelectionStatus")) $("#aiSelectionStatus").textContent=S.image&&S.music?"Todo listo. Tu vídeo será de 1 hora en Full HD.":"Selecciona una foto y una música para continuar.";
+  if($("#aiSelectedPhoto"))$("#aiSelectedPhoto").textContent=S.image?prettyImageName(S.image.name):"Sin foto";
+  if($("#aiSelectedMusic"))$("#aiSelectedMusic").textContent=S.music?prettyMusicName(S.music.name):"Sin música";
+  if($("#aiSelectionStatus")&&!S.aiLoading)$("#aiSelectionStatus").textContent=S.image&&S.music?"Todo listo. Elige la combinación que quieras y crea tu vídeo de 1 hora.":"Selecciona una foto y una música para continuar.";
 }
 function prettyImageName(name){return name?.replace(/\.(jpg|jpeg|png|webp)$/i,"").replace(/^pexels-\d+-/,"").replace(/^ai-/,"Imagen IA").replace(/[-_]/g," ")||"Foto";}
 function renderImages(){const el=$("#imageGrid");el.innerHTML=S.images.length?S.images.map(x=>`<div class="media ${S.image?.url===x.url?"selected":""}" data-url="${x.url}" data-name="${x.name}"><img src="${x.url}"></div>`).join(""):'<div class="empty">No hay paisajes. Sube uno o créalo con IA.</div>';$$(".media").forEach(e=>e.onclick=()=>{S.image={url:e.dataset.url,name:e.dataset.name};render()})}
@@ -60,8 +79,7 @@ $$(".nav").forEach(b=>b.onclick=async()=>{
   $$(".tab").forEach(x=>x.classList.remove("active"));$("#"+b.dataset.tab).classList.add("active");
   if(b.dataset.tab==="ai"){
     renderAICreator();
-    if(!S.images.length) await loadPexels();
-    if(!S.music.length) await load();
+    await ensureAIOptions();
   }
 });
 $("#imageInput").onchange=async e=>{if(!e.target.files[0])return;const fd=new FormData();fd.append("image",e.target.files[0]);$("#builderStatus").textContent="Subiendo imagen…";try{S.image=await api("/api/upload/image",{method:"POST",body:fd});await load()}catch(x){$("#builderStatus").textContent=x.message}};
@@ -69,8 +87,8 @@ $("#musicInput").onchange=async e=>{if(!e.target.files[0])return;const fd=new Fo
 $("#aiImage").onclick=async()=>{const p=$("#prompt").value||"Ultra-realistic cinematic peaceful landscape, natural light, no people, no text, photorealistic";$("#builderStatus").textContent="Generando paisaje IA…";try{S.image=await api("/api/generate-image",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt:p})});await load()}catch(x){$("#builderStatus").textContent=x.message}};
 $("#generate").onclick=async()=>{if(!S.image||!S.music){$("#builderStatus").textContent="Selecciona un paisaje y una pista.";return}$("#generate").disabled=true;$("#builderStatus").textContent="Generando vídeo…";try{const d=await api("/api/generate-video",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image:S.image.url,music:S.music.url,durationHours:1})});$("#video").src=d.url;$("#download").href=d.url;$("#result").classList.remove("hidden");$("#builderStatus").textContent="Vídeo terminado.";await load();}catch(x){$("#builderStatus").textContent=x.message}finally{$("#generate").disabled=false}};
 $("#aiLoadPhotos").onclick=async()=>{
-  const b=$("#aiLoadPhotos");b.disabled=true;
-  try{await loadPexels();}finally{b.disabled=false}
+  S.aiReady=false;S.aiImages=[];S.aiMusic=[];S.image=null;S.music=null;
+  await ensureAIOptions();
 };
 $("#aiGoMusic").onclick=()=>{$$(".nav").forEach(x=>x.classList.remove("active"));$$$(".tab").forEach(x=>x.classList.remove("active"));document.querySelector('[data-tab="music"]').classList.add("active");$("#music").classList.add("active");};
 $("#aiCreateHour").onclick=async()=>{
