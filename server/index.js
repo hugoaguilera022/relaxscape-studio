@@ -415,102 +415,73 @@ function makeFallbackLandscape(filename, theme="nature") {
   return { name: filename, url: "/media/images/" + encodeURIComponent(filename), ai: false, provider: "RelaxScape local fallback", fallback: true, label: "Paisaje relajante" };
 }
 
+let aiMusicPreparing = false;
+
+function getAIMusicOptions(){
+  const defs = [
+    { file:"relax-piano.mp3", label:"Piano nocturno" },
+    { file:"relax-ocean.mp3", label:"Piano y océano" },
+    { file:"relax-rain.mp3", label:"Piano y lluvia" },
+    { file:"relax-dream.mp3", label:"Piano soñador" }
+  ];
+  return defs.map(d => {
+    const t = BUILTIN_MUSIC.find(x => x.file === d.file);
+    if(!t || !fs.existsSync(path.join(MUSIC_DIR,t.file))) return null;
+    return { name:t.file, url:"/media/music/"+encodeURIComponent(t.file), ai:false, provider:"RelaxScape Ambient Engine", generated:true, fallback:true, label:d.label, category:t.category };
+  }).filter(Boolean);
+}
+
 app.post("/api/ai-options", async (req, res) => {
   const theme = String(req.body?.theme || "relaxing nature").trim().slice(0, 120);
   const images = [];
-  const music = [];
   const imageErrors = [];
-  const musicErrors = [];
 
   try {
     const key = process.env.PEXELS_API_KEY;
-    if (key) {
-      // Respuesta ultrarrápida: NO descargamos las 4 fotos al servidor.
-      // Usamos directamente las URLs de Pexels y solo descargamos la elegida
-      // cuando el usuario pulse "Crear vídeo".
-      const r = await fetchWithTimeout(
-        "https://api.pexels.com/v1/search?query=" + encodeURIComponent(theme + " peaceful nature") +
-        "&per_page=30&orientation=landscape&size=large&locale=en-US",
-        { headers: { Authorization: key } }, 8000
-      );
-      if (!r.ok) throw new Error("Pexels HTTP " + r.status);
-      const data = await r.json();
-      const pool = (data.photos || [])
-        .filter(p => p.src?.large || p.src?.large2x)
-        .sort(() => Math.random() - 0.5)
-        .slice(0, 4);
-
-      for (let i = 0; i < pool.length; i++) {
-        const photo = pool[i];
-        const src = photo.src?.large || photo.src?.large2x;
-        images.push({
-          name: "pexels-" + photo.id + ".jpg",
-          url: src,
-          sourceUrl: src,
-          ai: false,
-          provider: "Pexels",
-          fallback: false,
-          label: "Paisaje gratuito " + (i + 1)
-        });
-      }
-      if (images.length < 4) imageErrors.push("Pexels devolvió " + images.length + " de 4 imágenes.");
-    } else {
-      imageErrors.push("Falta PEXELS_API_KEY en Render.");
-    }
-  } catch (e) {
+    if (!key) throw new Error("Falta PEXELS_API_KEY en Render.");
+    const r = await fetchWithTimeout(
+      "https://api.pexels.com/v1/search?query=" + encodeURIComponent(theme + " peaceful nature") +
+      "&per_page=30&orientation=landscape&size=large&locale=en-US",
+      { headers: { Authorization: key } }, 8000
+    );
+    if (!r.ok) throw new Error("Pexels HTTP " + r.status);
+    const data = await r.json();
+    const pool = (data.photos || [])
+      .filter(p => p.src?.large || p.src?.large2x)
+      .sort(() => Math.random() - 0.5)
+      .slice(0, 4);
+    pool.forEach((photo,i) => {
+      const src=photo.src?.large || photo.src?.large2x;
+      images.push({name:"pexels-"+photo.id+".jpg",url:src,sourceUrl:src,ai:false,provider:"Pexels",fallback:false,label:"Paisaje gratuito "+(i+1)});
+    });
+    if(images.length<4) imageErrors.push("Pexels devolvió "+images.length+" de 4 imágenes.");
+  } catch(e) {
     imageErrors.push(e.message || "Error de Pexels");
   }
 
-  if (!images.length) {
-    const filename = "relaxscape-local-landscape-" + Date.now() + ".svg";
-    images.push(makeFallbackLandscape(filename, theme));
+  if(!images.length){
+    const filename="relaxscape-local-landscape-"+Date.now()+".svg";
+    images.push(makeFallbackLandscape(filename,theme));
   }
 
-  // Preparamos exactamente las 4 pistas que necesita el creador IA.
-  // No generamos toda la biblioteca: así la primera carga sigue siendo razonablemente rápida.
-  const aiTracks = [
-    BUILTIN_MUSIC.find(t => t.file === "relax-piano.mp3"),
-    BUILTIN_MUSIC.find(t => t.file === "relax-ocean.mp3"),
-    BUILTIN_MUSIC.find(t => t.file === "relax-rain.mp3"),
-    BUILTIN_MUSIC.find(t => t.file === "relax-dream.mp3")
-  ].filter(Boolean);
-  try {
-    await ensureBuiltinMusic(aiTracks);
-  } catch (e) {
-    musicErrors.push("No se pudieron preparar las previas musicales: " + e.message);
+  // IMPORTANTE: no bloqueamos la respuesta esperando la síntesis de 4 músicas.
+  // Las fotos aparecen inmediatamente y la música se prepara en segundo plano.
+  let music=getAIMusicOptions();
+  if(music.length<4 && !aiMusicPreparing){
+    aiMusicPreparing=true;
+    ensureBuiltinMusic(aiTracksForBackground()).catch(e=>console.error("[AI Music]",e.message)).finally(()=>{aiMusicPreparing=false});
   }
+  res.json({images,music,musicReady:music.length>=4,musicPreparing:aiMusicPreparing,imageErrors,musicErrors:music.length<4?["Preparando las 4 músicas en segundo plano…"]:[],provider:"RelaxScape Free"});
+});
 
-  // Música instantánea: usamos composiciones locales ya disponibles.
-  // No llamamos a Gemini/Lyria aquí para que la pantalla aparezca rápido.
-  const fallbackTracks = [
-    { ...BUILTIN_MUSIC.find(t => t.file === "relax-piano.mp3"), label: "Piano nocturno" },
-    { ...BUILTIN_MUSIC.find(t => t.file === "relax-ocean.mp3"), label: "Piano y océano" },
-    { ...BUILTIN_MUSIC.find(t => t.file === "relax-rain.mp3"), label: "Piano y lluvia" },
-    { ...BUILTIN_MUSIC.find(t => t.file === "relax-dream.mp3"), label: "Piano soñador" }
-  ];
+function aiTracksForBackground(){
+  return ["relax-piano.mp3","relax-ocean.mp3","relax-rain.mp3","relax-dream.mp3"]
+    .map(file=>BUILTIN_MUSIC.find(t=>t.file===file)).filter(Boolean);
+}
 
-  // Si ya existen los archivos, no sintetizamos nada durante la petición.
-  for (let i = 0; i < fallbackTracks.length; i++) {
-    const t = fallbackTracks[i];
-    if (t && fs.existsSync(path.join(MUSIC_DIR, t.file))) {
-      music.push({
-        name: t.file,
-        url: "/media/music/" + encodeURIComponent(t.file),
-        ai: false,
-        provider: "RelaxScape Ambient Engine",
-        generated: true,
-        fallback: true,
-        label: t.label,
-        category: t.category
-      });
-    }
-  }
-
-  // Si la biblioteca aún no está preparada, devolvemos las opciones musicales
-  // sin bloquear la petición; el frontend puede seguir usando las disponibles.
-  if (music.length < 4) musicErrors.push("Biblioteca musical local en preparación.");
-
-  res.json({ images, music, imageErrors, musicErrors, provider: "RelaxScape Free" });
+app.get("/api/ai-options-status", (_,res)=>{
+  const music=getAIMusicOptions();
+  res.json({music,musicReady:music.length>=4,musicPreparing:aiMusicPreparing});
 });
 
 function runFfmpeg(args) {
