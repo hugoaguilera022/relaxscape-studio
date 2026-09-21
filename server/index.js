@@ -151,7 +151,7 @@ async function generatePexelsVideo(prompt, aspectRatio, key, durationHours = 1) 
       { headers: { Authorization: key } }
     );
     const fallbackData = await fallback.json();
-    if (!fallback.ok) throw new Error(`Pexels búsqueda de respaldo: ${fallbackData.error || fallbackData.message || `HTTP ${fallback.status}`}`);
+    if (!fallback.ok) { const detail = fallbackData.error || fallbackData.message || ("HTTP " + fallback.status); throw new Error("Pexels búsqueda de respaldo: " + detail); }
     videos = (fallbackData.videos || []).filter(v => v.video_files?.length && Number(v.duration || 0) >= 5);
   }
 
