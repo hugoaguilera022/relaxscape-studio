@@ -249,12 +249,11 @@ async function generatePexelsVideo(prompt, aspectRatio, key, durationHours = 1) 
     if (!download.ok) throw new Error("No se pudo descargar el vídeo de Pexels (HTTP " + download.status + ").");
     fs.writeFileSync(source, Buffer.from(await download.arrayBuffer()));
 
-    console.log("[FFmpeg] Repitiendo vídeo HD hasta " + hours + " hora(s)...");
-    await runFfmpeg([
-      "-y","-stream_loop","-1","-i",source,
-      "-t",String(hours * 3600),
-      "-an","-c:v","copy",finalPath
-    ]);
+    // NO generamos físicamente 1–2 horas de vídeo aquí.
+    // Guardamos únicamente el clip original para que la reproducción lo repita.
+    // Esto evita que Render tenga que escribir gigabytes antes de responder.
+    console.log("[Pexels] Clip listo. Reproducción en bucle:", preferred.width + "x" + preferred.height);
+    fs.renameSync(source, finalPath);
 
     return {
       name: finalName,
@@ -263,7 +262,9 @@ async function generatePexelsVideo(prompt, aspectRatio, key, durationHours = 1) 
       sourceUrl: video.url,
       resolution: `${preferred.file.width}x${preferred.file.height}`,
       clips: 1,
-      durationHours: hours
+      durationHours: hours,
+      loop: true,
+      sourceDurationSeconds: Number(video.duration || 0)
     };
   } finally {
     try { fs.unlinkSync(source); } catch {}
