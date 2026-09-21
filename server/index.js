@@ -367,26 +367,12 @@ function makeCompositionWav(track, wavPath){
   writeWav(wavPath,samples,sr,2);
 }
 
-async function generateElevenMusicFile(track, outPath, durationMs=120000){
-  const key=String(process.env.ELEVENLABS_API_KEY||"").trim();
-  if(!key) throw new Error("Falta ELEVENLABS_API_KEY en Render.");
-  const model=String(process.env.ELEVEN_MUSIC_MODEL||"music_v2_5").trim();
-  const prompt=String(track.musicProfile||track.userMusicBrief||track.originalMusicPrompt||"deep relaxation ambient music").slice(0,4100);
-  const response=await fetchWithTimeout("https://api.elevenlabs.io/v1/music?output_format=mp3_48000_192",{
-    method:"POST",
-    headers:{"Content-Type":"application/json","xi-api-key":key},
-    body:JSON.stringify({prompt,music_length_ms:Math.max(3000,Math.min(600000,Number(durationMs)||120000)),model_id:model,force_instrumental:true})
-  },240000);
-  if(!response.ok){
-    const raw=await response.text().catch(()=>"");
-    let message=raw;
-    try{const data=JSON.parse(raw);message=data.detail?.message||data.error?.message||data.message||raw}catch{}
-    throw new Error("Eleven Music HTTP "+response.status+": "+message);
-  }
-  const bytes=Buffer.from(await response.arrayBuffer());
-  if(!bytes.length) throw new Error("Eleven Music no devolvió audio.");
-  fs.writeFileSync(outPath,bytes);
-  return bytes.length;
+async function generateAIMusicFile(track, outPath){
+  // Motor local gratuito: la búsqueda del usuario controla directamente la composición.
+  makeCompositionWav(track, outPath);
+  const stat=fs.statSync(outPath);
+  if(!stat.size) throw new Error("El motor musical local no generó audio.");
+  return stat.size;
 }
 
 async function ensureBuiltinMusic(tracks=[]){
@@ -395,16 +381,16 @@ async function ensureBuiltinMusic(tracks=[]){
     try{
       const out=path.join(MUSIC_DIR,track.file);
       fs.rmSync(out,{force:true});
-      await generateElevenMusicFile(track,out,120000);
-      track.provider="ElevenLabs Music v2.5";
+      await generateAIMusicFile(track,out);
+      track.provider="RelaxScape Free AI Music Engine";
       track.generated=true;
       track.fallback=false;
       track.musicPrompt=track.originalMusicPrompt;
-      console.log("[Eleven Music] LISTA:",track.file,fs.statSync(out).size,"bytes");
+      console.log("[AI Music] LISTA:",track.file,fs.statSync(out).size,"bytes");
       results.push(true);
     }catch(e){
       aiMusicErrors.push(track.label+": "+(e?.message||String(e)));
-      console.error("[Eleven Music] ERROR",track.file,e?.stack||e?.message||e);
+      console.error("[AI Music] ERROR",track.file,e?.stack||e?.message||e);
       results.push(false);
     }
   }
@@ -636,7 +622,7 @@ app.post("/api/ai-music", async (req,res)=>{
   Promise.all(aiMusicTracks.map(track=>ensureBuiltinMusic([track])))
     .catch(e=>{if(generationId===aiMusicGenerationId)aiMusicErrors.push(e?.message||String(e));})
     .finally(()=>{if(generationId===aiMusicGenerationId)aiMusicPreparing=false;});
-  res.json({music:[],musicReady:false,musicPreparing:true,generationId,provider:"ElevenLabs Music v2.5"});
+  res.json({music:[],musicReady:false,musicPreparing:true,generationId,provider:"RelaxScape Free AI Music Engine"});
 });
 
 app.post("/api/ai-options", async (req, res) => {
@@ -722,7 +708,7 @@ function musicIntentProfile(prompt=""){
   return parts.join(", ") || "deep relaxation ambient music, slow gentle pacing, warm sustained harmony";
 }
 
-function buildElevenMusicPrompt(originalSearch="", variant=1){
+function buildAIMusicPrompt(originalSearch="", variant=1){
   const search=String(originalSearch||"deep relaxation ambient music").trim().slice(0,700);
   const details=musicIntentProfile(search);
   const variants=[
@@ -750,9 +736,9 @@ function buildElevenMusicPrompt(originalSearch="", variant=1){
 
 function aiTracksForBackground(prompt="", generationId=0){
   const originalSearch=String(prompt||"").trim().slice(0,700);
-  const sessionNonce="eleven-"+generationId+"-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,10);
+  const sessionNonce="music-"+generationId+"-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,10);
   return [1,2,3,4].map((variant)=>{
-    const file="ai-eleven-"+sessionNonce+"-"+variant+".mp3";
+    const file="ai-music-"+sessionNonce+"-"+variant+".mp3";
     return {
       ...BUILTIN_MUSIC[(variant-1)%BUILTIN_MUSIC.length],
       userSearch:originalSearch,
@@ -881,7 +867,7 @@ app.post("/api/generate-selected-long-music", async (req,res)=>{
     await runFfmpeg(["-y","-stream_loop","-1","-i",base,"-t",String(hours*3600),"-c:a","copy",out]);
     res.json({name:finalName,url:"/media/music/"+encodeURIComponent(finalName),hours,sourcePreview:name,provider:"ElevenLabs Music v2.5",generatedFromSearch:true});
   }catch(e){
-    console.error("[Eleven Music Long] ERROR",e.stack||e.message);
+    console.error("[AI Music Long] ERROR",e.stack||e.message);
     res.status(500).json({error:"No se pudo crear la música larga: "+e.message});
   }finally{fs.rmSync(work,{recursive:true,force:true});}
 });
