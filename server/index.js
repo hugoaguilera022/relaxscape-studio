@@ -466,6 +466,20 @@ app.post("/api/ai-options", async (req, res) => {
     images.push(makeFallbackLandscape(filename, theme));
   }
 
+  // Preparamos solo las 4 pistas que necesita el creador IA.
+  // No generamos toda la biblioteca: así la primera carga sigue siendo razonablemente rápida.
+  const aiTracks = [
+    BUILTIN_MUSIC.find(t => t.file === "relax-piano.mp3"),
+    BUILTIN_MUSIC.find(t => t.file === "relax-ocean.mp3"),
+    BUILTIN_MUSIC.find(t => t.file === "relax-rain.mp3"),
+    BUILTIN_MUSIC.find(t => t.file === "relax-dream.mp3")
+  ].filter(Boolean);
+  try {
+    await ensureBuiltinMusic(aiTracks);
+  } catch (e) {
+    musicErrors.push("No se pudieron preparar las previas musicales: " + e.message);
+  }
+
   // Música instantánea: usamos composiciones locales ya disponibles.
   // No llamamos a Gemini/Lyria aquí para que la pantalla aparezca rápido.
   const fallbackTracks = [
