@@ -581,47 +581,47 @@ async function generateAIImage(prompt, index=0) {
 }
 
 app.post("/api/ai-images", async (req, res) => {
-  const theme = String(req.body?.theme || "peaceful nature landscape").trim().slice(0, 120);
-  const key = String(process.env.PEXELS_API_KEY || "").trim();
-  if (!key) {
+  const theme = String(req.body?.theme || "peaceful nature landscape").trim().slice(0, 700);
+  const token = String(process.env.HF_TOKEN || "").trim();
+  if (!token) {
     return res.status(503).json({
-      error: "Falta PEXELS_API_KEY en Render.",
-      hint: "La búsqueda de paisajes usa Pexels y necesita la clave configurada en Environment."
+      error: "Falta HF_TOKEN en Render.",
+      hint: "La búsqueda/generación de paisajes IA usa Hugging Face FLUX.1-schnell."
     });
   }
+
   try {
-    // IMPORTANTE: aquí solo buscamos y devolvemos URLs de Pexels.
-    // No descargamos 8 imágenes una por una: eso hacía que la búsqueda tardara
-    // demasiado y además descartaba resultados válidos por exigir 1920x1080 exactos.
-    const page = 1 + Math.floor(Math.random() * 8);
-    const url = "https://api.pexels.com/v1/search?query=" + encodeURIComponent(theme) +
-      "&per_page=24&page=" + page + "&orientation=landscape&size=large&locale=es-ES";
-    const r = await fetchWithTimeout(url, { headers: { Authorization: key } }, 8000);
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error("Pexels HTTP " + r.status + ": " + (data.error || data.message || "error de búsqueda"));
+    // Volvemos al flujo IA original: cada resultado se genera desde CERO
+    // usando la búsqueda del usuario como prompt. Las cuatro imágenes se
+    // generan en paralelo para no esperar una por una.
+    const jobs = Array.from({ length: 4 }, (_, index) =>
+      Promise.race([
+        generateHuggingFaceLandscape(theme, index),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("La generación IA superó los 120 segundos.")), 120000)
+        )
+      ])
+      .then(image => ({ ok: true, image }))
+      .catch(error => ({ ok: false, error }))
+    );
 
-    const photos = (data.photos || [])
-      .filter(p => p.src?.large2x || p.src?.large)
-      .sort(() => Math.random() - 0.5)
-      .slice(0, 8);
+    const results = await Promise.all(jobs);
+    const images = results.filter(x => x.ok).map(x => x.image);
+    const errors = results.filter(x => !x.ok).map(x => x.error?.message || "Error desconocido");
 
-    if (!photos.length) throw new Error("Pexels no encontró paisajes para esa búsqueda.");
+    if (!images.length) {
+      throw new Error(errors.join(" | ") || "Hugging Face no generó ninguna imagen.");
+    }
 
-    const images = photos.map((photo, index) => ({
-      name: "pexels-" + photo.id + ".jpg",
-      url: photo.src?.large2x || photo.src?.large || photo.src?.original,
-      photographer: photo.photographer || "Pexels",
-      sourceUrl: photo.url,
-      provider: "Pexels",
-      width: photo.width || 0,
-      height: photo.height || 0,
-      label: "Paisaje " + (index + 1)
-    }));
-
-    res.json({ images, provider: "Pexels", query: theme });
+    res.json({
+      images,
+      provider: "Hugging Face Inference Providers · FLUX.1-schnell",
+      query: theme,
+      errors
+    });
   } catch (e) {
-    console.error("[Landscape Search] ERROR", e);
-    res.status(502).json({ error: "Error buscando paisajes: " + (e.message || e) });
+    console.error("[AI Landscape] ERROR", e);
+    res.status(502).json({ error: "Error generando paisajes IA: " + (e.message || e) });
   }
 });
 
