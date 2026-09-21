@@ -322,25 +322,7 @@ $("#musicInput").onchange=async e=>{if(!e.target.files[0])return;const fd=new Fo
 $("#aiImage").onclick=async()=>{const p=$("#prompt").value||"Ultra-realistic cinematic peaceful landscape, natural light, no people, no text, photorealistic";$("#builderStatus").textContent="Generando paisaje IA…";try{S.image=await api("/api/generate-image",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt:p})});await load()}catch(x){$("#builderStatus").textContent=x.message}};
 $("#generate").onclick=async()=>{if(!S.image||!S.music){$("#builderStatus").textContent="Selecciona un paisaje y una pista.";return}$("#generate").disabled=true;$("#builderStatus").textContent="Generando vídeo…";try{const d=await api("/api/generate-video",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image:S.image.url,music:S.music.url,durationHours:1})});$("#video").src=d.url;$("#download").href=d.url;$("#download").setAttribute("download",d.name||"relaxscape-video.mp4");$("#result").classList.remove("hidden");$("#builderStatus").textContent="Vídeo terminado.";await load();}catch(x){$("#builderStatus").textContent=x.message}finally{$("#generate").disabled=false}};
 $("#aiGoMusic").onclick=()=>{$$(".nav").forEach(x=>x.classList.remove("active"));$(".tab").forEach(x=>x.classList.remove("active"));document.querySelector('[data-tab="music"]').classList.add("active");$("#music").classList.add("active");};
-const aiCreateHour=$("#aiCreateHour"); if(aiCreateHour) aiCreateHour.onclick=async()=>{
-  if(!S.image||!S.music){$("#aiSelectionStatus").textContent="Selecciona primero una foto y una música.";return}
-  if(S.music.isFreesoundPreview){$("#aiSelectionStatus").textContent="La previa está lista, pero la mezcla completa todavía se está preparando. Espera a que termine para crear el vídeo.";return}
-  const btn=$("#aiCreateHour");btn.disabled=true;
-  try{
-    let musicForVideo=S.music;
-    if(!S.music.generatedFromSearch && !S.music.isFreesoundMix && !S.music.isFreesoundPreview){
-      $("#aiSelectionStatus").textContent="1/2 · Preparando 1 hora a partir de la previa musical…";
-      musicForVideo=await api("/api/generate-selected-long-music",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({music:S.music.url,durationHours:1,musicPrompt:($("#aiMusicPrompt")?.value||$("#prompt")?.value||"").trim()})});
-    }
-    const videoHours=Number(S.music?.durationHours||S.aiMixHours||1)===2?2:1;
-    $("#aiSelectionStatus").textContent="2/2 · Creando tu vídeo Full HD de "+videoHours+" hora"+(videoHours===1?"":"s")+" con la mezcla…";
-    const d=await api("/api/generate-video",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image:S.image.url,music:musicForVideo.url,durationHours:videoHours})});
-    $("#video").src=d.url;$("#download").href=d.url;$("#download").setAttribute("download",d.name||"relaxscape-video.mp4");$("#result").classList.remove("hidden");
-    $("#aiSelectionStatus").textContent="¡Vídeo terminado! Se ha utilizado la mezcla de "+videoHours+" hora"+(videoHours===1?"":"s")+" seleccionada.";
-    await load();
-  }catch(e){$("#aiSelectionStatus").textContent=e.message}
-  finally{btn.disabled=false}
-};
+const aiCreateHour=$("#aiCreateHour"); if(aiCreateHour) aiCreateHour.onclick=generateAIMusicOnly;
 $("#closeResult").onclick=()=>$("#result").classList.add("hidden");
 async function createRelaxMix(hours){
   const status=$("#mixStatus"), b=hours===1?$("#mix1h"):$("#mix2h");
