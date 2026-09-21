@@ -99,9 +99,11 @@ function makeCompositionWav(track, wavPath){
   const flowing=/ocean|water|river|rain|waterfall|waves/.test(profile);
   const nature=/forest|mountain|nature|bamboo|garden|birds/.test(profile);
   const dream=/dream|sleep|night|star|moon|meditat|zen/.test(profile);
-  const strings=/string|cello|violin|orchestra|cinematic/.test(profile);\n  const flute=/flute|bamboo|wind|ethereal/.test(profile);
+  const strings=/string|cello|violin|orchestra|cinematic/.test(profile);
+  const flute=/flute|bamboo|wind|ethereal/.test(profile);
   const guitar=/guitar|acoustic|nylon/.test(profile);
-  const water=/water|ocean|rain|river|waterfall|waves|stream/.test(profile);\n  const natureFocus=/forest|nature|birds|mountain|garden|bamboo/.test(profile);
+  const water=/water|ocean|rain|river|waterfall|waves|stream/.test(profile);
+  const natureFocus=/forest|nature|birds|mountain|garden|bamboo/.test(profile);
   const bpmSet=flowing?[42,46,50,54]:dream?[38,40,43,46]:nature?[44,48,52,56]:[40,44,48,52];
   const bpm=bpmSet[variant], beat=60/bpm, bar=beat*4;
   const hz=m=>440*Math.pow(2,(m-69)/12);
@@ -174,7 +176,22 @@ function makeCompositionWav(track, wavPath){
       .028*Math.sin(2*Math.PI*(4*f+inharm*2.4)*t)
     );
   };
-  const stringVoice=(f,t,vel=1)=>{\n    if(t<0)return 0;\n    const env=(1-Math.exp(-t/1.8))*Math.exp(-t/14);\n    return vel*env*(.62*Math.sin(2*Math.PI*f*t)+.25*Math.sin(2*Math.PI*2*f*t)+.10*Math.sin(2*Math.PI*3*f*t));\n  };\n  const fluteVoice=(f,t,vel=1)=>{\n    if(t<0)return 0;\n    const env=Math.min(1,t/.08)*Math.exp(-t/2.8);\n    return vel*env*(.82*Math.sin(2*Math.PI*f*t)+.12*Math.sin(2*Math.PI*2*f*t)+.035*Math.sin(2*Math.PI*3*f*t));\n  };\n  const guitarVoice=(f,t,vel=1)=>{\n    if(t<0)return 0;\n    const env=Math.min(1,t/.012)*Math.exp(-t/1.7);\n    return vel*env*(.78*Math.sin(2*Math.PI*f*t)+.15*Math.sin(2*Math.PI*2*f*t)+.05*Math.sin(2*Math.PI*3*f*t));\n  };\n  const padVoice=(f,t,vel=1)=>{
+  const stringVoice=(f,t,vel=1)=>{
+    if(t<0)return 0;
+    const env=(1-Math.exp(-t/1.8))*Math.exp(-t/14);
+    return vel*env*(.62*Math.sin(2*Math.PI*f*t)+.25*Math.sin(2*Math.PI*2*f*t)+.10*Math.sin(2*Math.PI*3*f*t));
+  };
+  const fluteVoice=(f,t,vel=1)=>{
+    if(t<0)return 0;
+    const env=Math.min(1,t/.08)*Math.exp(-t/2.8);
+    return vel*env*(.82*Math.sin(2*Math.PI*f*t)+.12*Math.sin(2*Math.PI*2*f*t)+.035*Math.sin(2*Math.PI*3*f*t));
+  };
+  const guitarVoice=(f,t,vel=1)=>{
+    if(t<0)return 0;
+    const env=Math.min(1,t/.012)*Math.exp(-t/1.7);
+    return vel*env*(.78*Math.sin(2*Math.PI*f*t)+.15*Math.sin(2*Math.PI*2*f*t)+.05*Math.sin(2*Math.PI*3*f*t));
+  };
+  const padVoice=(f,t,vel=1)=>{
     if(t<0)return 0;
     const attack=1.15;
     const env=(1-Math.exp(-t/attack))*Math.exp(-t/18);
@@ -282,7 +299,27 @@ function makeCompositionWav(track, wavPath){
         left+=v*(1-ep); right+=v*(1+ep);
       }
     }
-    // Timbre adaptado a la búsqueda: instrumento y ambiente cambian con el prompt.\n    if(strings){\n      for(const note of ch.notes.slice(0,3)){\n        const v=stringVoice(hz(note),chordT,.018); left+=v*.88; right+=v*1.02;\n      }\n    }\n    if(water || natureFocus){\n      const shimmer=.0025*Math.sin(2*Math.PI*(1100+70*Math.sin(t/7))*t);\n      left+=shimmer; right+=shimmer*.82;\n    }\n    if(flute || guitar){\n      const mainEvents=eventsByBar[b].filter(e=>e.v<.09).slice(0,2);\n      for(const ev of mainEvents){\n        const nt=t-ev.t;\n        if(nt>=0 && nt<2.9){\n          const vv=flute ? fluteVoice(ev.f,nt,.028) : guitarVoice(ev.f,nt,.024);\n          left+=vv*.94; right+=vv*1.04;\n        }\n      }\n    }\n\n    // Aire alto muy sutil, siempre basado en la 9ª del acorde.
+    // Timbre adaptado a la búsqueda: instrumento y ambiente cambian con el prompt.
+    if(strings){
+      for(const note of ch.notes.slice(0,3)){
+        const v=stringVoice(hz(note),chordT,.018); left+=v*.88; right+=v*1.02;
+      }
+    }
+    if(water || natureFocus){
+      const shimmer=.0025*Math.sin(2*Math.PI*(1100+70*Math.sin(t/7))*t);
+      left+=shimmer; right+=shimmer*.82;
+    }
+    if(flute || guitar){
+      const mainEvents=eventsByBar[b].filter(e=>e.v<.09).slice(0,2);
+      for(const ev of mainEvents){
+        const nt=t-ev.t;
+        if(nt>=0 && nt<2.9){
+          const vv=flute ? fluteVoice(ev.f,nt,.028) : guitarVoice(ev.f,nt,.024);
+          left+=vv*.94; right+=vv*1.04;
+        }
+      }
+    }\n
+    // Aire alto muy sutil, siempre basado en la 9ª del acorde.
     const air=padVoice(hz(ch.notes[4]+12),chordT,ultraCalm ? .009 : (variant===2?.012:.006));
     left+=air*.88; right+=air*1.05;
 
