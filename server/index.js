@@ -572,10 +572,10 @@ async function generateLyriaMusicFile(prompt,index=1){
   const n=Math.max(1,Number(index))-1;
 
   const directions=[
-    "Interpret the description literally and make the requested musical idea the main creative brief. Develop a clear opening, evolving middle and satisfying ending.",
-    "Keep the same creative brief, but choose a different arrangement, lead timbre, register, voicing and texture. Preserve every important musical detail described by the user.",
-    "Keep the same creative brief, but create a distinctly different professional production: change instrumentation balance, melodic contour, harmony and spatial depth while preserving the requested mood and elements.",
-    "Keep the same creative brief, but make the most immersive version: introduce instruments and textures gradually, create subtle variation and a memorable musical motif without becoming repetitive."
+    "OPTION A — Organic acoustic performance. Build a clearly audible human-like arrangement around warm felt piano or the user's requested lead instrument, nylon guitar, intimate bowed strings and airy woodwind. Use a slow 4/4 pulse without drums, varied chord inversions, a memorable 8-bar motif, call-and-response phrases, close-mic detail and a large warm room. The arrangement must evolve every 8–16 bars.",
+    "OPTION B — Cinematic ambient composition. Make the harmony and texture the main story: low cello, evolving string ensemble, wide analog pads, subtle piano only if compatible, long swells, suspended chords, counter-melodies and deep stereo space. Start sparse, grow gradually, reach a rich middle section and dissolve naturally. Avoid sounding like Option A.",
+    "OPTION C — Ethereal electronic composition. Use warm analog synths, evolving pads, glassy high textures, soft sub bass, granular ambience and slowly moving stereo layers. Create a distinct melodic motif with changing register and harmony, with no acoustic-piano dominance. The sound should be modern, spacious and detailed rather than a static drone.",
+    "OPTION D — Organic/world relaxation composition. Use bamboo flute or breathy woodwind, nylon guitar, resonant plucked textures, soft strings and environmental atmosphere when compatible with the brief. Use modal harmony, different melodic phrasing, subtle rubato and natural acoustic space. Make this composition audibly different in timbre, register and melodic contour from A, B and C."
   ];
 
   const requestNonce="lyria-fresh-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,12)+"-v"+(n+1);
