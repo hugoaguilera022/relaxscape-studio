@@ -33,21 +33,21 @@ function render(){renderImages();renderMusic();renderVideos();renderAICreator();
 async function ensureAIOptions(){ return; }
 
 async function generateAIImagesOnly(){
-  const prompt=(($( "#aiImagePrompt").value||"").trim()||"peaceful lake, misty mountains, soft dawn light");
+  const prompt=(($( "#aiImagePrompt").value||"").trim()||"peaceful nature landscape");
   S.aiLoading=true; S.aiImages=[]; S.image=null;
   const status=$( "#aiSelectionStatus"), ig=$( "#aiImageGrid");
-  if(status)status.textContent="Generando 4 paisajes IA a partir de tu descripción…";
-  if(ig)ig.innerHTML='<div class="empty">✨ Generando 4 paisajes independientes…</div>';
+  if(status)status.textContent="Buscando paisajes relacionados…";
+  if(ig)ig.innerHTML='<div class="empty">🌄 Buscando paisajes en Pexels…</div>';
   try{
     const d=await api("/api/ai-images",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({theme:prompt})});
     S.aiImages=d.images||[];
     if(S.aiImages[0])S.image=S.aiImages[0];
     renderAICreator();
-    if(status)status.textContent="✓ Paisajes generados. Ahora puedes elegir uno.";
+    if(status)status.textContent="✓ Paisajes encontrados. Ahora puedes elegir uno.";
   }catch(e){
-    const detail=(e && e.message)?e.message:"Error desconocido";
-    if(status)status.textContent="Error de imagen: "+detail;
-    if(ig)ig.innerHTML='<div class="empty">No se pudieron generar los paisajes.<br><small>'+detail+'</small><br><small>Revisa HF_TOKEN y el permiso Inference Providers en Render.</small></div>';
+    const detail=(e&&e.message)?e.message:"Error desconocido";
+    if(status)status.textContent="Error de búsqueda: "+detail;
+    if(ig)ig.innerHTML='<div class="empty">No se pudieron cargar los paisajes.<br><small>'+detail+'</small><br><small>Añade PEXELS_API_KEY en Render.</small></div>';
   }finally{S.aiLoading=false;renderAICreator()}
 }
 
