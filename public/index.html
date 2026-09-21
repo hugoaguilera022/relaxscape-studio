@@ -36,7 +36,7 @@
 </section>
 
 <section id="ai" class="tab">
-  <div class="section-head"><div><p class="eyebrow">CREADOR IA</p><h2>Vídeo relajante de 1 hora</h2><p class="sub">Busca sonidos reales en Freesound, escucha cada uno, elige los que quieras y después mézclalos en un apartado independiente. La imagen IA permanece igual. La mezcla puede durar 1 o 2 horas y podrás escuchar la previa completa antes de crear el vídeo.</p></div><span class="badge">MP4 · 1080p · 1 HORA</span></div>
+  <div class="section-head"><div><p class="eyebrow">CREADOR IA</p><h2>3 vídeos para elegir · 1 minuto cada uno</h2><p class="sub">Escribe qué música quieres y, después de elegir un paisaje IA, RelaxScape creará exactamente <b>3 vídeos reales de 60 segundos</b>, cada uno con una interpretación musical distinta. No se crea ningún vídeo largo hasta que selecciones uno.</p></div><span class="badge">3 × 60 S · MP4 · 1080p</span></div>
   <div class="ai-builder">
     <div class="ai-prompts">
       <div class="prompt-card"><label for="aiImagePrompt">DESCRIPCIÓN DE LA IMAGEN</label><div class="prompt-search"><textarea id="aiImagePrompt" class="text" rows="3" placeholder="Ej.: lago alpino al amanecer, niebla suave, montañas, luz dorada, sin personas…"></textarea><button id="aiSearchImage" class="search-btn" title="Buscar paisajes coherentes">⌕</button></div></div>
@@ -48,12 +48,8 @@
     </div>
     <div class="ai-choice">
       <div class="choice-head"><div><span class="step">02</span><div><h3>1. Elige los sonidos</h3><p>Escucha las previas de Freesound y añade a la mezcla únicamente los sonidos que quieras. Puedes seleccionar hasta 6.</p></div></div><button id="aiGoMusic" class="ghost small">Ver biblioteca →</button></div>
-      <div id="aiMusicList" class="ai-music-list"></div><div class="mixer-section"><div class="choice-head"><div><span class="step">02</span><div><h3>Mezclador</h3><p>Los sonidos que selecciones aparecen aquí. Cuando tengas al menos 2, elige si quieres una mezcla de 1 o 2 horas, créala y escucha la previa completa antes de usarla en el vídeo.</p></div></div></div><div id="aiMixer" class="ai-mixer"></div></div>
-    </div>
-    <div class="ai-final">
-      <div><span class="step">03</span><div><h3>Crear vídeo</h3><p id="aiSelectionStatus">Selecciona una foto y una música para continuar.</p><div class="ai-summary"><span>🖼️ <b id="aiSelectedPhoto">Sin foto</b></span><span>♫ <b id="aiSelectedMusic">Sin música</b></span><span>⏱️ <b>1–2 horas</b></span><span>HD <b>1920×1080</b></span></div></div></div>
-      <button id="aiCreateHour" class="primary big">✨ Crear vídeo de 1 hora <b>→</b></button>
-    </div>
+      <div id="aiMusicList" class="ai-music-list"></div></div><div class="ai-final">
+      <div><span class="step">03</span><div><h3>Vídeo final</h3><p id="aiSelectionStatus">Primero genera un paisaje IA y después crea las 3 propuestas de 1 minuto.</p><div class="ai-summary"><span>🖼️ <b id="aiSelectedPhoto">Sin foto</b></span><span>🎬 <b id="aiSelectedMusic">Sin vídeo seleccionado</b></span><span>⏱️ <b>1–24 horas</b></span><span>HD <b>1920×1080</b></span></div></div></div>
   </div>
 </section>
 
@@ -80,7 +76,7 @@
 </main>
 </div>
 <footer>RelaxScape Studio · Vídeos proporcionados por <a href="https://www.pexels.com/" target="_blank" rel="noopener">Pexels</a> · Usa imágenes y música con derechos de uso adecuados.</footer>
-<script src="/app.js?v=20260922-02"></script>
+<script src="/app.js?v=20260922-03"></script>
 <script src="/youtube.js?v=20260922-01"></script>
 <script>
 document.addEventListener("click",function(e){const b=e.target.closest(".nav");if(!b)return;document.querySelectorAll(".nav").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));const tab=document.getElementById(b.dataset.tab);if(tab)tab.classList.add("active");if(b.dataset.tab==="ai"&&typeof window.ensureAIOptions==="function")window.ensureAIOptions();});
