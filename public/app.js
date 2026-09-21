@@ -38,7 +38,12 @@ async function ensureAIOptions(){
   if(ig)ig.innerHTML='<div class="empty">✨ Buscando 4 paisajes…</div>';
   if(mg)mg.innerHTML='<div class="empty">♫ Preparando 4 músicas…</div>';
   try{
-    const d=await api("/api/ai-options",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({theme:($("#aiImagePrompt")?.value||$("#prompt")?.value||"peaceful lake, misty mountains, soft dawn light").trim(),musicPrompt:($("#aiMusicPrompt")?.value||"deep professional relaxing ambient music, evolving melody, layered acoustic and electronic textures, wide stereo space, gentle harmonic movement, no vocals, no drums").trim()})});
+    const theme=(($("#aiImagePrompt")?.value||$("#prompt")?.value||"").trim()||"peaceful lake, misty mountains, soft dawn light");
+    const typedMusic=($("#aiMusicPrompt")?.value||"").trim();
+    // Si el usuario busca un paisaje concreto y no escribe una búsqueda musical aparte,
+    // esa misma búsqueda es también la fuente de la música.
+    const musicPrompt=typedMusic||theme;
+    const d=await api("/api/ai-options",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({theme,musicPrompt})});
     S.aiImages=d.images||[]; S.aiMusic=d.music||[];
     if(S.aiImages[0])S.image=S.aiImages[0];
     if(S.aiMusic[0])S.music=S.aiMusic[0];
@@ -114,8 +119,13 @@ $("#imageInput").onchange=async e=>{if(!e.target.files[0])return;const fd=new Fo
 $("#musicInput").onchange=async e=>{if(!e.target.files[0])return;const fd=new FormData();fd.append("music",e.target.files[0]);$("#builderStatus").textContent="Subiendo música…";try{S.music=await api("/api/upload/music",{method:"POST",body:fd});await load()}catch(x){$("#builderStatus").textContent=x.message}};
 $("#aiImage").onclick=async()=>{const p=$("#prompt").value||"Ultra-realistic cinematic peaceful landscape, natural light, no people, no text, photorealistic";$("#builderStatus").textContent="Generando paisaje IA…";try{S.image=await api("/api/generate-image",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt:p})});await load()}catch(x){$("#builderStatus").textContent=x.message}};
 $("#generate").onclick=async()=>{if(!S.image||!S.music){$("#builderStatus").textContent="Selecciona un paisaje y una pista.";return}$("#generate").disabled=true;$("#builderStatus").textContent="Generando vídeo…";try{const d=await api("/api/generate-video",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image:S.image.url,music:S.music.url,durationHours:1})});$("#video").src=d.url;$("#download").href=d.url;$("#download").setAttribute("download",d.name||"relaxscape-video.mp4");$("#result").classList.remove("hidden");$("#builderStatus").textContent="Vídeo terminado.";await load();}catch(x){$("#builderStatus").textContent=x.message}finally{$("#generate").disabled=false}};
-async function searchAI(){
+async async function searchAI(){
   S.aiReady=false;S.aiLoading=false;S.aiImages=[];S.aiMusic=[];S.image=null;S.music=null;
+  const imagePrompt=($("#aiImagePrompt")?.value||"").trim();
+  const musicPrompt=($("#aiMusicPrompt")?.value||"").trim();
+  // Una sola búsqueda puede alimentar todo el creador. La caja musical sigue
+  // disponible para quien quiera pedir una música distinta explícitamente.
+  if(imagePrompt && !musicPrompt && $("#aiMusicPrompt")) $("#aiMusicPrompt").value=imagePrompt;
   renderAICreator();
   await ensureAIOptions();
 }
