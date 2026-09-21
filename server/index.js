@@ -47,7 +47,7 @@ function safe(name) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-const MUSIC_ENGINE_VERSION = "v6-pcm-composer";
+const MUSIC_ENGINE_VERSION = "v7-peaceful-harmonic-composer";
 
 const BUILTIN_MUSIC = [
   ["relax-piano.mp3","Piano nocturno","Sueño",261.63,329.63,392],
@@ -87,145 +87,185 @@ function writeWav(file, samples, sampleRate=44100, channels=2){
 }
 
 function makeCompositionWav(track, wavPath){
-  // Motor armónico v2: afinación temperada, acordes con 7ª/9ª, voice-leading
-  // suave y síntesis multicapa para acercarse a un piano/ambient profesional.
-  const sr=44100, dur=12, n=sr*dur, samples=new Float32Array(n*2);
+  // Motor armónico v7: ambient cinematográfico, progresiones lentas, voice-leading
+  // estricto, melodía respirada y capas suaves. Se renderiza a 22.05 kHz y se
+  // entrega a FFmpeg a 44.1 kHz para mantener calidad sin bloquear Render.
+  const sr=22050, dur=16, n=sr*dur, samples=new Float32Array(n*2);
   const seed=Math.abs(Math.floor(track.f1*100 + track.f2*10 + track.f3)) % 1000;
   const bpm=[46,48,50,52][seed%4], beat=60/bpm, bar=beat*4;
-  const midiFromHz=f=>69+12*Math.log2(f/440);
   const hz=m=>440*Math.pow(2,(m-69)/12);
+  const midiFromHz=f=>69+12*Math.log2(f/440);
   const baseMidi=Math.round(midiFromHz(track.f1));
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 
-  // Progresiones diatónicas en grados, con mezcla controlada de maj7/add9/sus2.
+  // Tonalidades/colores distintos, pero siempre diatónicos y consonantes.
+  const modes=[
+    {scale:[0,2,4,5,7,9,11], name:"major"},
+    {scale:[0,2,3,5,7,9,10], name:"dorian"},
+    {scale:[0,2,3,5,7,8,10], name:"minor"}
+  ];
+  const mode=modes[seed%3];
+  const scale=mode.scale;
+
+  // Progresiones pensadas para reposo: tónica, subdominante y dominante
+  // suave, evitando cadencias bruscas. La última vuelta resuelve claramente.
   const progressions=[
-    [0,5,3,4,0,2,5,4],
-    [0,3,5,4,0,5,2,4],
-    [0,5,1,4,0,3,5,2],
-    [0,4,5,3,0,2,4,5]
-  ][seed%4];
-  const scale=[0,2,4,5,7,9,11];
-  const qualities=[
-    ["maj7",[0,4,7,11]],["m7",[0,3,7,10]],["m7",[0,3,7,10]],
-    ["maj7",[0,4,7,11]],["maj7",[0,4,7,11]],["m7",[0,3,7,10]],
-    ["m7",[0,3,7,10]],["7sus2",[0,2,7,10]]
+    [0,4,5,3,0,2,4,0],
+    [0,5,3,4,0,3,5,0],
+    [0,3,4,5,0,4,3,0],
+    [0,5,1,4,0,3,4,0]
+  ];
+  const degrees=progressions[seed%progressions.length];
+
+  const chordIntervals=[
+    [0,4,7,11,14], // maj9
+    [0,3,7,10,14], // min9
+    [0,3,7,10,14], // min9
+    [0,4,7,11,14]  // maj9
   ];
 
-  // Cada acorde queda dentro de un registro cómodo y sus notas se mantienen
-  // cerca del acorde anterior para evitar saltos artificiales.
+  // Acordes con terceras/7as/9as diatónicas. Cada voz busca la posición
+  // más cercana a la anterior para que los cambios sean fluidos.
   const chords=[];
-  let previous=[baseMidi+12,baseMidi+16,baseMidi+19,baseMidi+23];
+  let prev=[baseMidi+12,baseMidi+16,baseMidi+19,baseMidi+23,baseMidi+26];
   for(let b=0;b<8;b++){
-    const degree=progressions[b];
+    const degree=degrees[b];
     const root=baseMidi+scale[degree];
-    const q=qualities[(degree+b+seed)%qualities.length];
-    let notes=q[1].map(iv=>root+iv);
-    while(notes[0]<baseMidi+12) notes=notes.map(x=>x+12);
-    while(notes[3]>baseMidi+36) notes=notes.map(x=>x-12);
-    // Voice leading: cada voz busca la inversión más cercana anterior.
-    notes=notes.map((x,i)=>{
+    const isMinor=((degree===2||degree===3||degree===5)&&mode.name!=="major");
+    const intervals=isMinor?[0,3,7,10,14]:chordIntervals[(degree+b+seed)%2];
+    let raw=intervals.map(iv=>root+iv);
+    while(raw[0]<baseMidi+10) raw=raw.map(x=>x+12);
+    while(raw[raw.length-1]>baseMidi+38) raw=raw.map(x=>x-12);
+    const notes=raw.map((x,i)=>{
       const choices=[x-12,x,x+12];
-      return choices.reduce((best,v)=>Math.abs(v-previous[i])<Math.abs(best-previous[i])?v:best,choices[0]);
-    }).sort((a,b)=>a-b);
-    previous=notes;
-    chords.push({root,notes,quality:q[0]});
+      return choices.reduce((best,v)=>Math.abs(v-prev[i])<Math.abs(best-prev[i])?v:best,choices[0]);
+    });
+    prev=notes;
+    chords.push({root,notes});
   }
 
   const piano=(f,t,vel=1)=>{
-    if(t<0)return 0;
-    const attack=Math.min(.018,t);
-    const decay=Math.exp(-2.7*Math.max(0,t-attack));
-    const release=t>3.4?Math.exp(-4.5*(t-3.4)):1;
-    const env=(t<attack?t/attack:decay)*release;
-    const inharm=0.0018*f*f/10000;
+    if(t<0||t>3.8)return 0;
+    const attack=Math.min(.025,t);
+    const env=(t<attack?t/attack:Math.exp(-1.55*(t-attack)))*Math.exp(-Math.max(0,t-3.1)*5);
+    const inharm=.0012*f*f/10000;
     return vel*env*(
-      .64*Math.sin(2*Math.PI*f*t)+
-      .20*Math.sin(2*Math.PI*(2*f+inharm)*t)+
-      .095*Math.sin(2*Math.PI*(3*f+inharm*1.7)*t)+
-      .04*Math.sin(2*Math.PI*(4*f+inharm*2.4)*t)
+      .72*Math.sin(2*Math.PI*f*t)+
+      .17*Math.sin(2*Math.PI*(2*f+inharm)*t)+
+      .075*Math.sin(2*Math.PI*(3*f+inharm*1.7)*t)+
+      .028*Math.sin(2*Math.PI*(4*f+inharm*2.4)*t)
     );
   };
-  const softPiano=(f,t,vel)=>piano(f,t,vel*.82);
-  const pad=(f,t,vel=1)=>{
-    const attack=1.8, release=Math.max(0,Math.min(1,(t-10)/5));
-    const env=(1-Math.exp(-t/attack))*Math.exp(-t/20)*(1-.35*release);
-    const det=.0022;
+  const padVoice=(f,t,vel=1)=>{
+    if(t<0)return 0;
+    const attack=1.15;
+    const env=(1-Math.exp(-t/attack))*Math.exp(-t/18);
+    const det=.0018;
     return vel*env*(
-      .50*Math.sin(2*Math.PI*f*t)+
-      .22*Math.sin(2*Math.PI*f*(1-det)*t)+
-      .22*Math.sin(2*Math.PI*f*(1+det)*t)+
-      .06*Math.sin(2*Math.PI*2*f*t)
+      .48*Math.sin(2*Math.PI*f*t)+
+      .24*Math.sin(2*Math.PI*f*(1-det)*t)+
+      .24*Math.sin(2*Math.PI*f*(1+det)*t)+
+      .055*Math.sin(2*Math.PI*2*f*t)
     );
+  };
+  const bass=(f,t,vel=.045)=>{
+    const env=(1-Math.exp(-t/.12))*Math.exp(-t/5.5);
+    return vel*env*Math.sin(2*Math.PI*f*t);
   };
 
+  // Eventos: arpegio lento, melodía con silencios y notas de paso siempre
+  // pertenecientes al acorde/escala. Nada de notas aleatorias fuera de tono.
   const events=[];
-  // Arpegio de piano: inversiones suaves, no acordes mecánicos.
   for(let b=0;b<8;b++){
-    const ch=chords[b];
-    const order=[0,2,1,3,1,2,0,1];
-    for(let j=0;j<8;j++){
-      const note=ch.notes[order[(j+seed)%order.length]];
-      events.push({t:b*bar+j*(beat/2)+beat*.06,f:hz(note),v:.115+(j%3===0?.025:0)});
+    const ch=chords[b], order=[0,1,2,4,2,1];
+    for(let j=0;j<6;j++){
+      const note=ch.notes[order[(j+seed+b)%order.length]];
+      events.push({t:b*bar+j*(bar/6)+.08,f:hz(note),v:.095+(j===0?.018:0)});
     }
   }
-  // Melodía principal: solo notas pertenecientes al acorde o tensiones 9ª.
-  const melodySteps=[0,1,2,1,3,2,1,0,2,3,1,0];
-  for(let k=0;k<12;k++){
-    const b=Math.min(7,Math.floor(k/1.5)), ch=chords[b];
-    const candidates=[...ch.notes.map(hz),hz(ch.notes[0]+14),hz(ch.notes[1]+14)];
-    const f=candidates[melodySteps[(k+seed)%melodySteps.length]%candidates.length];
-    events.push({t:k*beat*2+beat*.55,f,v:.16});
+
+  const melodyPatterns=[
+    [4,3,2,3,null,2,1,null],
+    [2,3,4,null,3,2,null,1],
+    [4,null,3,2,3,null,1,2],
+    [2,4,null,3,2,null,3,1]
+  ];
+  const mp=melodyPatterns[seed%melodyPatterns.length];
+  for(let b=0;b<8;b++){
+    const ch=chords[b];
+    for(let j=0;j<8;j++){
+      const degree=mp[(j+seed)%mp.length];
+      if(degree===null) continue;
+      const pool=[
+        ch.notes[0]+12,ch.notes[1]+12,ch.notes[2]+12,
+        ch.notes[4]+12,ch.notes[1]+14
+      ];
+      const note=pool[degree%pool.length];
+      // Entradas fuera del pulso para una sensación humana y flotante.
+      const t=b*bar+j*(beat/2)+beat*(j%2===0?.18:.05);
+      events.push({t,f:hz(note),v:.095+(j%4===0?.025:0)});
+    }
   }
+
+  // Una nota grave por compás: refuerza el centro tonal sin crear un ritmo marcado.
+  const bassEvents=chords.map((ch,b)=>({t:b*bar,f:hz(ch.root-24),v:.065}));
 
   for(let i=0;i<n;i++){
     const t=i/sr;
     const b=Math.min(7,Math.floor(t/bar));
     const ch=chords[b];
-    let x=0;
+    let left=0,right=0;
 
-    // Pad estéreo cálido: fundamental + 3ª + 7ª, sin llenar demasiado el espectro.
-    x+=pad(hz(ch.notes[0]-12),t%bar,.055);
-    x+=pad(hz(ch.notes[1]),t%bar,.035);
-    x+=pad(hz(ch.notes[3]),t%bar,.025);
+    // Pad: cada acorde tiene su propia envolvente; no se reinicia cada ciclo
+    // dentro del acorde, evitando clics y cambios artificiales.
+    const chordT=t-b*bar;
+    const pan=.08*Math.sin(2*Math.PI*t/19);
+    const padNotes=[ch.notes[0]-12,ch.notes[1],ch.notes[3],ch.notes[4]];
+    const padLevels=[.045,.028,.020,.012];
+    for(let p=0;p<padNotes.length;p++){
+      const v=padVoice(hz(padNotes[p]),chordT,padLevels[p]);
+      left+=v*(1-pan); right+=v*(1+pan);
+    }
 
-    // Bajo: fundamental con una quinta muy ocasional para reforzar la armonía.
-    const bass=hz(ch.notes[0]-24);
-    x+=Math.sin(2*Math.PI*bass*t)*.045;
-    x+=Math.sin(2*Math.PI*bass*1.5*t)*(.008+.004*Math.sin(2*Math.PI*t/13));
+    // Bajo ligado al cambio de acorde, sin oscilador permanente que produzca
+    // choques armónicos entre acordes.
+    const be=bassEvents[b];
+    const bt=t-be.t;
+    const bv=bass(be.f,bt,be.v);
+    left+=bv; right+=bv;
 
     for(const ev of events){
       const nt=t-ev.t;
-      if(nt>=0&&nt<4.2)x+=piano(ev.f,nt,ev.v);
+      if(nt>=0 && nt<3.8){
+        const v=piano(ev.f,nt,ev.v);
+        const ep=.06*Math.sin(2*Math.PI*(ev.t+t)/23);
+        left+=v*(1-ep); right+=v*(1+ep);
+      }
     }
 
-    // Capa de aire armónico, afinada y muy baja.
-    x+=softPiano(hz(ch.notes[3]+12),t%bar,.018);
+    // Aire alto muy sutil, siempre basado en la 9ª del acorde.
+    const air=padVoice(hz(ch.notes[4]+12),chordT,.006);
+    left+=air*.88; right+=air*1.05;
 
-    // Movimiento ambiental suave, sin ruido digital agresivo.
-    const texture=Math.sin(2*Math.PI*(.11+(seed%7)*.009)*t);
-    x+=texture*Math.sin(2*Math.PI*(180+(seed%5)*17)*t)*.0035;
+    // Entrada/salida global muy suave para que el preview pueda repetirse.
+    const inG=Math.min(1,t/2.2);
+    const outG=Math.min(1,(dur-t)/2.8);
+    const master=inG*outG;
+    left=Math.tanh(left*1.15)*master;
+    right=Math.tanh(right*1.15)*master;
 
-    // Fade + compresión suave para evitar picos y mantener una sensación de mezcla.
-    const inG=Math.min(1,t/4), outG=Math.min(1,(dur-t)/5);
-    const swell=.88+.12*Math.sin(2*Math.PI*t/18+seed);
-    x=Math.tanh(x*1.35)*inG*outG*swell;
-
-    // Paneo lento y micro-diferencia entre canales.
-    const pan=.12*Math.sin(2*Math.PI*t/(22+seed%5));
-    samples[i*2]=clamp(x*(1-pan),-.78,.78);
-    samples[i*2+1]=clamp(x*(1+pan),-.78,.78);
+    samples[i*2]=clamp(left,-.78,.78);
+    samples[i*2+1]=clamp(right,-.78,.78);
   }
 
-  // Master sencillo: normalización conservadora + fade final.
   let peak=0;
   for(let i=0;i<samples.length;i++) peak=Math.max(peak,Math.abs(samples[i]));
-  const gain=peak>.001?Math.min(1.55,.82/peak):1;
+  const gain=peak>.001?Math.min(1.45,.82/peak):1;
   for(let i=0;i<samples.length;i++) samples[i]*=gain;
   writeWav(wavPath,samples,sr,2);
 }
-
 async function ensureBuiltinMusic(tracks=BUILTIN_MUSIC){
-  const marker=path.join(MUSIC_DIR,".relaxscape-music-engine-v6");
+  const marker=path.join(MUSIC_DIR,".relaxscape-music-engine-v7");
   if(!fs.existsSync(marker)){
     for(const t of BUILTIN_MUSIC){try{fs.rmSync(path.join(MUSIC_DIR,t.file),{force:true})}catch{}}
     try{fs.writeFileSync(marker,MUSIC_ENGINE_VERSION)}catch{}
