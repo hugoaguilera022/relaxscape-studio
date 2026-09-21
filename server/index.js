@@ -436,24 +436,28 @@ app.post("/api/ai-options", async (req, res) => {
         theme + " misty forest"
       ];
 
-      // Una sola búsqueda + descargas en paralelo: evitamos que Render agote
-      // el tiempo de la petición por hacer 4 búsquedas y 4 descargas en cadena.
+      // 4 imágenes por petición: una búsqueda ligera y 4 descargas en paralelo.
+      // No esperamos a generar música para empezar a devolver el resultado.
       try {
         const r = await fetchWithTimeout(
-          "https://api.pexels.com/v1/search?query=" + encodeURIComponent(queries[0]) +
-          "&per_page=12&orientation=landscape&size=large&locale=en-US",
-          { headers: { Authorization: key } }, 8000
+          "https://api.pexels.com/v1/search?query=" + encodeURIComponent(theme + " peaceful nature") +
+          "&per_page=40&orientation=landscape&size=large&locale=en-US",
+          { headers: { Authorization: key } }, 5000
         );
         if (!r.ok) {
           imageErrors.push("Pexels HTTP " + r.status);
         } else {
           const data = await r.json();
-          const candidates = (data.photos || [])
+          const pool = (data.photos || [])
             .filter(p => (p.src?.large2x || p.src?.large) && p.width >= 1280 && p.height >= 720)
-            .sort(() => Math.random() - 0.5).slice(0, 2);
-          const results = await Promise.allSettled(candidates.map(async (photo, i) => {
+            .sort(() => Math.random() - 0.5)
+            .slice(0, 12);
+
+          // Elegimos 4 fotos distintas y las descargamos simultáneamente.
+          const selected = pool.slice(0, 4);
+          const results = await Promise.allSettled(selected.map(async (photo, i) => {
             const src = photo.src?.large2x || photo.src?.large;
-            const img = await fetchWithTimeout(src, {}, 8000);
+            const img = await fetchWithTimeout(src, {}, 5000);
             if (!img.ok) throw new Error("Pexels foto HTTP " + img.status);
             const filename = "free-ai-option-" + Date.now() + "-" + (i + 1) + ".jpg";
             fs.writeFileSync(path.join(IMAGE_DIR, filename), Buffer.from(await img.arrayBuffer()));
@@ -466,6 +470,7 @@ app.post("/api/ai-options", async (req, res) => {
               label: "Paisaje gratuito " + (i + 1)
             };
           }));
+
           for (const result of results) {
             if (result.status === "fulfilled") images.push(result.value);
             else imageErrors.push(result.reason?.message || "No se pudo descargar una foto.");
@@ -474,11 +479,10 @@ app.post("/api/ai-options", async (req, res) => {
       } catch (e) {
         imageErrors.push(e.message || "Error de Pexels");
       }
-      if (!images.length) imageErrors.push("Pexels no devolvió imágenes.");
+      if (images.length < 4) imageErrors.push("Pexels devolvió " + images.length + " de 4 imágenes.");
     } else {
       imageErrors.push("Falta PEXELS_API_KEY en Render.");
     }
-
     if (!images.length) {
       const filename = "relaxscape-local-landscape-" + Date.now() + ".svg";
       images.push(makeFallbackLandscape(filename, theme));
