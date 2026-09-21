@@ -33,8 +33,13 @@ async function generateAI(type){
       const m=await api("/api/generate-ai-music",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt,mode:$("#musicMode").value})});
       S.music={name:m.name,url:m.url};
       await load();
+      if(type==="both"){
+        status.textContent="Mezclando vídeo + música…";
+        const mixed=await api("/api/mux-video-audio",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({video:v.url,music:m.url})});
+        $("#video").src=mixed.url;$("#download").href=mixed.url;
+      }
     }
-    status.textContent=type==="both"?"Vídeo y música generados.":"Contenido generado correctamente.";
+    status.textContent=type==="both"?"Vídeo y música generados y mezclados.":"Contenido generado correctamente.";
     await load();
   }catch(e){status.textContent=e.message}finally{buttons.forEach(x=>$(x).disabled=false);status.classList.remove("busy")}
 }
