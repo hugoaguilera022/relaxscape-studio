@@ -45,8 +45,9 @@ async function generateAIImagesOnly(){
     renderAICreator();
     if(status)status.textContent="✓ Paisajes generados. Ahora puedes elegir uno.";
   }catch(e){
-    if(status)status.textContent="Error de imagen: "+e.message;
-    if(ig)ig.innerHTML='<div class="empty">No se pudieron generar los paisajes.<br><small>'+e.message+'</small></div>';
+    const detail=(e && e.message)?e.message:"Error desconocido";
+    if(status)status.textContent="Error de imagen: "+detail;
+    if(ig)ig.innerHTML='<div class="empty">No se pudieron generar los paisajes.<br><small>'+detail+'</small><br><small>Revisa HF_TOKEN y el permiso Inference Providers en Render.</small></div>';
   }finally{S.aiLoading=false;renderAICreator()}
 }
 
