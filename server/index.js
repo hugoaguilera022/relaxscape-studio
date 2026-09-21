@@ -155,8 +155,12 @@ async function generatePexelsVideo(prompt, aspectRatio, key, durationHours = 1) 
   if (![1, 2].includes(hours)) throw new Error("La duración debe ser de 1 o 2 horas.");
 
   const orientation = aspectRatio === "9:16" ? "portrait" : "landscape";
+  // Cambiamos de página para no devolver siempre el mismo vídeo cuando la búsqueda es igual.
+  // Pexels ordena los resultados de forma muy estable, así que una página aleatoria
+  // + selección aleatoria entre los mejores candidatos evita repetir siempre el primero.
+  const page = 1 + Math.floor(Math.random() * 5);
   const search = await fetch(
-    `https://api.pexels.com/v1/videos/search?query=${encodeURIComponent(query)}&per_page=10&orientation=${orientation}&size=medium&locale=en-US`,
+    `https://api.pexels.com/v1/videos/search?query=${encodeURIComponent(query)}&per_page=10&page=${page}&orientation=${orientation}&size=medium&locale=en-US`,
     { headers: { Authorization: key } }
   );
   const data = await search.json();
@@ -227,7 +231,16 @@ async function generatePexelsVideo(prompt, aspectRatio, key, durationHours = 1) 
     return b.duration - a.duration;
   });
 
-  const preferred = candidates[0];
+  // Nos quedamos con los candidatos de calidad equivalente y elegimos uno al azar.
+  // Así mantenemos 1080p/HD sin sacrificar variedad.
+  const bestScore = candidates[0];
+  const topCandidates = candidates.filter(c =>
+    c.exact1080 === bestScore.exact1080 &&
+    c.atLeast1080 === bestScore.atLeast1080 &&
+    Math.abs(c.pixels - ((aspectRatio === "9:16" ? 1080 : 1920) * (aspectRatio === "9:16" ? 1920 : 1080))) <=
+      Math.max(300000, bestScore.pixels * 0.18)
+  );
+  const preferred = topCandidates[Math.floor(Math.random() * topCandidates.length)] || bestScore;
   const video = preferred.video;
   const url = preferred.file.link;
 
