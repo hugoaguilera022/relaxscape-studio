@@ -172,8 +172,8 @@ async function generatePexelsVideo(prompt, aspectRatio, key, durationHours = 1) 
   const targetWidth = aspectRatio === "9:16" ? 1080 : 1920;
   const targetHeight = aspectRatio === "9:16" ? 1920 : 1080;
 
-  // Evaluamos TODOS los resultados y TODOS sus archivos.
-  // La prioridad es: orientación correcta -> resolución alta -> cercanía a 1080p.
+  // Priorizamos 1080p para mantener la generación rápida en Render.
+  // Solo usamos 4K si no existe ningún archivo 1080p compatible.
   const candidates = [];
   for (const video of videos) {
     for (const file of video.video_files || []) {
@@ -181,43 +181,63 @@ async function generatePexelsVideo(prompt, aspectRatio, key, durationHours = 1) 
 
       const isPortrait = file.height > file.width;
       const correctOrientation = aspectRatio === "9:16" ? isPortrait : !isPortrait;
-      const pixels = file.width * file.height;
-      const targetPixels = targetWidth * targetHeight;
+      if (!correctOrientation) continue;
+
+      const width = Number(file.width);
+      const height = Number(file.height);
+      const targetWidth = aspectRatio === "9:16" ? 1080 : 1920;
+      const targetHeight = aspectRatio === "9:16" ? 1920 : 1080;
+      const exact1080 = width === targetWidth && height === targetHeight;
+      const atLeast1080 = width >= targetWidth * 0.9 && height >= targetHeight * 0.9;
+      const pixels = width * height;
 
       candidates.push({
         video,
         file,
-        correctOrientation,
+        width,
+        height,
+        exact1080,
+        atLeast1080,
         pixels,
-        score:
-          (correctOrientation ? 100000000000 : 0) +
-          Math.min(pixels, 3840 * 2160) * 100 +
-          1000000 / (1 + Math.abs(pixels - targetPixels))
+        duration: Number(video.duration || 0)
       });
     }
   }
 
-  candidates.sort((a, b) => b.score - a.score);
+  if (!candidates.length) {
+    throw new Error("Pexels no encontró un vídeo compatible con el formato solicitado.");
+  }
 
-  // Preferimos 4K/1080p reales. Si no existen, usamos la mayor resolución disponible.
-  const preferred = candidates.find(c =>
-    c.correctOrientation &&
-    c.file.width >= targetWidth * 0.9 &&
-    c.file.height >= targetHeight * 0.9
-  ) || candidates.find(c => c.correctOrientation) || candidates[0];
+  candidates.sort((a, b) => {
+    // 1. Exactamente 1080p/1080x1920
+    if (a.exact1080 !== b.exact1080) return a.exact1080 ? -1 : 1;
 
+    // 2. Cualquier HD cercano a 1080p
+    if (a.atLeast1080 !== b.atLeast1080) return a.atLeast1080 ? -1 : 1;
+
+    // 3. Entre HD, elige la resolución más cercana a 1080p.
+    const targetPixels =
+      (aspectRatio === "9:16" ? 1080 : 1920) *
+      (aspectRatio === "9:16" ? 1920 : 1080);
+    const distanceA = Math.abs(a.pixels - targetPixels);
+    const distanceB = Math.abs(b.pixels - targetPixels);
+    if (distanceA !== distanceB) return distanceA - distanceB;
+
+    // 4. Como desempate, un clip algo más largo.
+    return b.duration - a.duration;
+  });
+
+  const preferred = candidates[0];
   const video = preferred.video;
   const url = preferred.file.link;
-  if (!url) throw new Error("Pexels no devolvió un archivo de vídeo descargable.");
 
   console.log(
     "[Pexels] Seleccionado:",
     video.id,
-    preferred.file.width + "x" + preferred.file.height,
+    preferred.width + "x" + preferred.height,
     "para", aspectRatio,
     "| consulta:", query
   );
-
   const stamp = Date.now();
   const source = path.join(VIDEO_DIR, `pexels-${stamp}-source.mp4`);
   const finalName = `relaxscape-${stamp}-${hours}h.mp4`;
