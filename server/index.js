@@ -289,8 +289,7 @@ async function ensureBuiltinMusic(tracks=BUILTIN_MUSIC){
       // Motor musical 100% local y gratuito.
       // No intentamos Pollinations/ElevenLabs ni Lyria: Crear IA no depende
       // de saldo, cuotas ni APIs de pago.
-      try {
-          // Fallback gratuito local: nunca dejamos Crear IA sin música.
+      // Fallback gratuito local: nunca dejamos Crear IA sin música.
           // Cada opción recibe una identidad instrumental y armónica diferente.
           const userBrief = String(track.userMusicBrief || "professional deep-relaxation ambient music for peace and calm");
           const fallbackProfiles = [
@@ -569,7 +568,8 @@ const SONIC_PALETTES = [
 ];
 
 function aiTracksForBackground(prompt="", generationId=0){
-  const requestedDetails=musicIntentProfile(prompt);\n  const p="professional deep-relaxation ambient music for peace, calm and stress relief. Keep the overall genre peaceful, slow and non-aggressive, but adapt the composition to the user search: "+requestedDetails+". Use the requested instruments, environment, mood and atmosphere when compatible. No drums, no percussion, no aggressive bass, no abrupt changes unless the user explicitly requests them.";
+  const requestedDetails=musicIntentProfile(prompt);
+  const p="professional deep-relaxation ambient music for peace, calm and stress relief. Keep the overall genre peaceful, slow and non-aggressive, but adapt the composition to the user search: "+requestedDetails+". Use the requested instruments, environment, mood and atmosphere when compatible. No drums, no percussion, no aggressive bass, no abrupt changes unless the user explicitly requests them.";
   const seed=Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8);
   const sessionNonce="session-"+generationId+"-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,10);
   const paletteOrder=[...SONIC_PALETTES].sort(()=>Math.random()-0.5).slice(0,4);
