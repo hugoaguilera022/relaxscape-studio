@@ -1519,7 +1519,7 @@ app.post("/api/mix-selected-freesound", async (req,res)=>{
     const local=[];
     for(let i=0;i<tracks.length;i++){
       const t=tracks[i]||{};
-      if(!t.preview || !/^https?:\\/\\//i.test(t.preview)) throw new Error("Una de las previas seleccionadas no es válida.");
+      if(!t.preview || !/^https?:\/\//i.test(t.preview)) throw new Error("Una de las previas seleccionadas no es válida.");
       const rr=await fetchWithTimeout(t.preview,{headers:{Accept:"audio/mpeg,audio/*"}},20000);
       if(!rr.ok) throw new Error("Freesound preview HTTP "+rr.status);
       const file=path.join(work,"source-"+i+".mp3");
