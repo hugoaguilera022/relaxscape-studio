@@ -178,7 +178,8 @@ async function makeCompositionWav(track, wavPath, durationMs=18000){
   if(semantic.harp) requestedRoles.push("harp");
   if(semantic.kalimba) requestedRoles.push("kalimba");
 
-  // Si no se pide instrumento, NO se inventa ninguno.
+  // Si no se especifica instrumento, usamos piano suave como instrumento base para evitar audio vacío.
+  if(!requestedRoles.length) requestedRoles.push("piano");
   const lead=requestedRoles[0]||null;
   const companions=requestedRoles.slice(1);
   const sharedSoundRoles=[...requestedRoles];
@@ -824,7 +825,7 @@ async function generatePollinationsLandscape(prompt, index=0) {
       if (key && url.startsWith("https://gen.pollinations.ai/")) {
         headers.Authorization = "Bearer " + key;
       }
-      const r = await fetchWithTimeout(url, { headers }, 30000);
+      const r = await fetchWithTimeout(url, { headers }, 8000);
       if (!r.ok) {
         const body = await r.text().catch(() => "");
         throw new Error("Pollinations HTTP " + r.status + (body ? " · " + body.slice(0, 180) : ""));
@@ -931,71 +932,38 @@ async function generateAIImage(prompt, index=0) {
 
 app.post("/api/ai-images", async (req, res) => {
   const theme = String(req.body?.theme || "peaceful nature landscape").trim().slice(0, 700);
-  const token = String(process.env.HF_TOKEN || "").trim();
+  const requestedCount = Math.min(4, Math.max(1, Number(req.body?.count || 4)));
 
   try {
-    // El flujo HF/FLUX existente permanece intacto cuando tiene cuota.
-    // Si la cuota mensual está agotada, cada una de las 4 opciones pasa
-    // automáticamente al generador externo gratuito Pollinations.
-    if (token) {
-      const requestedCount = Math.min(4, Math.max(1, Number(req.body?.count || 4)));
-      const jobs = Array.from({ length: requestedCount }, (_, index) =>
-        Promise.race([
-          generateHuggingFaceLandscape(theme, index),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error("La generación IA superó los 120 segundos.")), 120000)
-          )
-        ])
-        .then(image => ({ ok: true, image }))
-        .catch(error => ({ ok: false, error }))
-      );
-      const results = await Promise.all(jobs);
-      const images = results.filter(x => x.ok).map(x => x.image);
-      const errors = results.filter(x => !x.ok).map(x => x.error?.message || "Error desconocido");
-
-      if (images.length) {
-        return res.json({
-          images,
-          provider: "Hugging Face Inference Providers · FLUX.1-schnell",
-          fallbackUsed: false,
-          errors
-        });
-      }
-
-      console.warn("[AI Images] Hugging Face no pudo generar las imágenes; usando Pollinations como respaldo.", errors);
-    }
-
-    const requestedCount = Math.min(4, Math.max(1, Number(req.body?.count || 4)));
+    // Para que Render Free no se quede bloqueado esperando a Hugging Face,
+    // usamos Pollinations como motor IA principal con un timeout corto.
+    // Si falla, cada opción recibe inmediatamente un paisaje local válido.
     const jobs = Array.from({ length: requestedCount }, (_, index) =>
       generatePollinationsLandscape(theme, index)
         .then(image => ({ ok: true, image }))
         .catch(error => ({ ok: false, error }))
     );
     const results = await Promise.all(jobs);
-    const images = results.filter(x => x.ok).map(x => x.image);
-    const errors = results.filter(x => !x.ok).map(x => x.error?.message || "Error desconocido");
-    if (!images.length) {
-      return res.status(502).json({
-        error: "No se pudo generar ningún paisaje IA con el motor gratuito externo.",
-        imageErrors: errors
-      });
-    }
-    return res.json({
-      images,
-      provider: "Pollinations AI · FLUX",
-      fallbackUsed: true,
-      errors
+    const images = results.map((r, index) => {
+      if (r.ok && r.image) return r.image;
+      const filename = "ai-landscape-local-" + Date.now() + "-" + index + ".svg";
+      const fallback = makeFallbackLandscape(filename, theme + " · opción " + (index + 1));
+      return {
+        ...fallback,
+        ai: false,
+        fallback: true,
+        provider: "RelaxScape local fallback",
+        label: "Paisaje IA · opción " + (index + 1)
+      };
     });
 
-    if (!images.length) {
-      throw new Error(errors.join(" | ") || "Hugging Face no generó ninguna imagen.");
-    }
-
-    res.json({
+    return res.json({
       images,
-      provider: "Hugging Face Inference Providers · FLUX.1-schnell",
-      query: theme,
-      errors
+      provider: images.some(x => x.provider === "Pollinations AI · FLUX")
+        ? "Pollinations AI · FLUX"
+        : "RelaxScape local fallback",
+      fallbackUsed: images.some(x => x.fallback),
+      errors: results.filter(x => !x.ok).map(x => x.error?.message || "Error desconocido")
     });
   } catch (e) {
     console.error("[AI Landscape] ERROR", e);
