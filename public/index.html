@@ -48,7 +48,7 @@
     </div>
     <div class="ai-choice">
       <div class="choice-head"><div><span class="step">02</span><div><h3>1. Elige los sonidos</h3><p>Escucha las previas de Freesound y añade a la mezcla únicamente los sonidos que quieras. Puedes seleccionar hasta 6.</p></div></div><button id="aiGoMusic" class="ghost small">Ver biblioteca →</button></div>
-      <div id="aiMusicList" class="ai-music-list"></div><div class="mixer-section"><div class="choice-head"><div><span class="step">02</span><div><h3>Mezclador</h3><p>Los resultados son loops de la búsqueda. Por ejemplo, puedes buscar «flauta con chorro de agua», elegir exactamente 2 loops y crear una mezcla que se repetirá durante toda la duración elegida.</p></div></div></div><div id="aiMixer" class="ai-mixer"></div></div>
+      <div id="aiMusicList" class="ai-music-list"></div><div class="mixer-section"><div class="choice-head"><div><span class="step">02</span><div><h3>Mezclador</h3><p>Los resultados son pistas de música relajante relacionadas con tu búsqueda. Por ejemplo, puedes buscar «flauta con chorro de agua», elegir exactamente 2 pistas y crear una mezcla que se repetirá suavemente durante toda la duración elegida.</p></div></div></div><div id="aiMixer" class="ai-mixer"></div></div>
     </div>
     <div class="ai-final">
       <div><span class="step">03</span><div><h3>Crear vídeo</h3><p id="aiSelectionStatus">Selecciona una foto y una música para continuar.</p><div class="ai-summary"><span>🖼️ <b id="aiSelectedPhoto">Sin foto</b></span><span>♫ <b id="aiSelectedMusic">Sin música</b></span><span>⏱️ <b id="aiSelectedDuration">60 min</b></span><span>HD <b>1920×1080</b></span></div></div></div>
@@ -80,7 +80,7 @@
 </main>
 </div>
 <footer>RelaxScape Studio · Vídeos proporcionados por <a href="https://www.pexels.com/" target="_blank" rel="noopener">Pexels</a> · Usa imágenes y música con derechos de uso adecuados.</footer>
-<script src="/app.js?v=20260922-09"></script>
+<script src="/app.js?v=20260922-10"></script>
 <script src="/youtube.js?v=20260922-02"></script>
 <script>
 document.addEventListener("click",function(e){const b=e.target.closest(".nav");if(!b)return;document.querySelectorAll(".nav").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));const tab=document.getElementById(b.dataset.tab);if(tab)tab.classList.add("active");if(b.dataset.tab==="ai"&&typeof window.ensureAIOptions==="function")window.ensureAIOptions();});
