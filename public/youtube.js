@@ -1,6 +1,45 @@
 (()=>{const $=s=>document.querySelector(s);const api=async(url,opt)=>{const r=await fetch(url,opt);let d={};const raw=await r.text();try{d=raw?JSON.parse(raw):{}}catch{}if(!r.ok)throw Error(d.error||("Error "+r.status));return d};const status=m=>{const e=$("#ytStatus");if(e)e.textContent=m};const esc=s=>String(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function parseYouTubeId(raw){
+  let value=String(raw||"").trim();
+  if(!value)return "";
+  if(!/^https?:\/\//i.test(value))value="https://"+value;
+  try{
+    const u=new URL(value);
+    const host=u.hostname.toLowerCase().replace(/^www\./,"");
+    if(host==="youtu.be"){
+      return (u.pathname.split("/").filter(Boolean)[0]||"").split(/[?&#]/)[0];
+    }
+    if(["youtube.com","m.youtube.com","music.youtube.com","youtube-nocookie.com"].includes(host)){
+      let id=u.searchParams.get("v")||"";
+      if(!id){
+        const m=u.pathname.match(/^\/(?:shorts|embed|live|v)\/([^/?#]+)/i);
+        id=m?.[1]||"";
+      }
+      return decodeURIComponent(String(id||"")).trim().split(/[?&#]/)[0];
+    }
+  }catch{}
+  return "";
+}
 async function getYouTubeInfo(raw){
-  return await api("/api/youtube-info?url="+encodeURIComponent(raw));
+  const videoId=parseYouTubeId(raw);
+  if(!/^[A-Za-z0-9_-]{11}$/.test(videoId)){
+    throw Error("Pega un enlace de YouTube válido. No se encontró el ID del vídeo.");
+  }
+  const canonical="https://www.youtube.com/watch?v="+videoId;
+  try{
+    return await api("/api/youtube-info?url="+encodeURIComponent(canonical),{signal:AbortSignal.timeout(12000)});
+  }catch(e){
+    return {
+      title:"Vídeo de YouTube · "+videoId,
+      author:"",
+      thumbnail:"https://i.ytimg.com/vi/"+videoId+"/hqdefault.jpg",
+      sourceUrl:raw,
+      canonicalUrl:canonical,
+      videoId,
+      promptSuggestion:"Vídeo de YouTube · "+videoId,
+      audioAnalysisAvailable:false
+    };
+  }
 }
 async function analyze(){const url=($("#ytUrl")?.value||"").trim();if(!url){status("Pega primero el enlace de YouTube.");return}const b=$("#ytAnalyze");if(b)b.disabled=true;status("🔎 Analizando la referencia de YouTube…");try{const d=await getYouTubeInfo(url);const m=$("#ytMeta");if(m)m.textContent="✓ "+d.title+(d.author?" · "+d.author:"")+" · Referencia reconocida.";const v=$("#ytVisualPrompt");if(v&&!v.value)v.value="Representación visual fiel al contenido real del vídeo: "+d.title+". No asumir que es un paisaje; respetar exactamente lugar, sujeto, actividad, época, objetos, clima y ambiente descritos en la referencia.";status("✓ Referencia reconocida. Se generará una única versión en máxima calidad.")}catch(e){status("❌ "+e.message)}finally{if(b)b.disabled=false}}
 async function create(){
