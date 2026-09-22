@@ -6,6 +6,7 @@ import fs from "fs";
 import { createHash } from "crypto";
 import { fileURLToPath } from "url";
 import { spawn } from "child_process";
+import { setImmediate as yieldImmediate } from "timers/promises";
 import cron from "node-cron";
 import ffmpegPath from "ffmpeg-static";
 import { InferenceClient } from "@huggingface/inference";
@@ -106,7 +107,7 @@ function writeWav(file, samples, sampleRate=44100, channels=2){
   fs.writeFileSync(file,b);
 }
 
-function makeCompositionWav(track, wavPath, durationMs=18000){
+async function makeCompositionWav(track, wavPath, durationMs=18000){
   // SECUENCIADOR MUSICAL LOCAL
   // Convierte la petición del usuario en una pequeña "sesión" musical:
   // 1) interpreta estilo/tempo/ambiente,
@@ -538,6 +539,7 @@ function makeCompositionWav(track, wavPath, durationMs=18000){
   // anterior recorría TODOS los eventos para CADA muestra, lo que hacía que
   // previews de 60 s pudieran tardar demasiado en Render. Esta ruta mantiene
   // exactamente la misma síntesis, pero reduce drásticamente el trabajo.
+  let renderTick=0;
   for(const e of events){
     const renderer=renderers[e.role];
     if(!renderer)continue;
@@ -551,6 +553,7 @@ function makeCompositionWav(track, wavPath, durationMs=18000){
       const pan=.13*Math.sin(2*Math.PI*t/(8+(h%5)));
       samples[i*2]+=x*(1-pan);
       samples[i*2+1]+=x*(1+pan);
+      if((++renderTick % 200000)===0) await yieldImmediate();
     }
   }
 
@@ -580,6 +583,7 @@ function makeCompositionWav(track, wavPath, durationMs=18000){
     r=Math.tanh(r*1.35)*m;
     samples[i*2]=clamp(l,-.82,.82);
     samples[i*2+1]=clamp(r,-.82,.82);
+    if((++renderTick % 200000)===0) await yieldImmediate();
   }
 
   let peak=0;
@@ -592,7 +596,7 @@ async function generateAIMusicFile(track, outPath, durationMs=18000){
   // Motor local gratuito: la búsqueda del usuario controla directamente la composición.
   // Generamos WAV temporal y lo convertimos a MP3 real para que el navegador lo reproduzca.
   const wavPath=outPath.replace(/\.mp3$/i,".wav");
-  makeCompositionWav(track, wavPath, durationMs);
+  await makeCompositionWav(track, wavPath, durationMs);
   await runFfmpeg(["-y","-i",wavPath,"-c:a","libmp3lame","-b:a","320k","-ar","48000","-ac","2",outPath]);
   fs.rmSync(wavPath,{force:true});
   const stat=fs.statSync(outPath);
@@ -1199,6 +1203,8 @@ app.post("/api/video-preview-options",(req,res)=>{
       for(let i=0;i<variants.length;i++){
         const track=variants[i];
         const musicPath=path.join(work,track.file);
+        job.stage="music-"+track.variant;
+        job.progress=Math.round((i/variants.length)*100);
         await generateAIMusicFile(track,musicPath,18000);
         const videoName="video-preview-"+jobId+"-"+track.variant+".mp4";
         const out=path.join(VIDEO_DIR,videoName);
