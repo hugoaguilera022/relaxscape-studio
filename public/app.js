@@ -271,15 +271,28 @@ async function waitForAIMusic(){
 function escapeHtml(v){return String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]))}
 function formatDuration(sec){const s=Math.max(0,Math.round(Number(sec)||0));return Math.floor(s/60)+":"+String(s%60).padStart(2,"0")}
 function loadAIImagesSequentially(){
-  const cards=$("#aiImageGrid .ai-photo");
-  let index=0;
   const next=()=>{
-    if(index>=cards.length)return;
-    const img=cards[index].querySelector("img");
+    const cards=Array.from(document.querySelectorAll("#aiImageGrid .ai-photo"));
+    const index=cards.findIndex(card=>{
+      const img=card && card.querySelector ? card.querySelector("img") : null;
+      return img && !img.dataset.loaded;
+    });
+    if(index<0)return;
+    const card=cards[index];
+    const img=card.querySelector("img");
     const src=img?.dataset?.src;
-    if(!img||!src){index++;next();return}
+    if(!src){
+      img.dataset.loaded="1";
+      setTimeout(next,100);
+      return;
+    }
     let done=false;
-    const advance=()=>{if(done)return;done=true;index++;setTimeout(next,1500)};
+    const advance=()=>{
+      if(done)return;
+      done=true;
+      img.dataset.loaded="1";
+      setTimeout(next,1500);
+    };
     img.onload=advance;
     img.onerror=advance;
     img.src=src;
