@@ -788,7 +788,7 @@ async function generatePollinationsLandscape(prompt, index=0) {
   const seed = Date.now() + index * 7919;
   const attempts = [
     "https://gen.pollinations.ai/image/" + encodeURIComponent(finalPrompt) +
-      "?model=black-forest-labs/flux.1-schnell&seed=" + seed,
+      "?model=flux&seed=" + seed,
     "https://gen.pollinations.ai/image/" + encodeURIComponent(finalPrompt) +
       "?model=flux&seed=" + seed
   ];
