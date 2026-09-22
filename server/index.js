@@ -823,6 +823,23 @@ async function generatePollinationsLandscape(prompt, index=0) {
 
   // Último recurso gratuito y local: nunca dejamos la generación sin imagen.
   const fallback = makeFallbackLandscape(filename, userPrompt);
+  // El fallback local es SVG; FFmpeg no trae decodificador SVG en Render.
+  // Convertimos el SVG a PNG con un formato que FFmpeg pueda leer.
+  const svgPath = path.join(IMAGE_DIR, filename);
+  const pngFilename = filename.replace(/\.jpg$/i, ".png");
+  const pngPath = path.join(IMAGE_DIR, pngFilename);
+  try {
+    const svgData = fs.readFileSync(svgPath);
+    const base64 = svgData.toString("base64");
+    const dataUrl = "data:image/svg+xml;base64," + base64;
+    const sharp = require("sharp");
+    await sharp(Buffer.from(svgData)).png().toFile(pngPath);
+    fs.unlinkSync(svgPath);
+    fallback.name = pngFilename;
+    fallback.url = "/media/images/" + encodeURIComponent(pngFilename);
+  } catch (e) {
+    console.warn("[Pollinations Image] No se pudo rasterizar fallback SVG:", e.message);
+  }
   return {
     ...fallback,
     ai: false,
