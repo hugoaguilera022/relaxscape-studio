@@ -827,7 +827,8 @@ async function generatePollinationsLandscape(prompt, index=0) {
 
   // Último recurso gratuito y local: nunca dejamos la generación sin imagen.
   const fallback = makeFallbackLandscape(filename, userPrompt);
-  // Último recurso gratuito y local: el SVG conserva su extensión correcta.\n  return {
+  // Último recurso gratuito y local: el SVG conserva su extensión correcta.
+  return {
     ...fallback,
     ai: false,
     fallback: true,
