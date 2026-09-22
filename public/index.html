@@ -58,12 +58,12 @@
 </section>
 
 <section id="youtube" class="tab">
-  <div class="section-head"><div><p class="eyebrow">YOUTUBE → RELAX VIDEO</p><h2>Convierte tu referencia en 3 vídeos</h2><p class="sub">Pega el enlace de YouTube que tengas derecho a utilizar, describe el ambiente visual y RelaxScape creará <b>exactamente 3 vídeos reales de 1 minuto</b>. Después eliges uno y solo entonces puedes crear el vídeo largo.</p></div><span class="badge">3 × 60 S · MP4 · 1080p</span></div>
+  <div class="section-head"><div><p class="eyebrow">YOUTUBE → IA VIDEO</p><h2>Convierte una referencia de YouTube en un vídeo IA</h2><p class="sub">Pega el enlace de un vídeo relajante que tengas derecho a utilizar. La IA analizará su referencia y creará una interpretación visual original con movimiento real y música IA específica.</p></div><span class="badge">IA EXTERNA · MP4 · 1080p</span></div>
   <div class="ai-builder">
     <div class="prompt-card"><label for="ytUrl">ENLACE DE YOUTUBE</label><div class="prompt-search"><input id="ytUrl" class="text" placeholder="https://www.youtube.com/watch?v=..."><button id="ytAnalyze" class="search-btn" type="button">⌕</button></div><small id="ytMeta" class="note">Solo procesa contenido que tengas derecho a utilizar.</small></div>
-    <div class="prompt-card"><label>GENERACIÓN DE AUDIO IA</label><div class="note">La IA creará tres interpretaciones musicales originales inspiradas en la referencia de YouTube y en su título/tema. No se reutiliza ni se descarga el audio del vídeo.</div></div>
-    <div class="prompt-card"><label for="ytVisualPrompt">DESCRIPCIÓN VISUAL</label><div class="prompt-search"><textarea id="ytVisualPrompt" class="text" rows="3" placeholder="Ej.: lago nocturno, montañas, niebla suave, luz de luna..."></textarea><button id="ytGenerate" class="primary small" type="button">🎬 Crear 3 versiones</button></div></div>
-    <div id="ytStatus" class="builder-bottom">Pega el enlace, describe el ambiente visual y pulsa «Crear 3 versiones».</div>
+    <div class="prompt-card"><label>CREACIÓN AUTOMÁTICA</label><div class="note">No tienes que elegir paisajes ni buscar sonidos. La IA externa utiliza el título, descripción, etiquetas y miniatura de la referencia para construir el vídeo original.</div></div>
+    <div class="prompt-card"><label for="ytVisualPrompt">REFERENCIA VISUAL</label><div class="prompt-search"><textarea id="ytVisualPrompt" class="text" rows="3" readonly placeholder="La IA decidirá automáticamente el contenido visual a partir del enlace de YouTube."></textarea><button id="ytGenerate" class="primary small" type="button">🎬 Crear vídeo con IA externa</button></div></div>
+    <div id="ytStatus" class="builder-bottom">Pega el enlace y pulsa analizar. Después crea el vídeo directamente con IA externa.</div>
     <div id="ytResult" class="hidden"></div>
   </div>
 </section>
@@ -81,7 +81,7 @@
 </div>
 <footer>RelaxScape Studio · Vídeos proporcionados por <a href="https://www.pexels.com/" target="_blank" rel="noopener">Pexels</a> · Usa imágenes y música con derechos de uso adecuados.</footer>
 <script src="/app.js?v=20260923-01"></script>
-<script src="/youtube.js?v=20260922-02"></script>
+<script src="/youtube.js?v=20260923-01"></script>
 <script>
 document.addEventListener("click",function(e){const b=e.target.closest(".nav");if(!b)return;document.querySelectorAll(".nav").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));const tab=document.getElementById(b.dataset.tab);if(tab)tab.classList.add("active");if(b.dataset.tab==="ai"&&typeof window.ensureAIOptions==="function")window.ensureAIOptions();});
 </script>
