@@ -53,27 +53,42 @@ async function generateAIImagesOnly(){
 
 async function generateAIOptions(){
   const prompt=(($("#aiImagePrompt").value||"").trim()||"peaceful nature landscape");
-  const musicPrompt=(($("#aiMusicPrompt").value||"").trim()||"piano relaxing ambient");
+  const soundPrompt=(($("#aiMusicPrompt").value||"").trim()||"piano relaxing ambient");
   S.aiLoading=true; S.aiImages=[]; S.aiMusic=[]; S.externalMusic=[]; S.selectedExternalMusic=[]; S.image=null; S.music=null;
   const status=$("#aiSelectionStatus"), ig=$("#aiImageGrid"), mg=$("#aiMusicList");
-  if(status)status.textContent="✨ Generando 4 paisajes y preparando la música IA…";
+  if(status)status.textContent="✨ Generando 4 paisajes IA y buscando sonidos para tu mezcla…";
   if(ig)ig.innerHTML='<div class="empty">🤖 Generando 4 paisajes diferentes…</div>';
-  if(mg)mg.innerHTML='<div class="empty">♫ Preparando 4 versiones musicales…</div>';
+  if(mg)mg.innerHTML='<div class="empty">🔎 Buscando varios sonidos y músicas relacionados…</div>';
   try{
-    const [imageResult,musicStart]=await Promise.all([
+    const [imageResult,searchStart]=await Promise.all([
       api("/api/ai-images",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({theme:prompt,count:4})}),
-      api("/api/ai-music",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({musicPrompt,count:4})})
+      api("/api/external-music-search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({q:soundPrompt})})
     ]);
     S.aiImages=imageResult.images||[];
-    if(!S.aiImages.length)throw Error("No se pudo generar ningún paisaje IA.");
+    if(!S.aiImages.length)throw Error("No se pudieron generar los 4 paisajes IA.");
     S.image=S.aiImages[0];
     renderAICreator();
-    if(status)status.textContent="✓ Paisajes listos. ♫ Generando las 4 versiones musicales…";
-    await waitForAIMusic();
-    if(status)status.textContent="✓ 4 paisajes y 4 versiones musicales listas. Elige tu combinación.";
+    if(status)status.textContent="✓ 4 paisajes listos. 🔎 Terminando la búsqueda de sonidos…";
+
+    let d=null;
+    for(let n=0;n<90;n++){
+      d=await api("/api/external-music-search-status?jobId="+encodeURIComponent(searchStart.jobId));
+      if(d.status==="succeeded")break;
+      if(d.status==="failed")throw Error(d.error||"No se pudo completar la búsqueda de sonidos.");
+      await new Promise(r=>setTimeout(r,1000));
+    }
+    if(!d||d.status!=="succeeded")throw Error("La búsqueda de sonidos está tardando demasiado.");
+    S.externalMusic=d.results||[];
+    if(!S.externalMusic.length)throw Error("No se encontraron sonidos. Prueba con otro instrumento o ambiente.");
+    if(status)status.textContent="✓ 4 paisajes y "+S.externalMusic.length+" sonidos listos. Selecciona varios para crear tu mezcla.";
+    renderAICreator();
   }catch(e){
-    if(status)status.textContent="❌ "+(e.message||"No se pudieron generar las opciones IA.");
-  }finally{S.aiLoading=false;renderAICreator()}
+    if(status)status.textContent="❌ "+(e.message||"No se pudieron generar las opciones.");
+    renderAICreator();
+  }finally{
+    S.aiLoading=false;
+    renderAICreator();
+  }
 }
 
 async function generateAIMusicOnly(){
@@ -106,26 +121,26 @@ async function generateAIMusicOnly(){
   const prompt=(($("#aiMusicPrompt").value||"").trim()||"piano relaxing ambient");
   S.aiLoading=true; S.aiMusic=[]; S.externalMusic=[]; S.selectedExternalMusic=[]; S.music=null;
   const status=$("#aiSelectionStatus"), mg=$("#aiMusicList");
-  if(status)status.textContent="♫ Generando 4 opciones de música IA…";
-  if(mg)mg.innerHTML='<div class="empty">♫ Generando música IA según tu descripción…</div>';
+  if(status)status.textContent="🔎 Buscando audios reales según tu búsqueda…";
+  if(mg)mg.innerHTML='<div class="empty">🔎 Buscando grabaciones reales de instrumentos y ambientes…</div>';
   try{
-    await api("/api/ai-music",{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({musicPrompt:prompt,count:4})
-    });
-    await waitForAIMusic();
-    if(S.aiMusic[0]){
-      S.music=S.aiMusic[0];
-      renderAICreator(); update(); picker();
+    const started=await api("/api/external-music-search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({q:prompt})});
+    let d=null;
+    for(let n=0;n<90;n++){
+      d=await api("/api/external-music-search-status?jobId="+encodeURIComponent(started.jobId));
+      if(d.status==="succeeded")break;
+      if(d.status==="failed")throw Error(d.error||"No se pudo completar la búsqueda.");
+      await new Promise(r=>setTimeout(r,1000));
     }
-    if(status)status.textContent="✓ Música IA generada. Puedes escuchar y elegir una de las 4 opciones.";
-  }catch(e){
-    if(status)status.textContent="❌ "+(e.message||"No se pudo generar la música IA.");
-  }finally{
-    S.aiLoading=false;
+    if(!d||d.status!=="succeeded")throw Error("La búsqueda está tardando demasiado.");
+    S.externalMusic=d.results||[];
+    if(!S.externalMusic.length)throw Error("No se encontraron sonidos para esa búsqueda.");
+    if(status)status.textContent="✓ "+S.externalMusic.length+" sonidos encontrados. Selecciona varios para mezclarlos.";
     renderAICreator();
-  }
+  }catch(e){
+    if(status)status.textContent="❌ "+e.message;
+    if(mg)mg.innerHTML='<div class="empty">No se pudo buscar audio.<br><small>'+escapeHtml(e.message||"Error desconocido")+'</small></div>';
+  }finally{S.aiLoading=false;renderAICreator()}
 }
 
 async function importExternalMusic(x){
