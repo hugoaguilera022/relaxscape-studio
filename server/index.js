@@ -607,7 +607,7 @@ async function generateAIMusicFile(track, outPath, durationMs=18000){
   return stat.size;
 }
 
-async async function ensureBuiltinMusic(tracks=[]){
+async function ensureBuiltinMusic(tracks=[]){
   const results=[];
   for(const track of tracks){
     try{
