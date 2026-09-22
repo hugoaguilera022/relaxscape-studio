@@ -1034,23 +1034,20 @@ function hashString(value=""){
 
 async function generateLocalMotionVideo({imagePath,musicPath,outputPath,durationSeconds=60,width=480,height=270,variant=1}){
   const duration=Math.max(5,Number(durationSeconds)||60);
-  const fps=15;
   const v=Math.min(3,Math.max(1,Number(variant)||1));
-  const xExpr=v===1
-    ? "(iw-ow)*(0.5+0.5*sin(t/18))"
-    : v===2
-      ? "(iw-ow)*(0.5+0.5*cos(t/22))"
-      : "(iw-ow)*(0.5+0.5*sin(t/15))";
-  const yExpr=v===3 ? "(ih-oh)*(0.5+0.5*cos(t/19))" : "(ih-oh)*0.5";
-  const scaledW=Math.ceil(width*1.12),scaledH=Math.ceil(height*1.12);
-  const filter="[0:v]scale="+scaledW+":"+scaledH+":force_original_aspect_ratio=increase,crop="+scaledW+":"+scaledH+",crop="+width+":"+height+":"+xExpr+":"+yExpr+",fps="+fps+",format=yuv420p[v]";
+  // Render-stable path: keep the three versions distinct through their own
+  // images and music, while avoiding expensive per-frame motion filters.
+  // This is deliberately conservative for Render's CPU environment.
+  const filter="[0:v]scale="+Math.round(width*1.08)+":"+Math.round(height*1.08)+":force_original_aspect_ratio=increase,crop="+width+":"+height+",format=yuv420p[v]";
   await runFfmpeg([
-    "-y","-loop","1","-framerate",String(fps),"-i",imagePath,
-    "-stream_loop","-1","-i",musicPath,
+    "-y",
+    "-loop","1","-framerate","15","-i",imagePath,
+    "-stream_loop","-1","i",musicPath,
     "-filter_complex",filter,
     "-map","[v]","-map","1:a:0","-t",String(duration),
-    "-c:v","libx264","-preset","fast","-crf",width>=1280?"18":"22","-threads","2",
-    "-c:a","aac","-b:a",width>=1280?"256k":"128k","-ar","48000","-ac","2","-movflags","+faststart",outputPath
+    "-c:v","libx264","-preset","veryfast","-crf",width>=1280?"18":"22","-threads","2",
+    "-c:a","aac","-b:a",width>=1280?"256k":"128k","-ar","48000","-ac","2",
+    "-movflags","+faststart",outputPath
   ]);
 }
 
