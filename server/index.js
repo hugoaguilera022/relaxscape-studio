@@ -647,17 +647,32 @@ app.get("/api/library", (_, res) => {
 
 app.get("/api/youtube-info", async (req,res)=>{
   const raw=String(req.query.url||"").trim();
-  if(!/^https?:\/\/(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(raw)){
-    return res.status(400).json({error:"Introduce un enlace válido de YouTube."});
-  }
+  if(!raw) return res.status(400).json({error:"Pega un enlace de YouTube."});
   try{
     const url=new URL(raw);
-    if(url.hostname==="youtu.be"){
-      if(!url.pathname.slice(1)) throw new Error("Falta el identificador del vídeo.");
-    }else if(!url.searchParams.get("v") && !/^\/shorts\//i.test(url.pathname) && !/^\/embed\//i.test(url.pathname)){
-      throw new Error("No se encontró el identificador del vídeo.");
+    const host=url.hostname.toLowerCase().replace(/^www\./,"");
+    const isYouTubeHost=["youtube.com","m.youtube.com","music.youtube.com","youtube-nocookie.com","youtu.be"].includes(host);
+    if(!isYouTubeHost) return res.status(400).json({error:"El enlace no pertenece a YouTube."});
+
+    let videoId="";
+    if(host==="youtu.be"){
+      videoId=url.pathname.split("/").filter(Boolean)[0]||"";
+    }else{
+      videoId=url.searchParams.get("v")||"";
+      if(!videoId){
+        const m=url.pathname.match(/^\/(?:shorts|embed|live|v)\/([^/?#]+)/i);
+        videoId=m?.[1]||"";
+      }
     }
-    const oembed="https://www.youtube.com/oembed?url="+encodeURIComponent(raw)+"&format=json";
+    videoId=String(videoId).trim();
+    if(!/^[A-Za-z0-9_-]{6,20}$/.test(videoId)){
+      throw new Error("No se encontró un identificador de vídeo válido en el enlace.");
+    }
+
+    // Normalizamos cualquier variante válida a una URL watch estándar para que
+    // oEmbed no dependa del formato concreto que haya pegado el usuario.
+    const canonicalUrl="https://www.youtube.com/watch?v="+encodeURIComponent(videoId);
+    const oembed="https://www.youtube.com/oembed?url="+encodeURIComponent(canonicalUrl)+"&format=json";
     const r=await fetchWithTimeout(oembed,{headers:{Accept:"application/json"}},10000);
     const data=await r.json().catch(()=>({}));
     if(!r.ok) return res.status(400).json({error:"YouTube no pudo reconocer ese vídeo."});
