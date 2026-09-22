@@ -2430,28 +2430,52 @@ app.get("/api/automation/status", (_, res) => {
 
 async function generateDaily({force=false}={}) {
   const music = listFiles(MUSIC_DIR, "/media/music");
-  if (!music.length) return console.log("Daily render omitido: falta música.");
-  try {
-    const dailyImage = await refreshDailyLandscape();
-    const today = new Date().toISOString().slice(0, 10);
-    const dayNumber = Math.floor(Date.parse(today + "T00:00:00Z") / 86400000);
-    const musicPool = music.filter(x => !x.name.startsWith("ai-music-"));
-    const pool = musicPool.length ? musicPool : music;
-    const musicItem = pool[((dayNumber % pool.length) + pool.length) % pool.length];
+  if (!music.length) throw new Error("Falta música para el vídeo diario.");
+  const dailyImage = await refreshDailyLandscape();
+  const today = new Intl.DateTimeFormat("en-CA", {timeZone: DAILY_TIME_ZONE}).format(new Date());
+  const dayNumber = Math.floor(Date.parse(today + "T00:00:00Z") / 86400000);
+  const musicPool = music.filter(x => !x.name.startsWith("ai-music-"));
+  const pool = musicPool.length ? musicPool : music;
+  const musicItem = pool[((dayNumber % pool.length) + pool.length) % pool.length];
 
-    const imagePath = path.join(IMAGE_DIR, dailyImage.name);
-    const musicPath = path.join(MUSIC_DIR, musicItem.name);
-    const filename = `daily-${today}.mp4`;
-    const out = path.join(VIDEO_DIR, filename);
+  const imagePath = path.join(IMAGE_DIR, dailyImage.name);
+  const musicPath = path.join(MUSIC_DIR, musicItem.name);
+  const filename = `daily-${today}.mp4`;
+  const out = path.join(VIDEO_DIR, filename);
+  const workDir = path.join(VIDEO_DIR, "daily-work-" + Date.now());
+  const segment = path.join(workDir, "segment.mp4");
+  fs.mkdirSync(workDir, {recursive:true});
+
+  try {
+    if (!force && fs.existsSync(out) && fs.statSync(out).size > 1024) {
+      return {name:filename, url:"/media/videos/"+encodeURIComponent(filename), image:dailyImage, music:musicItem, reused:true};
+    }
+
+    // Renderizamos solo 15 s. Después creamos la hora completa por stream-copy,
+    // evitando recodificar 3600 s y evitando que Render se quede sin CPU/memoria.
+    await runFfmpeg([
+      "-y","-loop","1","-framerate","10","-i",imagePath,
+      "-stream_loop","-1","-i",musicPath,
+      "-t","15","-map","0:v:0","-map","1:a:0",
+      "-vf","scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
+      "-r","10","-c:v","libx264","-preset","ultrafast","-crf","20","-threads","2",
+      "-pix_fmt","yuv420p","-c:a","aac","-b:a","192k","-ar","48000","-ac","2",
+      "-movflags","+faststart",segment
+    ]);
 
     await runFfmpeg([
-      "-y","-loop","1","-i",imagePath,"-stream_loop","-1","-i",musicPath,"-t","3600",
-      "-vf","scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
-      "-c:v","libx264","-preset","veryfast","-crf","23","-c:a","aac","-b:a","160k","-shortest",out
+      "-y","-stream_loop","-1","-i",segment,"-t","3600",
+      "-map","0:v:0","-map","0:a:0","-c","copy","-movflags","+faststart",out
     ]);
+
+    const result={name:filename,url:"/media/videos/"+encodeURIComponent(filename),image:dailyImage,music:musicItem,durationHours:1,segmentSeconds:15,generatedAt:new Date().toISOString()};
     console.log("Daily video creado:", filename, "paisaje:", dailyImage.name, "música:", musicItem.name);
+    return result;
   } catch (e) {
-    console.error("Daily render error:", e.message);
+    console.error("Daily render error:", e.stack || e.message);
+    throw e;
+  } finally {
+    fs.rmSync(workDir,{recursive:true,force:true});
   }
 }
 
