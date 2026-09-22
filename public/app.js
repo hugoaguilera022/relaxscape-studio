@@ -270,11 +270,30 @@ async function waitForAIMusic(){
 
 function escapeHtml(v){return String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]))}
 function formatDuration(sec){const s=Math.max(0,Math.round(Number(sec)||0));return Math.floor(s/60)+":"+String(s%60).padStart(2,"0")}
+function loadAIImagesSequentially(){
+  const cards=$("#aiImageGrid .ai-photo");
+  let index=0;
+  const next=()=>{
+    if(index>=cards.length)return;
+    const img=cards[index].querySelector("img");
+    const src=img?.dataset?.src;
+    if(!img||!src){index++;next();return}
+    let done=false;
+    const advance=()=>{if(done)return;done=true;index++;setTimeout(next,1500)};
+    img.onload=advance;
+    img.onerror=advance;
+    img.src=src;
+    setTimeout(advance,70000);
+  };
+  next();
+}
+
 function renderAICreator(){
   const ig=$("#aiImageGrid"),mg=$("#aiMusicList"),mx=$("#aiMixer");
   if(ig){
-    ig.innerHTML=S.aiImages.length?S.aiImages.map((x,i)=>'<button class="ai-photo '+(S.image?.url===x.url?"selected":"")+'" data-url="'+x.url+'" data-name="'+x.name+'"><img src="'+x.url+'" alt="Paisaje IA '+(i+1)+'"><span>Opción IA '+(i+1)+' · 2K</span></button>').join(""):'<div class="empty">✨ Generando opciones IA…</div>';
-    $$("#aiImageGrid .ai-photo").forEach(e=>e.onclick=()=>{S.image={url:e.dataset.url,name:e.dataset.name};renderAICreator()});
+    ig.innerHTML=S.aiImages.length?S.aiImages.map((x,i)=>'<button class="ai-photo '+(S.image?.url===x.url?"selected":"")+'" data-url="'+escapeHtml(x.url)+'" data-name="'+escapeHtml(x.name)+'"><img data-src="'+escapeHtml(x.url)+'" src="" alt="Imagen IA '+(i+1)+'"><span>Opción IA '+(i+1)+' · 2K</span></button>').join(""):'<div class="empty">✨ Generando opciones IA…</div>';
+    $("#aiImageGrid .ai-photo").forEach(e=>e.onclick=()=>{S.image={url:e.dataset.url,name:e.dataset.name};renderAICreator()});
+    if(S.aiImages.length) loadAIImagesSequentially();
   }
   if(mg){
     if(S.aiMusic.length){
