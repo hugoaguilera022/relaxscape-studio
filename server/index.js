@@ -1417,25 +1417,51 @@ app.post("/api/ai-options", async (req, res) => {
 });
 
 function musicIntentProfile(prompt=""){
-  const p=String(prompt||"").toLowerCase();
+  const p=String(prompt||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
   const has=(...words)=>words.some(w=>p.includes(w));
   const parts=[];
-  if(has("piano","teclas","pianístico","pianistica")) parts.push("warm acoustic felt piano, intimate close-mic piano tone");
-  if(has("guitarra","acústica","acustica","nylon","guitar")) parts.push("professional nylon-string acoustic guitar");
-  if(has("violín","violin","cello","cuerdas","strings","orquesta","orchestral")) parts.push("warm expressive bowed strings");
-  if(has("flauta","flute","bambú","bambu","viento","wind")) parts.push("airy bamboo flute");
-  if(has("agua","water","océano","oceano","mar","olas","waves","río","rio","lluvia","rain","cascada","waterfall")) parts.push("subtle realistic flowing-water ambience, integrated naturally behind the music");
-  if(has("bosque","forest","montaña","montana","naturaleza","nature","pájaros","pajaros","birds","jardín","jardin")) parts.push("subtle organic nature ambience");
-  if(has("spa","meditación","meditacion","zen","yoga","respiración","respiracion")) parts.push("deep spa and meditation atmosphere");
-  if(has("sueño","sueno","dormir","sleep","noche","night","luna","moon","estrellas","stars")) parts.push("deep nocturnal sleep atmosphere");
-  if(has("cinemático","cinematic","película","pelicula","film","emocional","emotional")) parts.push("cinematic evolving harmonic texture");
+
+  // Instrumentos musicales
+  if(has("piano","teclas","pianistico","pianistica")) parts.push("warm acoustic felt piano, intimate close-mic piano tone");
+  if(has("guitarra","acustica","nylon","guitar")) parts.push("professional nylon-string acoustic guitar");
+  if(has("violin","cello","viola","cuerdas","strings","orquesta","orchestral")) parts.push("warm expressive bowed strings");
+  if(has("flauta","flute","bambu","flautita")) parts.push("airy bamboo flute");
+  if(has("arpa","harp")) parts.push("delicate concert harp");
+  if(has("kalimba","mbira")) parts.push("soft kalimba");
+  if(has("hang","hang drum","handpan","handpan")) parts.push("soft handpan resonance");
+  if(has("sax","saxofon","saxophone")) parts.push("breathy soft saxophone");
+  if(has("sintetizador","synth","synthesizer","pad")) parts.push("warm analog ambient pad");
+  if(has("campanas","bells","gong","cuencos","singing bowl","tibet")) parts.push("very soft resonant meditation bells and bowls");
+
+  // Agua y naturaleza: distinguimos familias para que la IA no convierta todo
+  // en el mismo "water ambience".
+  if(has("chorro","chorro de agua","agua corriendo","agua corriente","running water","stream","arroyo","riachuelo")) parts.push("close realistic flowing stream or water jet ambience, gentle continuous texture");
+  if(has("rio","river")) parts.push("wide natural river-flow ambience, soft moving-water texture");
+  if(has("cascada","waterfall")) parts.push("distant soft waterfall ambience, never harsh or dominant");
+  if(has("fuente","fountain")) parts.push("quiet garden fountain water ambience");
+  if(has("lluvia","rain","llovizna","drizzle")) parts.push("soft detailed rain ambience, fine droplets, no thunder");
+  if(has("tormenta","thunderstorm","trueno","thunder")) parts.push("distant gentle rain with low soft thunder, non-aggressive");
+  if(has("oceano","ocean","mar","olas","waves","sea","costa","coast","playa","beach")) parts.push("soft ocean waves and distant sea ambience");
+  if(has("bosque","forest","woodland","naturaleza","nature","pajaros","birds")) parts.push("subtle forest ambience with distant birds");
+  if(has("viento","wind","brisa","breeze")) parts.push("soft natural breeze ambience");
+  if(has("fuego","fire","chimenea","fireplace","hogar")) parts.push("quiet fireplace crackle ambience");
+  if(has("noche","night","luna","moon","estrellas","stars")) parts.push("deep nocturnal atmosphere with very subtle night ambience");
+  if(has("grillos","crickets")) parts.push("soft distant crickets at night");
+  if(has("hojas","leaves","foliage")) parts.push("gentle leaves moving in a light breeze");
+
+  // Intención musical/ambiental
+  if(has("spa","meditacion","zen","yoga","respiracion","mindfulness")) parts.push("deep spa and meditation atmosphere");
+  if(has("sueno","dormir","sleep","noche","night")) parts.push("deep nocturnal sleep atmosphere");
+  if(has("cinematico","cinematic","pelicula","film","emocional","emotional")) parts.push("cinematic evolving harmonic texture");
   if(has("lofi","lo-fi","chill","chillout")) parts.push("soft organic lo-fi texture");
-  if(has("electrónica","electronica","synth","sintetizador","ambient")) parts.push("warm analog ambient synthesis");
-  if(has("triste","melancólico","melancolico")) parts.push("gentle melancholic harmonic color");
+  if(has("electronica","synth","ambient")) parts.push("warm analog ambient synthesis");
+  if(has("triste","melancolico","melancholic")) parts.push("gentle melancholic harmonic color");
   if(has("alegre","luminoso","bright","sunrise","amanecer")) parts.push("warm luminous harmonic color");
-  if(has("relajante","relajación","relajacion","relax","calma","calmado","tranquilo","tranquila","bienestar","stress","estrés","ansiedad","anxiety")) parts.push("deep relaxation, very slow and gentle, soft sustained harmony, no aggressive rhythm, no abrupt changes");
-  if(has("sin batería","sin bateria","sin percusión","sin percusion","no drums","no percussion")) parts.push("absolutely no drums or percussion");
-  return parts.join(", ") || "deep relaxation ambient music, slow gentle pacing, warm sustained harmony";
+  if(has("relajante","relajacion","relax","calma","calmado","tranquilo","tranquila","bienestar","stress","estres","ansiedad","anxiety"))
+    parts.push("deep relaxation, very slow and gentle, soft sustained harmony, no aggressive rhythm, no abrupt changes");
+  if(has("sin bateria","sin percusion","no drums","no percussion")) parts.push("absolutely no drums or percussion");
+
+  return [...new Set(parts)].join(", ") || "deep relaxation ambient music, slow gentle pacing, warm sustained harmony";
 }
 
 function buildAIMusicPrompt(originalSearch="", variant=1){
@@ -1467,7 +1493,7 @@ function buildAIMusicPrompt(originalSearch="", variant=1){
 
 function aiTracksForBackground(prompt="", generationId=0, count=4){
   const originalSearch=String(prompt||"").trim().slice(0,700);
-  const requestedCount=Math.min(4,Math.max(1,Number(count)||4));
+  const requestedCount=Math.min(6,Math.max(1,Number(count)||6));
   const sessionNonce="music-"+generationId+"-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,10);
   // PALETA SONORA COMÚN: todas las versiones parten del mismo timbre/ambiente.
   // Solo cambian melodía, registro, voicing y pequeñas decisiones de fraseo.
@@ -2065,9 +2091,9 @@ async function runFreesoundSearchJob(jobId,input){
     // que la interfaz parezca congelada en las mismas cuatro pistas.
     chosen.sort(()=>Math.random()-0.5);
 
-    // Además de Freesound, generamos 4 piezas originales. Cada ejecución recibe
+    // Además de Freesound, generamos 6 interpretaciones originales. Cada ejecución recibe
     // una semilla nueva, por lo que no reutiliza el mismo material.
-    const aiTracks=aiTracksForBackground(input,Date.now()+Math.floor(Math.random()*1000000),4);
+    const aiTracks=aiTracksForBackground(input,Date.now()+Math.floor(Math.random()*1000000),6);
     await ensureBuiltinMusic(aiTracks);
     const aiResults=aiTracks.map((t,i)=>{
       const filePath=path.join(MUSIC_DIR,t.file);
@@ -2080,7 +2106,10 @@ async function runFreesoundSearchJob(jobId,input){
         duration:12,
         rating:null,
         downloads:0,
-        tags:["ai","relaxing","ambient","music",...(t.soundPalette||"").split(",").slice(0,4)],
+        tags:[
+          "ai","relaxing","ambient","music",
+          ...((t.soundPalette||"").toLowerCase().match(/flauta|flute|piano|guitar|guitarra|harp|arpa|kalimba|strings|violin|water|agua|rain|lluvia|ocean|waves|forest|bosque|fire|fuego|wind|viento|stream|river|cascada/g)||[]).slice(0,8)
+        ],
         preview:"/media/music/"+encodeURIComponent(t.file),
         relaxing:true,
         relaxingLike:true,
@@ -2278,59 +2307,97 @@ async function buildSelectedFreesoundMixJob(jobId,tracks,durationMinutes){
     const local=[];
     for(let i=0;i<tracks.length;i++){
       const t=tracks[i]||{};
-      if(!t.preview || !/^https?:\/\//i.test(t.preview)) throw new Error("Una de las previas seleccionadas no es válida.");
-      const rr=await fetchWithTimeout(t.preview,{headers:{Accept:"audio/mpeg,audio/*"}},20000);
-      if(!rr.ok) throw new Error("Freesound preview HTTP "+rr.status);
-      const file=path.join(work,"source-"+i+".mp3");
-      fs.writeFileSync(file,Buffer.from(await rr.arrayBuffer()));
-      if(!fs.statSync(file).size) throw new Error("Una de las previas seleccionadas llegó vacía.");
-      local.push(file);
-      job.progress=Math.round(((i+1)/tracks.length)*30);
+      if(!t.preview || !/^https?:\/\//i.test(t.preview)) throw new Error("Una de las pistas seleccionadas no es válida.");
+      const isAI=String(t.preview).includes("/media/music/") || String(t.provider||"").toLowerCase().includes("relaxscape ai");
+      let file;
+      if(isAI){
+        const rawName=decodeURIComponent(String(t.preview).split("/").pop());
+        const candidate=path.join(MUSIC_DIR,rawName);
+        if(!fs.existsSync(candidate)) throw new Error("No se encontró una pista IA seleccionada.");
+        file=candidate;
+      }else{
+        const rr=await fetchWithTimeout(t.preview,{headers:{Accept:"audio/mpeg,audio/*"}},20000);
+        if(!rr.ok) throw new Error("Audio externo HTTP "+rr.status);
+        file=path.join(work,"source-"+i+".mp3");
+        fs.writeFileSync(file,Buffer.from(await rr.arrayBuffer()));
+      }
+      if(!fs.statSync(file).size) throw new Error("Una de las pistas seleccionadas llegó vacía.");
+      local.push({file,track:t});
+      job.progress=Math.round(((i+1)/tracks.length)*25);
     }
 
-    const inputs=[],filters=[];
-    const layerVolume=(0.78/local.length).toFixed(5);
-    for(let i=0;i<local.length;i++){
-      inputs.push("-stream_loop","-1","-i",local[i]);
-      filters.push("["+i+":a]aresample=48000,volume="+layerVolume+"[a"+i+"]");
-    }
-    const joined=local.map((_,i)=>"[a"+i+"]").join("");
-    filters.push(joined+"amix=inputs="+local.length+":duration=longest:dropout_transition=5:normalize=0[mix]");
-    filters.push("[mix]alimiter=limit=0.96:attack=5:release=50[out]");
-
-    // Short preview first: this is the actual selected mix, not a generic sample.
-    const previewName="selected-freesound-preview-"+durationMinutes+"min-"+Date.now()+".mp3";
-    const previewPath=path.join(MUSIC_DIR,previewName);
-    await runFfmpeg(["-y",...inputs,"-filter_complex",filters.join(";"),"-map","[out]","-t","90","-c:a","libmp3lame","-b:a","192k","-ar","48000",previewPath]);
-    job.preview={
-      name:previewName,
-      url:"/media/music/"+encodeURIComponent(previewName),
-      durationSeconds:90
+    // Interpretamos qué debe quedar delante y qué debe quedar detrás.
+    // La mezcla deja la música al frente y los sonidos ambientales como cama.
+    const classify=t=>{
+      const s=((t.name||"")+" "+(t.tags||[]).join(" ")).toLowerCase();
+      if(/water|agua|rain|lluvia|ocean|waves|forest|bosque|birds|pajar|wind|viento|fire|fuego|stream|river|waterfall|cascada|ambience|ambiente|soundscape|nature|naturaleza/.test(s)) return "ambience";
+      return "music";
     };
-    job.progress=40;
+    const musicCount=local.filter(x=>classify(x.track)==="music").length;
+    const inputs=[],filters=[];
+    for(let i=0;i<local.length;i++){
+      const role=classify(local[i].track);
+      const baseGain=role==="ambience"
+        ? (musicCount?0.34:0.55)
+        : (local.length===2?0.78:0.62);
+      inputs.push("-stream_loop","-1","-i",local[i].file);
+      const label="a"+i;
+      // EQ muy suave para limpiar graves y dejar espacio; no destruye el carácter del sonido.
+      const filter=[
+        "["+i+":a]aresample=48000",
+        "highpass=f=35",
+        "lowpass=f=18000",
+        "volume="+baseGain.toFixed(3),
+        "afade=t=in:st=0:d=2",
+        "afade=t=out:st="+Math.max(2,durationMinutes*60-3)+":d=3",
+        "["+label+"]"
+      ].join(",");
+      filters.push(filter);
+    }
+
+    const joined=local.map((_,i)=>"[a"+i+"]").join("");
+    filters.push(joined+"amix=inputs="+local.length+":duration=longest:dropout_transition=4:normalize=0[mix]");
+    // Compresión muy ligera + limitador: evita que al sumar dos pistas la mezcla
+    // sature o haga bombeos fuertes.
+    filters.push("[mix]acompressor=threshold=-20dB:ratio=2:attack=25:release=250:makeup=1.5,loudnorm=I=-16:TP=-1.5:LRA=7[out]");
+
+    const runMix=async(durationSec,outPath,bitrate)=>{
+      await runFfmpeg([
+        "-y",...inputs,
+        "-filter_complex",filters.join(";"),
+        "-map","[out]","-t",String(durationSec),
+        "-c:a","libmp3lame","-b:a",bitrate,"-ar","48000","-ac","2",outPath
+      ]);
+    };
+
+    const previewName="selected-relax-mix-preview-"+durationMinutes+"min-"+Date.now()+".mp3";
+    const previewPath=path.join(MUSIC_DIR,previewName);
+    await runMix(90,previewPath,"192k");
+    job.preview={name:previewName,url:"/media/music/"+encodeURIComponent(previewName),durationSeconds:90};
+    job.progress=45;
     job.status="preview-ready";
 
-    // Build the requested 1 or 2 hour file in the background.
-    const finalName="selected-freesound-mix-"+durationMinutes+"min-"+Date.now()+".mp3";
+    const finalName="selected-relax-mix-"+durationMinutes+"min-"+Date.now()+".mp3";
     const finalPath=path.join(MUSIC_DIR,finalName);
-    await runFfmpeg(["-y",...inputs,"-filter_complex",filters.join(";"),"-map","[out]","-t",String(durationMinutes*60),"-c:a","libmp3lame","-b:a","192k","-ar","48000",finalPath]);
+    await runMix(durationMinutes*60,finalPath,"192k");
+
     job.progress=100;
     job.status="succeeded";
     job.result={
       name:finalName,
       url:"/media/music/"+encodeURIComponent(finalName),
-      label:"Mezcla · "+local.length+" sonidos Freesound · "+durationMinutes+" min",
-      provider:"Freesound selected mix",
-      source:"Freesound",
+      label:"Mezcla relajante · "+local.length+" capas · "+durationMinutes+" min",
+      provider:"RelaxScape Smart Mixer",
+      source:"Freesound + RelaxScape AI",
       isFreesoundMix:true,
-      generatedFromSearch:false,
+      generatedFromSearch:true,
       durationMinutes,
-      tracks:tracks.map(t=>({id:t.id,name:t.name,sourceUrl:t.sourceUrl,username:t.username,license:t.license}))
+      tracks:tracks.map(t=>({id:t.id,name:t.name,sourceUrl:t.sourceUrl||"",username:t.username||"RelaxScape AI",license:t.license||"Generated by RelaxScape AI",provider:t.provider||"Freesound"}))
     };
   }catch(e){
     job.status="failed";
     job.error=e?.message||String(e);
-    console.error("[Selected Freesound Mix] ERROR",e?.stack||e?.message||e);
+    console.error("[Smart Mixer] ERROR",e?.stack||e?.message||e);
   }finally{
     fs.rmSync(work,{recursive:true,force:true});
     setTimeout(()=>selectedMixJobs.delete(jobId),10*60*1000);
