@@ -2176,7 +2176,7 @@ async function buildSelectedFreesoundMixJob(jobId,tracks,durationMinutes){
     job.result={
       name:finalName,
       url:"/media/music/"+encodeURIComponent(finalName),
-      label:"Mezcla · "+local.length+" sonidos Freesound · "+durationHours+" h",
+      label:"Mezcla · "+local.length+" sonidos Freesound · "+durationMinutes+" min",
       provider:"Freesound selected mix",
       source:"Freesound",
       isFreesoundMix:true,
