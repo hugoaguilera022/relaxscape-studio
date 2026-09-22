@@ -797,8 +797,10 @@ async function generatePollinationsLandscape(prompt, index=0) {
     "premium cinematic visual, rich fine details, balanced composition, varied perspective, realistic light and texture"
   ];
   const finalPrompt = [userPrompt, variations[index % variations.length], "high quality detailed image, professional visual composition, realistic materials and lighting", "16:9 composition", "no watermark, no logo, no unwanted text"].join(", ");
-  const url = "https://image.pollinations.ai/prompt/" + encodeURIComponent(finalPrompt);
-  return {name:"pollinations-"+Date.now()+"-"+index+".jpg",url,ai:true,provider:"Pollinations AI · FLUX",fallback:false,remote:true,label:"Imagen IA "+(index+1)};
+  const seed = Math.floor(Date.now() / 1000) + (index * 7919);
+  const url = "https://image.pollinations.ai/prompt/" + encodeURIComponent(finalPrompt)
+    + "?width=1280&height=720&seed=" + seed + "&nologo=true";
+  return {name:"pollinations-"+Date.now()+"-"+index+".jpg",url,ai:true,provider:"Pollinations AI · FLUX",fallback:false,remote:true,label:"Imagen IA "+(index+1),seed};
 }
 
 app.post("/api/generate-image", async (req, res) => {
