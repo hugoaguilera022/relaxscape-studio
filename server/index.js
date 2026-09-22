@@ -788,7 +788,7 @@ async function generatePollinationsLandscape(prompt, index=0) {
   const seed = Date.now() + index * 7919;
   const attempts = [
     "https://gen.pollinations.ai/image/" + encodeURIComponent(finalPrompt) +
-      "?model=black-forest-labs/flux.1-schnell&aspectRatio=16:9&seed=" + seed,
+      "?model=black-forest-labs/flux.1-schnell&seed=" + seed,
     "https://gen.pollinations.ai/image/" + encodeURIComponent(finalPrompt) +
       "?model=flux&seed=" + seed
   ];
@@ -807,10 +807,13 @@ async function generatePollinationsLandscape(prompt, index=0) {
       }
       const buffer = Buffer.from(await r.arrayBuffer());
       if (!buffer.length) throw new Error("Pollinations devolvió una imagen vacía.");
-      fs.writeFileSync(path.join(IMAGE_DIR, filename), buffer);
+      const contentType=String(r.headers.get("content-type")||"").toLowerCase();
+      const ext=contentType.includes("png")?".png":contentType.includes("webp")?".webp":contentType.includes("svg")?".svg":".jpg";
+      const actualFilename=filename.replace(/\.svg$/i,ext);
+      fs.writeFileSync(path.join(IMAGE_DIR,actualFilename), buffer);
       return {
-        name: filename,
-        url: "/media/images/" + encodeURIComponent(filename),
+        name: actualFilename,
+        url: "/media/images/" + encodeURIComponent(actualFilename),
         ai: true,
         provider: "Pollinations AI · FLUX",
         fallback: true,
