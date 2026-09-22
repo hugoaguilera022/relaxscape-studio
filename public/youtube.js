@@ -21,9 +21,12 @@ async function create(){
 
     const visualTheme=[
       sourceContext,
-      "Genera una imagen original que represente visualmente el contenido real de esta referencia.",
+      "Genera una FAMILIA VISUAL COHERENTE de tres escenas para el mismo vídeo.",
+      "Las tres imágenes deben representar EXACTAMENTE el mismo lugar, sujeto principal, época, clima, paleta ambiental y situación descritos por la referencia.",
+      "NO cambies el tema entre versiones. No conviertas una escena en otra actividad o paisaje.",
+      "Las diferencias permitidas son únicamente encuadre, distancia de cámara, composición, hora/luz ligeramente distinta y perspectiva.",
       visual,
-      "Mantén el sujeto y ambiente principal de la referencia, sin personas si no son imprescindibles, sin texto, sin logos y sin elementos que no correspondan al vídeo."
+      "Imágenes originales, sin texto, sin logos y sin personas salvo que sean esenciales para el contenido."
     ].join(". ").slice(0,700);
 
     const musicPrompt=[
