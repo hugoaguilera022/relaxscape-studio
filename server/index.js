@@ -663,6 +663,9 @@ app.get("/api/youtube-info", async (req,res)=>{
     if(!r.ok) return res.status(400).json({error:"YouTube no pudo reconocer ese vídeo."});
     let description="";
     let keywords="";
+    let category="";
+    let duration="";
+    let playerDetails={};
     try{
       const page=await fetchWithTimeout(raw,{headers:{Accept:"text/html","User-Agent":"Mozilla/5.0"}},10000);
       const html=await page.text();
@@ -672,15 +675,32 @@ app.get("/api/youtube-info", async (req,res)=>{
       };
       description=getMeta("og:description")||getMeta("description");
       keywords=getMeta("keywords");
+      const m=/ytInitialPlayerResponse\\s*=\\s*(\\{.*?\\})\\s*;/.exec(html);
+      if(m){
+        try{
+          const parsed=JSON.parse(m[1]);
+          playerDetails=parsed.videoDetails||{};
+          description=String(playerDetails.shortDescription||description).trim();
+          keywords=Array.isArray(playerDetails.keywords)?playerDetails.keywords.join(", "):keywords;
+          category=String(parsed.microformat?.playerMicroformatRenderer?.category||"").trim();
+          duration=String(playerDetails.lengthSeconds||"").trim();
+        }catch{}
+      }
     }catch{}
+    const mergedTitle=String(playerDetails.title||data.title||"Vídeo de YouTube").trim();
+    const mergedAuthor=String(playerDetails.author||data.author_name||"").trim();
+    const mergedThumb=String(playerDetails.thumbnail?.thumbnails?.slice(-1)[0]?.url||data.thumbnail_url||"").trim();
     res.json({
-      title:data.title||"Vídeo de YouTube",
-      author:data.author_name||"",
-      thumbnail:data.thumbnail_url||"",
-      description:description.slice(0,2500),
-      keywords:keywords.slice(0,700),
+      title:mergedTitle,
+      author:mergedAuthor,
+      thumbnail:mergedThumb,
+      description:description.slice(0,5000),
+      keywords:keywords.slice(0,1500),
+      category,
+      duration,
       sourceUrl:raw,
-      promptSuggestion:String(data.title||description||"paisaje relajante").slice(0,180)
+      promptSuggestion:String(mergedTitle+" "+description).slice(0,240),
+      audioAnalysisAvailable:false
     });
   }catch(e){
     res.status(400).json({error:"No se pudo analizar el enlace de YouTube: "+(e.message||e)});
@@ -938,7 +958,8 @@ app.post("/api/ai-images", async (req, res) => {
     // Si la cuota mensual está agotada, cada una de las 4 opciones pasa
     // automáticamente al generador externo gratuito Pollinations.
     if (token) {
-      const jobs = Array.from({ length: 3 }, (_, index) =>
+      const requestedCount = Math.min(1, Math.max(1, Number(req.body?.count || 1)));
+      const jobs = Array.from({ length: requestedCount }, (_, index) =>
         Promise.race([
           generateHuggingFaceLandscape(theme, index),
           new Promise((_, reject) =>
@@ -971,7 +992,8 @@ app.post("/api/ai-images", async (req, res) => {
       console.warn("[AI Images] Hugging Face sin créditos; usando Pollinations.");
     }
 
-    const jobs = Array.from({ length: 4 }, (_, index) =>
+    const requestedCount = Math.min(1, Math.max(1, Number(req.body?.count || 1)));
+    const jobs = Array.from({ length: requestedCount }, (_, index) =>
       generatePollinationsLandscape(theme, index)
         .then(image => ({ ok: true, image }))
         .catch(error => ({ ok: false, error }))
@@ -1077,7 +1099,7 @@ async function generateLocalMotionVideo({imagePath,musicPath,outputPath,duration
     ":force_original_aspect_ratio=increase,crop="+width+":"+height+
     ",format=yuv420p";
 
-  console.log("[YouTube 3 versiones] Preparando segmento",{
+  console.log("[YouTube single] Preparando segmento",{
     variant:v,width,height,imagePath,musicPath,segmentPath
   });
 
@@ -1111,7 +1133,7 @@ async function generateLocalMotionVideo({imagePath,musicPath,outputPath,duration
       throw new Error("FFmpeg no creó el segmento de la versión "+v+".");
     }
 
-    console.log("[YouTube 3 versiones] Segmento creado",v,fs.statSync(segmentPath).size,"bytes");
+    console.log("[YouTube single] Segmento creado",v,fs.statSync(segmentPath).size,"bytes");
 
     await runFfmpeg([
       "-y",
@@ -1132,7 +1154,7 @@ async function generateLocalMotionVideo({imagePath,musicPath,outputPath,duration
     if(!fs.existsSync(outputPath) || !fs.statSync(outputPath).size){
       throw new Error("FFmpeg terminó sin crear el vídeo de la versión "+v+".");
     }
-    console.log("[YouTube 3 versiones] MP4 verificado",v,fs.statSync(outputPath).size,"bytes");
+    console.log("[YouTube single] MP4 verificado",v,fs.statSync(outputPath).size,"bytes");
   }finally{
     fs.rmSync(segmentPath,{force:true});
   }
@@ -1156,13 +1178,13 @@ async function muxExternalVideoWithMusic(videoPath,musicPath,outPath){
 
 app.post("/api/video-preview-options",(req,res)=>{
   const prompt=String(req.body?.musicPrompt||"").trim().slice(0,700);
-  const images=Array.isArray(req.body?.images)?req.body.images.map(x=>String(x||"").trim()).filter(Boolean).slice(0,3):[];
-  const music=Array.isArray(req.body?.music)?req.body.music.map(x=>String(x||"").trim()).filter(Boolean).slice(0,3):[];
+  const images=Array.isArray(req.body?.images)?req.body.images.map(x=>String(x||"").trim()).filter(Boolean).slice(0,1):[];
+  const music=Array.isArray(req.body?.music)?req.body.music.map(x=>String(x||"").trim()).filter(Boolean).slice(0,1):[];
   const image=String(req.body?.image||"").trim();
   if(!prompt)return res.status(400).json({error:"Escribe primero qué música quieres crear."});
-  if(images.length!==3 && !image)return res.status(400).json({error:"Selecciona los 3 paisajes IA."});
+  if(images.length!==1 && !image)return res.status(400).json({error:"No se generó el paisaje IA de la referencia."});
   const jobId="vp-"+Date.now()+"-"+Math.random().toString(36).slice(2,8);
-  const variants=[1,2,3].map((variant)=>({
+  const variants=[1].map((variant)=>({
     userSearch:prompt,originalMusicPrompt:prompt,
     musicProfile:buildAIMusicPrompt(prompt,variant),
     userMusicBrief:buildAIMusicPrompt(prompt,variant),
@@ -1175,9 +1197,9 @@ app.post("/api/video-preview-options",(req,res)=>{
     const work=path.join(VIDEO_DIR,jobId);
     fs.mkdirSync(work,{recursive:true});
     try{
-      const selectedImages=images.length===3?images:[image,image,image];
+      const selectedImages=images.length===1?images:[image];
       const imagePaths=[];
-      for(let imageIndex=0;imageIndex<3;imageIndex++){
+      for(let imageIndex=0;imageIndex<1;imageIndex++){
       const currentImage=selectedImages[imageIndex];
       const imageName=decodeURIComponent(currentImage.split("/").pop());
       let imagePath=path.join(IMAGE_DIR,imageName);
@@ -1191,8 +1213,8 @@ app.post("/api/video-preview-options",(req,res)=>{
       imagePaths.push(imagePath);
       }
 
-      // Render's FFmpeg build has no SVG decoder. Rasterize any fallback SVG
-      // separately so each YouTube version keeps its own landscape.
+      // Render's FFmpeg build has no SVG decoder. Rasterize the fallback SVG
+      // before the single high-quality YouTube preview.
       for(let imageIndex=0;imageIndex<imagePaths.length;imageIndex++){
         try{
           const source=imagePaths[imageIndex];
@@ -1226,8 +1248,8 @@ app.post("/api/video-preview-options",(req,res)=>{
       // Si YouTube ya generó la música desde el mismo motor del apartado Crear IA,
       // reutilizamos EXACTAMENTE esas pistas. No se vuelve a sintetizar otra música.
       const selectedMusicPaths=[];
-      if(music.length===3){
-        for(let musicIndex=0;musicIndex<3;musicIndex++){
+      if(music.length===1){
+        for(let musicIndex=0;musicIndex<1;musicIndex++){
           const currentMusic=music[musicIndex];
           const musicName=decodeURIComponent(currentMusic.split("/").pop());
           const musicPath=path.join(MUSIC_DIR,musicName);
@@ -1250,28 +1272,28 @@ app.post("/api/video-preview-options",(req,res)=>{
         job.progress=Math.round((i/variants.length)*100);
         const videoName="video-preview-"+jobId+"-"+track.variant+".mp4";
         const out=path.join(VIDEO_DIR,videoName);
-        // YOUTUBE: las 3 versiones se generan SIEMPRE localmente.
+        // YOUTUBE: la versión única se generan SIEMPRE localmente.
         // No esperamos a Pollinations Video ni dependemos de saldo externo.
         job.stage="local-video-"+track.variant;
         await generateLocalMotionVideo({
-          imagePath:imagePaths[track.variant-1],
+          imagePath:imagePaths[0],
           musicPath,
           outputPath:out,
           durationSeconds:YOUTUBE_PREVIEW_SECONDS,
-          width:1280,
-          height:720,
+          width:1920,
+          height:1080,
           variant:track.variant
         });
-        console.log("[YouTube 3 versiones] Vídeo local creado:",track.variant);
+        console.log("[YouTube single] Vídeo local 1080p creado:",track.variant);
         results.push({
           name:videoName,
           url:"/media/videos/"+encodeURIComponent(videoName),
-          label:"Vídeo propuesta "+track.variant,
+          label:"Vídeo IA · referencia YouTube",
           variant:track.variant,
           durationSeconds:YOUTUBE_PREVIEW_SECONDS,
-          musicUrl:music.length===3?music[track.variant-1]:"/media/music/"+encodeURIComponent(track.file),
+          musicUrl:music.length===1?music[0]:"/media/music/"+encodeURIComponent(track.file),
           originalMusicPrompt:prompt,
-          imageUrl:publicImageUrls[track.variant-1]
+          imageUrl:publicImageUrls[0]
         });
         job.results=results.slice();
         job.progress=Math.round(((i+1)/variants.length)*100);
