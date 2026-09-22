@@ -1068,9 +1068,10 @@ async function muxExternalVideoWithMusic(videoPath,musicPath,outPath){
 
 app.post("/api/video-preview-options",(req,res)=>{
   const prompt=String(req.body?.musicPrompt||"").trim().slice(0,700);
+  const images=Array.isArray(req.body?.images)?req.body.images.map(x=>String(x||"").trim()).filter(Boolean).slice(0,3):[];
   const image=String(req.body?.image||"").trim();
   if(!prompt)return res.status(400).json({error:"Escribe primero qué música quieres crear."});
-  if(!image)return res.status(400).json({error:"Selecciona primero un paisaje IA."});
+  if(images.length!==3 && !image)return res.status(400).json({error:"Selecciona los 3 paisajes IA."});
   const jobId="vp-"+Date.now()+"-"+Math.random().toString(36).slice(2,8);
   const variants=[1,2,3].map((variant)=>({
     userSearch:prompt,originalMusicPrompt:prompt,
@@ -1085,15 +1086,21 @@ app.post("/api/video-preview-options",(req,res)=>{
     const work=path.join(VIDEO_DIR,jobId);
     fs.mkdirSync(work,{recursive:true});
     try{
-      const imageName=decodeURIComponent(image.split("/").pop());
+      const selectedImages=images.length===3?images:[image,image,image];
+      const imagePaths=[];
+      for(let imageIndex=0;imageIndex<3;imageIndex++){
+      const currentImage=selectedImages[imageIndex];
+      const imageName=decodeURIComponent(currentImage.split("/").pop());
       let imagePath=path.join(IMAGE_DIR,imageName);
-      if(!fs.existsSync(imagePath) && (image.startsWith("http://") || image.startsWith("https://"))){
-        const downloaded=await fetchWithTimeout(image,{},10000);
+      if(!fs.existsSync(imagePath) && (currentImage.startsWith("http://") || currentImage.startsWith("https://"))){
+        const downloaded=await fetchWithTimeout(currentImage,{},10000);
         if(!downloaded.ok)throw new Error("No se pudo descargar el paisaje seleccionado.");
         imagePath=path.join(IMAGE_DIR,"preview-image-"+jobId+".jpg");
         fs.writeFileSync(imagePath,Buffer.from(await downloaded.arrayBuffer()));
       }
       if(!fs.existsSync(imagePath))throw new Error("No se encontró el paisaje seleccionado.");
+      imagePaths.push(imagePath);
+      }
 
       // Render's FFmpeg build has no SVG decoder. Rasterize fallback SVGs
       // into a small PPM image, which FFmpeg can decode natively.
@@ -1120,9 +1127,9 @@ app.post("/api/video-preview-options",(req,res)=>{
         console.warn("[Video previews] No se pudo preparar el paisaje:",e.message);
       }
       const results=[];
-      const publicImageUrl=image.startsWith("http://")||image.startsWith("https://")
-        ? image
-        : "https://relaxscape-studio.onrender.com/media/images/"+encodeURIComponent(imageName);
+      const publicImageUrls=selectedImages.map((currentImage)=>currentImage.startsWith("http://")||currentImage.startsWith("https://")
+        ? currentImage
+        : "https://relaxscape-studio.onrender.com/media/images/"+encodeURIComponent(decodeURIComponent(currentImage.split("/").pop())));
 
       for(let i=0;i<variants.length;i++){
         const track=variants[i];
@@ -1151,7 +1158,7 @@ app.post("/api/video-preview-options",(req,res)=>{
           durationSeconds:YOUTUBE_PREVIEW_SECONDS,
           musicUrl:"/media/music/"+encodeURIComponent(track.file),
           originalMusicPrompt:prompt,
-          imageUrl:image
+          imageUrl:publicImageUrls[track.variant-1]
         });
         job.results=results.slice();
         job.progress=Math.round(((i+1)/variants.length)*100);
