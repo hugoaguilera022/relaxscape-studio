@@ -972,7 +972,7 @@ app.post("/api/ai-images", async (req, res) => {
       console.warn("[AI Images] Hugging Face sin créditos; usando Pollinations.");
     }
 
-    const requestedCount = Math.min(1, Math.max(1, Number(req.body?.count || 4)));
+    const requestedCount = Math.min(4, Math.max(1, Number(req.body?.count || 4)));
     const jobs = Array.from({ length: requestedCount }, (_, index) =>
       generatePollinationsLandscape(theme, index)
         .then(image => ({ ok: true, image }))
