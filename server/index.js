@@ -674,17 +674,22 @@ app.get("/api/youtube-info", async (req,res)=>{
     // Normalizamos cualquier variante válida a una URL watch estándar para que
     // oEmbed no dependa del formato concreto que haya pegado el usuario.
     const canonicalUrl="https://www.youtube.com/watch?v="+encodeURIComponent(videoId);
+    // oEmbed es útil para título/autor, pero no debe decidir si el vídeo existe:
+    // algunos vídeos válidos no responden a oEmbed desde servidores cloud.
     const oembed="https://www.youtube.com/oembed?url="+encodeURIComponent(canonicalUrl)+"&format=json";
-    const r=await fetchWithTimeout(oembed,{headers:{Accept:"application/json"}},10000);
-    const data=await r.json().catch(()=>({}));
-    if(!r.ok) return res.status(400).json({error:"YouTube no pudo reconocer ese vídeo."});
+    let data={};
+    try{
+      const oembedResponse=await fetchWithTimeout(oembed,{headers:{Accept:"application/json","User-Agent":"Mozilla/5.0"}},10000);
+      data=await oembedResponse.json().catch(()=>({}));
+    }catch{}
     let description="";
     let keywords="";
     let category="";
     let duration="";
     let playerDetails={};
     try{
-      const page=await fetchWithTimeout(raw,{headers:{Accept:"text/html","User-Agent":"Mozilla/5.0"}},10000);
+      // Siempre intentamos leer la página canónica, incluso si oEmbed falla.
+      const page=await fetchWithTimeout(canonicalUrl,{headers:{Accept:"text/html","User-Agent":"Mozilla/5.0"}},15000);
       const html=await page.text();
       const getMeta=(key)=>{
         const a=new RegExp("<meta[^>]+(?:name|property)=[\\\"']"+key+"[\\\"'][^>]+content=[\\\"']([^\\\"']*)[\\\"']","i").exec(html);
@@ -704,9 +709,11 @@ app.get("/api/youtube-info", async (req,res)=>{
         }catch{}
       }
     }catch{}
-    const mergedTitle=String(playerDetails.title||data.title||"Vídeo de YouTube").trim();
+    const mergedTitle=String(playerDetails.title||data.title||"Vídeo de YouTube · "+videoId).trim();
     const mergedAuthor=String(playerDetails.author||data.author_name||"").trim();
-    const mergedThumb=String(playerDetails.thumbnail?.thumbnails?.slice(-1)[0]?.url||data.thumbnail_url||"").trim();
+    const mergedThumb=String(playerDetails.thumbnail?.thumbnails?.slice(-1)[0]?.url||data.thumbnail_url||"https://i.ytimg.com/vi/"+videoId+"/hqdefault.jpg").trim();
+    // Si al menos tenemos un ID válido y YouTube nos permitió consultar la página,
+    // devolvemos la referencia aunque oEmbed no haya respondido.
     res.json({
       title:mergedTitle,
       author:mergedAuthor,
