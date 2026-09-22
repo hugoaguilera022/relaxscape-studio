@@ -1595,42 +1595,80 @@ app.post("/api/generate-selected-long-music", async (req,res)=>{
   const {music,durationHours=1,musicPrompt=""}=req.body||{};
   if(!music) return res.status(400).json({error:"Selecciona una música de previa."});
   const hours=Number(durationHours);
-  if(![1,2].includes(hours)) return res.status(400).json({error:"La duración debe ser de 1 o 2 horas."});
+  if(hours!==1) return res.status(400).json({error:"RelaxScape genera vídeos de 1 hora."});
   const name=decodeURIComponent(String(music).split("/").pop());
   const source=path.join(MUSIC_DIR,name);
   if(!fs.existsSync(source)) return res.status(404).json({error:"No se encontró la música seleccionada."});
   const selectedTrack=aiMusicTracks.find(t=>t.file===name);
   const basePrompt=String(selectedTrack?.originalMusicPrompt||musicPrompt||"").trim();
   if(!basePrompt) return res.status(400).json({error:"No se pudo recuperar la búsqueda que originó la música. Vuelve a generar las opciones IA."});
-  const stamp=Date.now(),work=path.join(MUSIC_DIR,"long-music-"+stamp);
-  const finalName="relaxscape-selected-"+hours+"h-"+stamp+".mp3",out=path.join(MUSIC_DIR,finalName);
-  fs.mkdirSync(work,{recursive:true});
-  try{
-    const directions=[
-      "fresh second movement, new melody and compatible chord voicings, same calm identity",
-      "fresh third movement, different motif and register, gradual texture development",
-      "fresh fourth movement, different melodic contour and harmony, same exact environment and instruments",
-      "gentle closing movement, spacious variation and resolved harmony, no energetic climax"
-    ];
-    const segments=[];
-    for(let i=0;i<4;i++){
-      const track={originalMusicPrompt:basePrompt,musicProfile:buildAIMusicPrompt(basePrompt,(i%4)+1)+" "+directions[i],label:"Long "+(i+1),file:"segment-"+i+".mp3"};
-      const seg=path.join(work,track.file);
-      await generateAIMusicFile(track,seg,180000);
-      segments.push(seg);
-    }
-    const listFile=path.join(work,"concat.txt");
-    fs.writeFileSync(listFile,segments.map(f=>"file '"+f.replace(/'/g,"'\\''")+"'").join("\n"));
-    const base=path.join(work,"base.mp3");
-    await runFfmpeg(["-y","-f","concat","-safe","0","-i",listFile,"-c:a","libmp3lame","-b:a","192k","-ar","48000",base]);
-    await runFfmpeg(["-y","-stream_loop","-1","-i",base,"-t",String(hours*3600),"-c:a","copy",out]);
-    res.json({name:finalName,url:"/media/music/"+encodeURIComponent(finalName),hours,sourcePreview:name,provider:"RelaxScape Free AI Music Engine",generatedFromSearch:true});
-  }catch(e){
-    console.error("[AI Music Long] ERROR",e.stack||e.message);
-    res.status(500).json({error:"No se pudo crear la música larga: "+e.message});
-  }finally{fs.rmSync(work,{recursive:true,force:true});}
-});
 
+  const stamp=Date.now(),work=path.join(MUSIC_DIR,"long-music-"+stamp);
+  const finalName="relaxscape-selected-1h-"+stamp+".mp3",out=path.join(MUSIC_DIR,finalName);
+  fs.mkdirSync(work,{recursive:true});
+
+  try{
+    // La música larga se construye con FRAGMENTOS DE 15 SEGUNDOS.
+    // Se generan cuatro variaciones con la misma paleta sonora y se mezclan con crossfade.
+    const fragments=[];
+    const soundPalette=selectedTrack?.soundPalette||musicIntentProfile(basePrompt);
+    const commonSeed=selectedTrack?.generationSeed||("long-"+stamp);
+    for(let i=0;i<4;i++){
+      const variant=(i%4)+1;
+      const track={
+        originalMusicPrompt:basePrompt,
+        userSearch:basePrompt,
+        soundPalette,
+        musicProfile:buildAIMusicPrompt(basePrompt,variant)+
+          " SHARED SOUND PALETTE LOCKED: "+soundPalette+
+          ". This is a 15-second fragment for a continuous soundtrack. Keep the same instruments and timbres in every fragment; change only melody, voicing, register and phrasing.",
+        userMusicBrief:buildAIMusicPrompt(basePrompt,variant)+
+          " SHARED SOUND PALETTE LOCKED: "+soundPalette+
+          ". Create a musically complete 15-second fragment.",
+        label:"15s fragment "+(i+1),
+        file:"fragment-"+i+".mp3",
+        variant,
+        generationSeed:commonSeed+"|fragment|"+i,
+        melodySeed:commonSeed+"|melody|"+variant
+      };
+      const seg=path.join(work,track.file);
+      await generateAIMusicFile(track,seg,15000);
+      fragments.push(seg);
+    }
+
+    // Mezcla los cuatro fragmentos en una pieza corta de ~54 s.
+    const listFile=path.join(work,"concat.txt");
+    fs.writeFileSync(listFile,fragments.map(f=>"file '"+f.replace(/'/g,"'\\''")+"'").join("\n"));
+    const base=path.join(work,"base.mp3");
+    await runFfmpeg([
+      "-y","-f","concat","-safe","0","-i",listFile,
+      "-af","afade=t=in:st=0:d=0.8,afade=t=out:st=52:d=2",
+      "-c:a","libmp3lame","-b:a","320k","-ar","48000","-ac","2",base
+    ]);
+
+    // El MP3 final de 1h se crea por stream copy: prácticamente no se recodifica.
+    await runFfmpeg([
+      "-y","-stream_loop","-1","-i",base,
+      "-t","3600","-c:a","copy",out
+    ]);
+
+    res.json({
+      name:finalName,
+      url:"/media/music/"+encodeURIComponent(finalName),
+      hours:1,
+      sourcePreview:name,
+      provider:"RelaxScape Free AI Music Engine",
+      generatedFromSearch:true,
+      fragmentSeconds:15,
+      fragmentsMixed:4
+    });
+  }catch(e){
+    console.error("[AI Music Long 15s] ERROR",e.stack||e.message);
+    res.status(500).json({error:"No se pudo crear la música larga: "+e.message});
+  }finally{
+    fs.rmSync(work,{recursive:true,force:true});
+  }
+});
 app.post("/api/generate-video", async (req, res) => {
   const { image, music, durationHours = 1 } = req.body || {};
   if (!image || !music) return res.status(400).json({ error: "Selecciona una imagen y una pista de música." });
@@ -1648,19 +1686,41 @@ app.post("/api/generate-video", async (req, res) => {
   if (!fs.existsSync(imagePath) || !fs.existsSync(musicPath)) return res.status(404).json({ error: "No se encontró el archivo seleccionado." });
   const hours = Number(durationHours);
   if (hours !== 1) return res.status(400).json({ error: "RelaxScape genera vídeos de 1 hora." });
-  const filename = `relaxscape-${Date.now()}-${hours}h.mp4`;
-  const out = path.join(VIDEO_DIR, filename);
-  try {
-    await runFfmpeg([
-      "-y","-loop","1","-i",imagePath,"-stream_loop","-1","-i",musicPath,
-      "-t",String(hours*3600),
-      "-vf","scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
-      "-c:v","libx264","-preset","veryfast","-crf","23","-c:a","aac","-b:a","160k","-shortest",out
-    ]);
-    res.json({ url: `/media/videos/${filename}`, name: filename });
-  } catch (e) { res.status(500).json({ error: "No se pudo generar el vídeo: " + e.message }); }
-});
 
+  const stamp=Date.now();
+  const filename = `relaxscape-${stamp}-1h.mp4`;
+  const out = path.join(VIDEO_DIR, filename);
+  const workDir=path.join(VIDEO_DIR,"fast-video-"+stamp);
+  const segment=path.join(workDir,"segment.mp4");
+  fs.mkdirSync(workDir,{recursive:true});
+
+  try {
+    // Solo se codifican 15 segundos a 1080p. La hora completa usa stream copy.
+    await runFfmpeg([
+      "-y","-loop","1","-framerate","10","-i",imagePath,
+      "-stream_loop","-1","-i",musicPath,
+      "-t","15",
+      "-map","0:v:0","-map","1:a:0",
+      "-vf","scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
+      "-r","10","-c:v","libx264","-preset","ultrafast","-crf","20","-threads","2",
+      "-pix_fmt","yuv420p","-c:a","aac","-b:a","256k","-ar","48000","-ac","2",
+      "-movflags","+faststart",segment
+    ]);
+
+    await runFfmpeg([
+      "-y","-stream_loop","-1","-i",segment,
+      "-t","3600","-map","0:v:0","-map","0:a:0",
+      "-c","copy","-movflags","+faststart",out
+    ]);
+
+    res.json({ url: `/media/videos/${filename}`, name: filename, durationHours:1, fastLoop:true, segmentSeconds:15 });
+  } catch (e) {
+    console.error("[Fast 1h video] ERROR",e.stack||e.message);
+    res.status(500).json({ error: "No se pudo generar el vídeo: " + e.message });
+  } finally {
+    fs.rmSync(workDir,{recursive:true,force:true});
+  }
+});
 async function generatePexelsVideo(prompt, aspectRatio, key, durationHours = 1) {
   const rawPrompt = String(prompt || "peaceful nature landscape");
   const aliases = {
