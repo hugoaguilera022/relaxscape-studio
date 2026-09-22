@@ -110,8 +110,9 @@ async function youtubeMetaAndSample(url,work){
       "https://api.piped.yt"
     ];
     for(const base of pipedInstances){
+      console.log("[Piped] probando:",base);
       try{
-        const ac=new AbortController(),timer=setTimeout(()=>ac.abort(),10000);
+        const ac=new AbortController(),timer=setTimeout(()=>ac.abort(),8000);
         const rr=await fetch(base+"/streams/"+videoId,{
           headers:{Accept:"application/json","User-Agent":"Mozilla/5.0"},
           signal:ac.signal
@@ -120,6 +121,7 @@ async function youtubeMetaAndSample(url,work){
         if(!rr.ok) continue;
         const d=await rr.json();
         if(d?.videoId||d?.title){
+          console.log("[Piped] respuesta recibida:",base,"streams:",Array.isArray(d.videoStreams)?d.videoStreams.length:0);
           const playable=(d.videoStreams||[])
             .filter(x=>x?.url && /mp4/i.test(String(x.mimeType||"")) && x.videoOnly===false)
             .sort((a,b)=>Number(a.height||9999)-Number(b.height||9999));
@@ -138,11 +140,12 @@ async function youtubeMetaAndSample(url,work){
           }
         }
       }catch(e){
-        console.warn("[Piped fallback]",base,e.message);
+        console.warn("[Piped fallback]",base,e.name==="AbortError"?"timeout":e.message);
       }
     }
   }
 
+  console.log("[YouTube] Piped no proporcionó un stream utilizable; pasando a Invidious");
   // 3) Fallback B: API de una instancia pública de Invidious.
   // Invidious publica formatStreams con URLs MP4 cuando la instancia puede
   // obtener una reproducción directa.
@@ -155,8 +158,9 @@ async function youtubeMetaAndSample(url,work){
       "https://invidious.f5.si"
     ];
     for(const base of instances){
+      console.log("[Invidious] probando:",base);
       try{
-        const ac=new AbortController(),timer=setTimeout(()=>ac.abort(),12000);
+        const ac=new AbortController(),timer=setTimeout(()=>ac.abort(),8000);
         const rr=await fetch(base+"/api/v1/videos/"+videoId+"?hl=es",{
           headers:{Accept:"application/json","User-Agent":"Mozilla/5.0"},
           signal:ac.signal
@@ -175,7 +179,7 @@ async function youtubeMetaAndSample(url,work){
           break;
         }
       }catch(e){
-        console.warn("[Invidious fallback]",base,e.message);
+        console.warn("[Invidious fallback]",base,e.name==="AbortError"?"timeout":e.message);
       }
     }
   }
