@@ -206,35 +206,53 @@ async function createSelectedFreesoundMix(){
   }
   const btn=$("#createSelectedFreesoundMix");
   if(btn)btn.disabled=true;
-  if(status)status.textContent="🎚️ Preparando los "+selected.length+" sonidos seleccionados…";
+  if(status)status.textContent="🎚️ Preparando los 2 sonidos seleccionados…";
   try{
     const d=await api("/api/mix-selected-freesound",{
       method:"POST",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({
-        tracks:selected.map(x=>({id:x.id,preview:x.preview,name:x.name,sourceUrl:x.sourceUrl,username:x.username,license:x.license})),
+        tracks:selected.map(x=>({id:x.id,preview:x.preview,name:x.name,sourceUrl:x.sourceUrl,username:x.username,license:x.license,tags:x.tags||[],provider:x.provider||"Freesound"})),
         durationMinutes:S.aiMixMinutes
       })
     });
-    if(status)status.textContent="🎚️ Creando la mezcla real y preparando una previa de 90 segundos…";
+    if(!d?.jobId)throw Error("El servidor no devolvió un identificador de mezcla.");
+    if(status)status.textContent="🎚️ Mezclando los 2 sonidos y preparando una previa de 30 segundos…";
     let job=null;
+    let previewShown=false;
     for(let n=0;n<240;n++){
       job=await api("/api/mix-selected-freesound-status?jobId="+encodeURIComponent(d.jobId));
-      if(job.preview && !S.music){
-        S.music={url:job.preview.url,name:job.preview.name,isFreesoundPreview:true,durationMinutes:S.aiMixMinutes};
+
+      if(job.preview && !previewShown){
+        previewShown=true;
+        S.music={
+          url:job.preview.url,
+          name:job.preview.name,
+          isFreesoundPreview:true,
+          durationMinutes:S.aiMixMinutes,
+          durationSeconds:30
+        };
         renderAICreator();update();picker();
-        if(status)status.textContent="✓ Previa real de la mezcla lista. La mezcla de "+S.aiMixMinutes+" minutos sigue preparándose en segundo plano.";
+        if(status)status.textContent="✓ Previa de 30 segundos lista. La mezcla completa sigue generándose…";
       }
+
       if(job.status==="succeeded"){
-        S.music=job.result;
-        if(status)status.textContent="✓ Mezcla completa de "+S.aiMixMinutes+" minutos lista. Ya puedes escucharla y usarla en el vídeo.";
+        if(job.result){
+          S.music={
+            ...job.result,
+            isFreesoundMix:true,
+            durationMinutes:job.result.durationMinutes||S.aiMixMinutes
+          };
+        }
         renderAICreator();update();picker();
-        break;
+        if(status)status.textContent="✓ Mezcla completa generada y lista para usar en el vídeo.";
+        return;
       }
+
       if(job.status==="failed")throw Error(job.error||"No se pudo crear la mezcla.");
       await new Promise(r=>setTimeout(r,3000));
     }
-    if(!job || job.status!=="succeeded")throw Error("La creación de la mezcla está tardando demasiado. La previa puede seguir escuchándose mientras termina.");
+    throw Error("La creación de la mezcla está tardando demasiado. La previa de 30 segundos ya puede escucharse.");
   }catch(e){
     if(status)status.textContent="No se pudo crear la mezcla: "+e.message;
   }finally{
