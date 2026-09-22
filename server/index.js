@@ -739,10 +739,10 @@ async function generateHuggingFaceLandscape(prompt, index=0) {
 
   const client = new InferenceClient(token);
   const variations = [
-    "wide cinematic establishing shot, peaceful composition, realistic natural light, strong foreground depth",
-    "wide cinematic landscape, atmospheric perspective, natural color, realistic professional photography, different camera angle",
-    "wide cinematic landscape, subtle mist, detailed foreground, soft realistic lighting, photorealistic",
-    "wide cinematic landscape, tranquil premium travel photography, realistic textures, natural depth and light"
+    "cinematic composition, realistic natural lighting, strong depth and clear subject separation, distinctive camera angle",
+    "professional visual composition, highly detailed textures, atmospheric depth, realistic lighting, different perspective",
+    "dramatic but natural lighting, detailed subject, realistic materials, strong depth, polished cinematic framing",
+    "premium cinematic visual, rich fine details, balanced composition, varied perspective, realistic light and texture"
   ];
 
   const userPrompt = String(prompt || "peaceful lake, misty mountains, soft dawn light").trim().slice(0, 700);
@@ -811,10 +811,17 @@ async function generatePollinationsLandscape(prompt, index=0) {
   // Si no hay saldo o el proveedor falla, NO rompemos Crear IA/YouTube:
   // devolvemos un paisaje local válido como último recurso.
   const seed = Date.now() + index * 7919;
-  const attempts = [
-    "https://gen.pollinations.ai/image/" + encodeURIComponent(finalPrompt) + "?width=1920&height=1080&nologo=true&seed=" + seed,
-    "https://image.pollinations.ai/prompt/" + encodeURIComponent(finalPrompt) + "?width=1920&height=1080&nologo=true&seed=" + seed
-  ];
+  const encodedPrompt = encodeURIComponent(finalPrompt);
+  const attempts = key
+    ? [
+        "https://gen.pollinations.ai/image/" + encodedPrompt + "?model=flux&width=1920&height=1080&seed=" + seed + "&enhance=true&safe=false&nologo=true",
+        "https://gen.pollinations.ai/image/" + encodedPrompt + "?model=flux&width=1280&height=720&seed=" + (seed + 1) + "&enhance=true&safe=false&nologo=true",
+        "https://image.pollinations.ai/prompt/" + encodedPrompt + "?model=flux&width=1280&height=720&seed=" + (seed + 2)
+      ]
+    : [
+        "https://image.pollinations.ai/prompt/" + encodedPrompt + "?model=flux&width=1920&height=1080&seed=" + seed,
+        "https://image.pollinations.ai/prompt/" + encodedPrompt + "?model=flux&width=1280&height=720&seed=" + (seed + 1)
+      ];
 
   let lastError = null;
   for (const url of attempts) {
