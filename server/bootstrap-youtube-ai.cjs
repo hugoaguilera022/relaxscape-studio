@@ -101,13 +101,17 @@ async function youtubeMetaAndSample(url,work){
   if(!info?.id && videoId){
     const pipedInstances=[
       "https://pipedapi.kavin.rocks",
+      "https://pipedapi-libre.kavin.rocks",
       "https://pipedapi.leptons.xyz",
       "https://pipedapi.nosebs.ru",
       "https://pipedapi.owo.si",
       "https://pipedapi.ducks.party",
-      "https://api.piped.privacy.com.de",
+      "https://piped-api.privacy.com.de",
       "https://pipedapi.adminforge.de",
-      "https://api.piped.yt"
+      "https://api.piped.yt",
+      "https://pipedapi.drgns.space",
+      "https://pipedapi.reallyaweso.me",
+      "https://api.piped.private.coffee"
     ];
     for(const base of pipedInstances){
       console.log("[Piped] probando:",base);
@@ -123,7 +127,7 @@ async function youtubeMetaAndSample(url,work){
         if(d?.videoId||d?.title){
           console.log("[Piped] respuesta recibida:",base,"streams:",Array.isArray(d.videoStreams)?d.videoStreams.length:0);
           const playable=(d.videoStreams||[])
-            .filter(x=>x?.url && /mp4/i.test(String(x.mimeType||"")) && x.videoOnly===false)
+             .filter(x=>x?.url && /mp4/i.test(String(x.mimeType||x.format||"")) && x.videoOnly!==true)
             .sort((a,b)=>Number(a.height||9999)-Number(b.height||9999));
           const chosen=playable.find(x=>Number(x.height||0)<=480)||playable[0];
           if(chosen?.url){
@@ -209,7 +213,7 @@ async function youtubeMetaAndSample(url,work){
       const startSec=Math.floor(marks[i]);
       const out=path.join(work,"sample-"+i+".mp4");
       try{
-        await ff(["-y","-ss",String(startSec),"-i",fmt.url,"-t","15","-c","copy","-movflags","+faststart",out]);
+        await ff(["-y","-ss",String(startSec),"-i",streamUrl,"-t","15","-map","0:v:0","-map","0:a:0?","-c:v","libx264","-preset","veryfast","-crf","28","-c:a","aac","-b:a","128k","-movflags","+faststart",out]);
         if(fs.existsSync(out)&&fs.statSync(out).size>5000) clips.push(out);
       }catch(e){lastError=e;console.warn("[YouTube Invidious sample]",i,e.message)}
     }
