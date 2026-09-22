@@ -1144,7 +1144,7 @@ app.post("/api/video-preview-options",(req,res)=>{
         // No esperamos a Pollinations Video ni dependemos de saldo externo.
         job.stage="local-video-"+track.variant;
         await generateLocalMotionVideo({
-          imagePath,
+          imagePath:imagePaths[track.variant-1],
           musicPath,
           outputPath:out,
           durationSeconds:YOUTUBE_PREVIEW_SECONDS,
