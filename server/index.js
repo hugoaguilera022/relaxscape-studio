@@ -787,10 +787,8 @@ async function generatePollinationsLandscape(prompt, index=0) {
   // devolvemos un paisaje local válido como último recurso.
   const seed = Date.now() + index * 7919;
   const attempts = [
-    "https://gen.pollinations.ai/image/" + encodeURIComponent(finalPrompt) +
-      "?model=flux&seed=" + seed,
-    "https://gen.pollinations.ai/image/" + encodeURIComponent(finalPrompt) +
-      "?model=flux&seed=" + seed
+    "https://gen.pollinations.ai/image/" + encodeURIComponent(finalPrompt),
+    "https://image.pollinations.ai/prompt/" + encodeURIComponent(finalPrompt)
   ];
 
   let lastError = null;
