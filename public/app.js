@@ -36,26 +36,61 @@ async function generateAIImagesOnly(){
   const prompt=(($("#aiImagePrompt").value||"").trim()||"peaceful nature landscape");
   S.aiLoading=true; S.aiImages=[]; S.image=null;
   const status=$("#aiSelectionStatus"), ig=$("#aiImageGrid");
-  if(status)status.textContent="🤖 Generando paisajes con IA… esto puede tardar unos segundos.";
-  if(ig)ig.innerHTML='<div class="empty">🤖 FLUX está creando tus paisajes a partir de la búsqueda…</div>';
+  if(status)status.textContent="🤖 Generando 4 paisajes con IA…";
+  if(ig)ig.innerHTML='<div class="empty">🤖 Generando 4 paisajes diferentes…</div>';
   try{
-    const controller=new AbortController();
-    const timer=setTimeout(()=>controller.abort(),125000);
-    let d;
-    try{
-      d=await api("/api/ai-images",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({theme:prompt}),signal:controller.signal});
-    }finally{clearTimeout(timer)}
+    const d=await api("/api/ai-images",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({theme:prompt,count:4})});
     S.aiImages=d.images||[];
-    if(S.aiImages[0])S.image=S.aiImages[0];
+    if(!S.aiImages.length)throw Error("No se pudo generar ningún paisaje IA.");
+    S.image=S.aiImages[0];
     renderAICreator();
-    if(status)status.textContent="✓ "+S.aiImages.length+" paisaje(s) IA generado(s). Elige uno.";
+    if(status)status.textContent="✓ "+S.aiImages.length+" paisajes IA listos. Ahora puedes generar la música.";
   }catch(e){
-    const detail=(e&&e.name==="AbortError")?"La generación IA tardó demasiado.":((e&&e.message)?e.message:"Error desconocido");
-    if(status)status.textContent="❌ "+detail;
-    if(ig)ig.innerHTML='<div class="empty">No se pudo generar el paisaje IA.<br><small>'+detail+'</small><br><small>Si aparece “HF_TOKEN” o “credits”, revisa la clave de Hugging Face en Render.</small></div>';
+    if(status)status.textContent="❌ "+(e.message||"Error generando paisajes.");
+    if(ig)ig.innerHTML='<div class="empty">No se pudieron generar los paisajes IA.<br><small>'+escapeHtml(e.message||"Error desconocido")+'</small></div>';
   }finally{S.aiLoading=false;renderAICreator()}
 }
 
+async function generateAIOptions(){
+  const prompt=(($("#aiImagePrompt").value||"").trim()||"peaceful nature landscape");
+  const musicPrompt=(($("#aiMusicPrompt").value||"").trim()||"piano relaxing ambient");
+  S.aiLoading=true; S.aiImages=[]; S.aiMusic=[]; S.externalMusic=[]; S.selectedExternalMusic=[]; S.image=null; S.music=null;
+  const status=$("#aiSelectionStatus"), ig=$("#aiImageGrid"), mg=$("#aiMusicList");
+  if(status)status.textContent="✨ Generando 4 paisajes y preparando la música IA…";
+  if(ig)ig.innerHTML='<div class="empty">🤖 Generando 4 paisajes diferentes…</div>';
+  if(mg)mg.innerHTML='<div class="empty">♫ Preparando 4 versiones musicales…</div>';
+  try{
+    const [imageResult,musicStart]=await Promise.all([
+      api("/api/ai-images",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({theme:prompt,count:4})}),
+      api("/api/ai-music",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({musicPrompt,count:4})})
+    ]);
+    S.aiImages=imageResult.images||[];
+    if(!S.aiImages.length)throw Error("No se pudo generar ningún paisaje IA.");
+    S.image=S.aiImages[0];
+    renderAICreator();
+    if(status)status.textContent="✓ Paisajes listos. ♫ Generando las 4 versiones musicales…";
+    await waitForAIMusic();
+    if(status)status.textContent="✓ 4 paisajes y 4 versiones musicales listas. Elige tu combinación.";
+  }catch(e){
+    if(status)status.textContent="❌ "+(e.message||"No se pudieron generar las opciones IA.");
+  }finally{S.aiLoading=false;renderAICreator()}
+}
+
+async function generateAIMusicOnly(){
+  const prompt=(($("#aiMusicPrompt").value||"").trim()||"piano relaxing ambient");
+  S.aiLoading=true; S.aiMusic=[]; S.externalMusic=[]; S.selectedExternalMusic=[]; S.music=null;
+  const status=$("#aiSelectionStatus"), mg=$("#aiMusicList");
+  if(status)status.textContent="♫ Generando 4 versiones musicales con IA…";
+  if(mg)mg.innerHTML='<div class="empty">♫ Creando cuatro versiones musicales…</div>';
+  try{
+    await api("/api/ai-music",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({musicPrompt:prompt,count:4})});
+    await waitForAIMusic();
+    if(status)status.textContent="✓ 4 versiones musicales listas. Elige una.";
+  }catch(e){
+    if(status)status.textContent="❌ "+(e.message||"No se pudo generar la música.");
+    if(mg)mg.innerHTML='<div class="empty">No se pudo generar la música.<br><small>'+escapeHtml(e.message||"Error desconocido")+'</small></div>';
+  }finally{S.aiLoading=false;renderAICreator()}
+}
 // Los botones de búsqueda IA están conectados directamente a sus motores independientes.
 // Antes estaban en el HTML pero no tenían listener, por eso al pulsarlos no ocurría nada.
 function bindAIButtons(){
@@ -63,7 +98,7 @@ function bindAIButtons(){
   const loadBtn=$("#aiLoadPhotos");
   const musicBtn=$("#aiSearchMusic");
   if(imageBtn) imageBtn.onclick=generateAIImagesOnly;
-  if(loadBtn) loadBtn.onclick=generateAIImagesOnly;
+  if(loadBtn) loadBtn.onclick=generateAIOptions;
   if(musicBtn) musicBtn.onclick=generateAIMusicOnly;
 }
 
@@ -227,7 +262,10 @@ function renderAICreator(){
     $$("#aiImageGrid .ai-photo").forEach(e=>e.onclick=()=>{S.image={url:e.dataset.url,name:e.dataset.name};renderAICreator()});
   }
   if(mg){
-    if(S.externalMusic.length){
+    if(S.aiMusic.length){
+      mg.innerHTML=S.aiMusic.map((x,i)=>'<div class="ai-track '+(S.music?.url===x.url?"selected":"")+'"><div><b>♫ IA · Opción '+(i+1)+'</b><small>RelaxScape Free AI Music Engine</small></div><div class="ai-track-actions"><audio controls preload="metadata" src="'+x.url+'"></audio><button type="button" class="preview-download" data-ai-music="'+escapeHtml(x.url)+'">✓ Usar esta música</button></div></div>').join("");
+      $("#aiMusicList [data-ai-music]").forEach(b=>b.onclick=()=>{const x=S.aiMusic.find(v=>v.url===b.dataset.aiMusic);if(x){S.music=x;renderAICreator();update();picker();if($("#aiSelectionStatus"))$("#aiSelectionStatus").textContent="✓ Música IA seleccionada."}});
+    }else if(S.externalMusic.length){
       mg.innerHTML=S.externalMusic.map((x,i)=>{
         const selected=S.selectedExternalMusic.some(v=>String(v.id)===String(x.id));
         return '<div class="ai-track '+(selected?"selected":"")+'" data-external-id="'+x.id+'"><div><b>♫ '+escapeHtml(x.name)+'</b><small>Freesound · '+escapeHtml(x.username||"")+' · '+escapeHtml(x.license||"")+' · '+formatDuration(x.duration)+'</small></div><div class="ai-track-actions"><audio controls preload="metadata" src="'+x.preview+'"></audio><button type="button" class="mix-select '+(selected?"selected":"")+'" data-select-external="'+x.id+'">'+(selected?"✓ En la mezcla":"＋ Añadir a mezcla")+'</button><button type="button" class="preview-download" data-download-external="'+x.id+'">↓ Descargar previa</button><a class="preview-download" href="'+x.sourceUrl+'" target="_blank" rel="noopener">↗ Ver fuente</a></div></div>';
