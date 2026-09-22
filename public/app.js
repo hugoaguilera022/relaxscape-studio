@@ -400,6 +400,21 @@ $("#musicInput").onchange=async e=>{if(!e.target.files[0])return;const fd=new Fo
 $("#aiImage").onclick=async()=>{const p=$("#prompt").value||"Ultra-realistic cinematic peaceful landscape, natural light, no people, no text, photorealistic";$("#builderStatus").textContent="Generando imagen IA…";try{S.image=await api("/api/generate-image",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt:p})});await load()}catch(x){$("#builderStatus").textContent=x.message}};
 $("#generate").onclick=async()=>{if(!S.image||!S.music){$("#builderStatus").textContent="Selecciona un paisaje y una pista.";return}$("#generate").disabled=true;$("#builderStatus").textContent="Generando vídeo…";try{const d=await api("/api/generate-video",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image:S.image.url,music:S.music.url,durationMinutes:Math.max(1,Math.min(1440,Math.round(Number($("#mainDurationMinutes")?.value)||60)))})});$("#video").src=d.url;$("#download").href=d.url;$("#download").setAttribute("download",d.name||"relaxscape-video.mp4");$("#result").classList.remove("hidden");$("#builderStatus").textContent="Vídeo terminado.";}catch(x){$("#builderStatus").textContent=x.message}finally{$("#generate").disabled=false}};
 $("#aiGoMusic").onclick=()=>{$$(".nav").forEach(x=>x.classList.remove("active"));$(".tab").forEach(x=>x.classList.remove("active"));document.querySelector('[data-tab="music"]').classList.add("active");$("#music").classList.add("active");};
+async function createImageAudioPreview(){
+  const status=$("#aiImageAudioStatus"), btn=$("#aiCreateImageAudioPreview"), video=$("#aiImageAudioPreview");
+  if(!S.image||!S.music){if(status)status.textContent="Selecciona primero una imagen y una mezcla de audio.";return}
+  if(S.music.isFreesoundPreview){if(status)status.textContent="La mezcla de audio todavía se está preparando. Espera a que termine.";return}
+  if(btn)btn.disabled=true;
+  if(status)status.textContent="🎬 Creando preview de 30 segundos con la imagen + audio…";
+  try{
+    const d=await api("/api/preview-video",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image:S.image.url,music:S.music.url})});
+    if(video){video.src=d.url;video.classList.remove("hidden");video.load();}
+    if(status)status.textContent="✓ Preview de 30 segundos lista. Comprueba imagen, volumen y mezcla antes de crear el vídeo.";
+  }catch(e){if(status)status.textContent="❌ "+e.message}
+  finally{if(btn)btn.disabled=false}
+}
+$("#aiCreateImageAudioPreview").onclick=createImageAudioPreview;
+
 $("#aiCreateHour").onclick=async()=>{
   if(!S.image||!S.music){$("#aiSelectionStatus").textContent="Selecciona primero una foto y una música.";return}
   if(S.music.isFreesoundPreview){$("#aiSelectionStatus").textContent="La previa está lista, pero la mezcla completa todavía se está preparando. Espera a que termine para crear el vídeo.";return}
