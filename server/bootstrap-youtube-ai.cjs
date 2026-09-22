@@ -47,9 +47,114 @@ async function ext(prompt,img,out,seed){
 const jobs=new Map();
 
 app.use(express.json({limit:"2mb"}));
+app.use(express.static(path.join(ROOT,"public")));
+app.use("/media/videos",express.static(VIDEO_DIR));
+app.use("/media/music",express.static(MUSIC_DIR));
 
+
+const YTDLP=path.join(ROOT,"data","yt-dlp");
+async function ensureYtDlp(){
+  if(fs.existsSync(YTDLP)) return YTDLP;
+  await fsp.mkdir(path.dirname(YTDLP),{recursive:true});
+  const r=await fetch("https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp");
+  if(!r.ok) throw Error("No se pudo descargar yt-dlp ("+r.status+")");
+  await fsp.writeFile(YTDLP,Buffer.from(await r.arrayBuffer()),{mode:0o755});
+  fs.chmodSync(YTDLP,0o755);
+  return YTDLP;
+}
+function runCmd(bin,args,opts={}){
+  return new Promise((resolve,reject)=>{
+    const p=spawn(bin,args,{stdio:["ignore","pipe","pipe"],...opts});
+    let out="",err="";
+    p.stdout.on("data",d=>out+=d);p.stderr.on("data",d=>err+=d);
+    p.on("error",reject);
+    p.on("close",code=>code?reject(Error((err||out).slice(-12000)||("Proceso "+code))):resolve({out,err}));
+  });
+}
+async function youtubeMetaAndSample(url,work){
+  const bin=await ensureYtDlp();
+  const meta=await runCmd(bin,[
+    "--dump-single-json","--skip-download","--no-warnings",
+    "--extractor-args","youtube:player_client=android_vr",
+    url
+  ]);
+  let info={};
+  try{info=JSON.parse(meta.out)}catch{}
+  const duration=Math.max(1,Number(info.duration||60));
+  const marks=[0,Math.max(0,duration*.25-15),Math.max(0,duration*.5-15),Math.max(0,duration*.75-15)];
+  const clips=[];
+  for(let i=0;i<marks.length;i++){
+    const start=Math.floor(marks[i]),end=Math.min(duration,start+15);
+    const out=path.join(work,"sample-"+i+".mp4");
+    try{
+      await runCmd(bin,[
+        "--no-warnings","--no-playlist","--extractor-args","youtube:player_client=android_vr",
+        "-f","worst[ext=mp4]/worst","--download-sections","*"+start+"-"+end,
+        "-o",out,url
+      ]);
+      if(fs.existsSync(out)&&fs.statSync(out).size>5000) clips.push(out);
+    }catch(e){console.warn("[YouTube sample]",i,e.message)}
+  }
+  if(!clips.length) throw Error("No se pudo obtener una muestra del vídeo de YouTube. Prueba con un vídeo público y accesible.");
+  return {info,duration,clips};
+}
+async function extractFrame(video,out){
+  await ff(["-y","-ss","5","-i",video,"-frames:v","1","-q:v","2",out]);
+}
+async function analyzeVision(frames,meta){
+  const key=process.env.POLLINATIONS_API_KEY;
+  if(!key) return "";
+  const content=[{type:"text",text:"Analiza estas capturas de un vídeo relajante de YouTube. Describe de forma concreta: paisaje/escena, sujeto principal, movimiento, cámara, iluminación, colores, hora del día, clima, elementos que se repiten y sensación sonora/ambiente visual. No copies personas, logos ni fotogramas. Devuelve una guía breve para crear una obra audiovisual original muy parecida en ambiente y ritmo."}];
+  for(const f of frames.slice(0,4)){
+    const b=fs.readFileSync(f).toString("base64");
+    content.push({type:"image_url",image_url:{url:"data:image/jpeg;base64,"+b}});
+  }
+  try{
+    const rr=await fetch("https://gen.pollinations.ai/v1/chat/completions",{
+      method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+key},
+      body:JSON.stringify({model:"gemini-search",messages:[{role:"user",content}],max_tokens:900})
+    });
+    if(!rr.ok)return "";
+    const d=await rr.json();
+    return d.choices?.[0]?.message?.content||"";
+  }catch{return ""}
+}
+async function analyzeAudio(video){
+  try{
+    const r=await runCmd((await import("ffmpeg-static")).default,[
+      "-hide_banner","-i",video,"-af","volumedetect,astats=metadata=1:reset=1","-f","null","-"
+    ]);
+    return (r.err||"").slice(-5000);
+  }catch{return ""}
+}
+app.post("/api/youtube-ai-analyze",async(req,res)=>{
+  const url=String(req.body?.url||"");
+  if(!url)return res.status(400).json({error:"Falta el enlace de YouTube"});
+  const work=path.join(VIDEO_DIR,"analysis-"+Date.now());
+  try{
+    await fsp.mkdir(work,{recursive:true});
+    const x=await youtubeMetaAndSample(url,work);
+    const frames=[];
+    for(let i=0;i<x.clips.length;i++){
+      const f=path.join(work,"frame-"+i+".jpg");
+      await extractFrame(x.clips[i],f);if(fs.existsSync(f))frames.push(f);
+    }
+    const vision=await analyzeVision(frames,x.info);
+    const audio=await analyzeAudio(x.clips[0]);
+    const analysis={
+      title:x.info.title||"",author:x.info.uploader||x.info.channel||"",
+      duration:x.duration,thumbnail:x.info.thumbnail||"",
+      description:x.info.description||"",keywords:(x.info.tags||[]).join(", "),
+      videoAnalysis:vision||"Análisis visual local: vídeo muestreado en cuatro puntos de su duración.",
+      audioAnalysis:audio,
+      samples:frames.map((f,i)=>"/media/videos/"+path.basename(work)+"/"+path.basename(f))
+    };
+    res.json(analysis);
+  }catch(e){res.status(500).json({error:e.message||String(e)})}
+  finally{setTimeout(()=>fsp.rm(work,{recursive:true,force:true}).catch(()=>{}),600000)}
+});
 app.post("/api/youtube-ai-generate",(req,res)=>{
-  const b=req.body||{},url=String(b.url||""),thumb=String(b.thumbnail||"");
+  const b=req.body||{},url=String(b.url||""),thumb=String(b.referenceImage||b.thumbnail||"");
   if(!url||!thumb)return res.status(400).json({error:"Falta la referencia de YouTube"});
   const id="ytai-"+Date.now()+"-"+Math.random().toString(36).slice(2,7);
   jobs.set(id,{status:"running",progress:0,stage:"preparando",results:[],error:null});
@@ -57,7 +162,7 @@ app.post("/api/youtube-ai-generate",(req,res)=>{
   (async()=>{
     const j=jobs.get(id),w=path.join(VIDEO_DIR,id);await fsp.mkdir(w,{recursive:true});
     try{
-      const context=["REFERENCIA REAL DE YOUTUBE","URL: "+url,b.title?"Título: "+b.title:"",b.author?"Canal: "+b.author:"",b.category?"Categoría: "+b.category:"",b.description?"Descripción: "+b.description:"",b.keywords?"Palabras clave: "+b.keywords:"","Representa específicamente el contenido de esta referencia con material visual original y relajante.","Conserva sujeto, lugar, actividad, objetos, clima, iluminación y ambiente identificables; no lo conviertas en un paisaje genérico.","No copies personas, logos, grabaciones ni fotogramas."].filter(Boolean).join(". ");
+      const context=["ANÁLISIS REAL DE LA REFERENCIA DE YOUTUBE",b.videoAnalysis||"",b.audioAnalysis||"","REFERENCIA REAL DE YOUTUBE","URL: "+url,b.title?"Título: "+b.title:"",b.author?"Canal: "+b.author:"",b.category?"Categoría: "+b.category:"",b.description?"Descripción: "+b.description:"",b.keywords?"Palabras clave: "+b.keywords:"","Representa específicamente el contenido de esta referencia con material visual original y relajante.","Conserva sujeto, lugar, actividad, objetos, clima, iluminación y ambiente identificables; no lo conviertas en un paisaje genérico.","No copies personas, logos, grabaciones ni fotogramas."].filter(Boolean).join(". ");
       const clips=[];
       for(let i=0;i<4;i++){
         j.stage="IA externa · toma "+(i+1)+"/4";j.progress=i*20;
