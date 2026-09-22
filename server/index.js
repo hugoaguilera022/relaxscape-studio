@@ -1149,6 +1149,7 @@ async function muxExternalVideoWithMusic(videoPath,musicPath,outPath){
 app.post("/api/video-preview-options",(req,res)=>{
   const prompt=String(req.body?.musicPrompt||"").trim().slice(0,700);
   const images=Array.isArray(req.body?.images)?req.body.images.map(x=>String(x||"").trim()).filter(Boolean).slice(0,3):[];
+  const music=Array.isArray(req.body?.music)?req.body.music.map(x=>String(x||"").trim()).filter(Boolean).slice(0,3):[];
   const image=String(req.body?.image||"").trim();
   if(!prompt)return res.status(400).json({error:"Escribe primero qué música quieres crear."});
   if(images.length!==3 && !image)return res.status(400).json({error:"Selecciona los 3 paisajes IA."});
@@ -1214,12 +1215,31 @@ app.post("/api/video-preview-options",(req,res)=>{
         ? currentImage
         : "https://relaxscape-studio.onrender.com/media/images/"+encodeURIComponent(decodeURIComponent(currentImage.split("/").pop())));
 
+      // Si YouTube ya generó la música desde el mismo motor del apartado Crear IA,
+      // reutilizamos EXACTAMENTE esas pistas. No se vuelve a sintetizar otra música.
+      const selectedMusicPaths=[];
+      if(music.length===3){
+        for(let musicIndex=0;musicIndex<3;musicIndex++){
+          const currentMusic=music[musicIndex];
+          const musicName=decodeURIComponent(currentMusic.split("/").pop());
+          const musicPath=path.join(MUSIC_DIR,musicName);
+          if(!fs.existsSync(musicPath))throw new Error("No se encontró la música IA seleccionada "+(musicIndex+1)+".");
+          selectedMusicPaths.push(musicPath);
+        }
+      }
+
       for(let i=0;i<variants.length;i++){
         const track=variants[i];
-        const musicPath=path.join(work,track.file);
-        job.stage="music-"+track.variant;
+        let musicPath;
+        if(selectedMusicPaths.length===3){
+          musicPath=selectedMusicPaths[i];
+          job.stage="ai-music-ready-"+track.variant;
+        }else{
+          musicPath=path.join(work,track.file);
+          job.stage="music-"+track.variant;
+          await generateAIMusicFile(track,musicPath,18000);
+        }
         job.progress=Math.round((i/variants.length)*100);
-        await generateAIMusicFile(track,musicPath,18000);
         const videoName="video-preview-"+jobId+"-"+track.variant+".mp4";
         const out=path.join(VIDEO_DIR,videoName);
         // YOUTUBE: las 3 versiones se generan SIEMPRE localmente.
@@ -1241,7 +1261,7 @@ app.post("/api/video-preview-options",(req,res)=>{
           label:"Vídeo propuesta "+track.variant,
           variant:track.variant,
           durationSeconds:YOUTUBE_PREVIEW_SECONDS,
-          musicUrl:"/media/music/"+encodeURIComponent(track.file),
+          musicUrl:music.length===3?music[track.variant-1]:"/media/music/"+encodeURIComponent(track.file),
           originalMusicPrompt:prompt,
           imageUrl:publicImageUrls[track.variant-1]
         });
@@ -1271,6 +1291,7 @@ app.get("/api/video-preview-options-status",(req,res)=>{
 app.post("/api/video-preview-final",async(req,res)=>{
   const prompt=String(req.body?.musicPrompt||"").trim().slice(0,700);
   const image=String(req.body?.image||"").trim();
+  const music=String(req.body?.music||"").trim();
   const variant=Math.min(3,Math.max(1,Number(req.body?.variant||1)));
   const hours=Number(req.body?.durationHours||1);
   if(!prompt||!image)return res.status(400).json({error:"Faltan el paisaje o la búsqueda musical."});
@@ -1283,22 +1304,30 @@ app.post("/api/video-preview-final",async(req,res)=>{
   const out=path.join(VIDEO_DIR,finalName);
   fs.mkdirSync(work,{recursive:true});
   try{
-    const trackBase={
-      userSearch:prompt,originalMusicPrompt:prompt,
-      musicProfile:buildAIMusicPrompt(prompt,variant),
-      userMusicBrief:buildAIMusicPrompt(prompt,variant),
-      variant,forceRegenerate:true
-    };
-    const segments=[];
-    for(let i=0;i<4;i++){
-      const seg=path.join(work,"segment-"+i+".mp3");
-      await generateAIMusicFile({...trackBase,generationSeed:"final-"+Date.now()+"-"+i},seg,180000);
-      segments.push(seg);
+    let base;
+    if(music){
+      const musicName=decodeURIComponent(music.split("/").pop());
+      const selectedMusicPath=path.join(MUSIC_DIR,musicName);
+      if(!fs.existsSync(selectedMusicPath))throw new Error("No se encontró la música IA seleccionada.");
+      base=selectedMusicPath;
+    }else{
+      const trackBase={
+        userSearch:prompt,originalMusicPrompt:prompt,
+        musicProfile:buildAIMusicPrompt(prompt,variant),
+        userMusicBrief:buildAIMusicPrompt(prompt,variant),
+        variant,forceRegenerate:true
+      };
+      const segments=[];
+      for(let i=0;i<4;i++){
+        const seg=path.join(work,"segment-"+i+".mp3");
+        await generateAIMusicFile({...trackBase,generationSeed:"final-"+Date.now()+"-"+i},seg,180000);
+        segments.push(seg);
+      }
+      const list=path.join(work,"concat.txt");
+      fs.writeFileSync(list,segments.map(x=>"file '"+x.replace(/'/g,"'\\''")+"'").join("\n"));
+      base=path.join(work,"base.mp3");
+      await runFfmpeg(["-y","-f","concat","-safe","0","-i",list,"-c:a","libmp3lame","-b:a","192k","-ar","48000",base]);
     }
-    const list=path.join(work,"concat.txt");
-    fs.writeFileSync(list,segments.map(x=>"file '"+x.replace(/'/g,"'\\''")+"'").join("\n"));
-    const base=path.join(work,"base.mp3");
-    await runFfmpeg(["-y","-f","concat","-safe","0","-i",list,"-c:a","libmp3lame","-b:a","192k","-ar","48000",base]);
     // Creamos un tramo corto con movimiento real y después lo repetimos sin
     // volver a renderizar horas de vídeo: rápido, gratis y estable en Render.
     const motionSegment=path.join(work,"motion-segment.mp4");
