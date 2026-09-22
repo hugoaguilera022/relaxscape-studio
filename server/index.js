@@ -2443,6 +2443,7 @@ async function buildSelectedFreesoundMixJob(jobId,tracks,durationMinutes){
       name:finalName,
       url:"/media/music/"+encodeURIComponent(finalName),
       label:"Mezcla relajante · "+local.length+" capas · "+durationMinutes+" min",
+      durationSeconds:durationMinutes*60,
       provider:"RelaxScape Smart Mixer",
       source:"Freesound + RelaxScape AI",
       isFreesoundMix:true,
