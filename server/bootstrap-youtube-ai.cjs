@@ -75,31 +75,76 @@ function runCmd(bin,args,opts={}){
 }
 async function youtubeMetaAndSample(url,work){
   const bin=await ensureYtDlp();
-  const meta=await runCmd(bin,[
-    "--dump-single-json","--skip-download","--no-warnings",
-    "--extractor-args","youtube:player_client=android_vr",
-    url
-  ]);
-  let info={};
-  try{info=JSON.parse(meta.out)}catch{}
+  const clients=[
+    "android_vr",
+    "web_embedded",
+    "tv_embedded",
+    "mweb",
+    "web_safari"
+  ];
+
+  // Primero obtenemos únicamente los metadatos. No se descarga el vídeo completo.
+  let info=null, metaError=null;
+  for(const client of clients){
+    try{
+      const meta=await runCmd(bin,[
+        "--dump-single-json","--skip-download","--no-warnings",
+        "--extractor-args","youtube:player_client="+client,
+        url
+      ]);
+      info=JSON.parse(meta.out);
+      if(info?.id) break;
+    }catch(e){
+      metaError=e;
+      console.warn("[YouTube metadata] cliente "+client+" falló:",e.message);
+    }
+  }
+  if(!info?.id){
+    throw Error("YouTube no permitió acceder al vídeo desde el servidor. Se probaron varios clientes automáticamente. Detalle: "+(metaError?.message||"acceso rechazado"));
+  }
+
   const duration=Math.max(1,Number(info.duration||60));
+  // Solo descargamos pequeñas muestras temporales en el servidor.
+  // El usuario nunca tiene que descargar ni subir el vídeo.
   const marks=[0,Math.max(0,duration*.25-15),Math.max(0,duration*.5-15),Math.max(0,duration*.75-15)];
   const clips=[];
+  let lastError=null;
+
   for(let i=0;i<marks.length;i++){
     const start=Math.floor(marks[i]),end=Math.min(duration,start+15);
     const out=path.join(work,"sample-"+i+".mp4");
-    try{
-      await runCmd(bin,[
-        "--no-warnings","--no-playlist","--extractor-args","youtube:player_client=android_vr",
-        "-f","worst[ext=mp4]/worst","--download-sections","*"+start+"-"+end,
-        "-o",out,url
-      ]);
-      if(fs.existsSync(out)&&fs.statSync(out).size>5000) clips.push(out);
-    }catch(e){console.warn("[YouTube sample]",i,e.message)}
+
+    for(const client of clients){
+      try{
+        if(fs.existsSync(out)) fs.rmSync(out,{force:true});
+        await runCmd(bin,[
+          "--no-warnings","--no-playlist",
+          "--extractor-args","youtube:player_client="+client,
+          "-f","worst[ext=mp4]/worst",
+          "--download-sections","*"+start+"-"+end,
+          "--force-keyframes-at-cuts",
+          "-o",out,
+          url
+        ]);
+        if(fs.existsSync(out)&&fs.statSync(out).size>5000){
+          clips.push(out);
+          lastError=null;
+          break;
+        }
+      }catch(e){
+        lastError=e;
+        console.warn("[YouTube sample] cliente "+client+" muestra "+i+" falló:",e.message);
+      }
+    }
   }
-  if(!clips.length) throw Error("No se pudo obtener una muestra del vídeo de YouTube. Prueba con un vídeo público y accesible.");
+
+  if(!clips.length){
+    throw Error("No se pudo obtener ninguna muestra del vídeo de YouTube. El servidor probó varios métodos de acceso, pero YouTube rechazó la reproducción. "+(lastError?.message||""));
+  }
+
   return {info,duration,clips};
 }
+
 async function extractFrame(video,out){
   await ff(["-y","-ss","5","-i",video,"-frames:v","1","-q:v","2",out]);
 }
