@@ -2377,9 +2377,21 @@ async function buildSelectedFreesoundMixJob(jobId,tracks,durationMinutes){
     job.progress=45;
     job.status="preview-ready";
 
+    // No renderizamos la duración completa con filtros (podría tardar tanto como la propia
+    // duración del audio). Creamos una base mezclada de 5 minutos y después la repetimos
+    // sin recodificar hasta alcanzar exactamente la duración solicitada.
+    const baseName="selected-relax-mix-base-"+Date.now()+".mp3";
+    const basePath=path.join(work,baseName);
+    await runMix(300,basePath,"192k");
+    job.progress=70;
+
     const finalName="selected-relax-mix-"+durationMinutes+"min-"+Date.now()+".mp3";
     const finalPath=path.join(MUSIC_DIR,finalName);
-    await runMix(durationMinutes*60,finalPath,"192k");
+    await runFfmpeg([
+      "-y","-stream_loop","-1","-i",basePath,
+      "-t",String(durationMinutes*60),
+      "-c:a","copy",finalPath
+    ]);
 
     job.progress=100;
     job.status="succeeded";
