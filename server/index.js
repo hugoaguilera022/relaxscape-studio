@@ -1090,6 +1090,31 @@ app.post("/api/video-preview-options",(req,res)=>{
         fs.writeFileSync(imagePath,Buffer.from(await downloaded.arrayBuffer()));
       }
       if(!fs.existsSync(imagePath))throw new Error("No se encontró el paisaje seleccionado.");
+
+      // Render's FFmpeg build has no SVG decoder. Rasterize fallback SVGs
+      // into a small PPM image, which FFmpeg can decode natively.
+      try {
+        const probe=fs.readFileSync(imagePath);
+        const head=probe.subarray(0,200).toString("utf8").trimStart();
+        if(head.startsWith("<svg") || head.startsWith("<?xml")){
+          const w=480,h=270,rows=[];
+          for(let y=0;y<h;y++){
+            const t=y/(h-1);
+            for(let x=0;x<w;x++){
+              let rr=Math.round(18+74*t),gg=Math.round(42+64*t),bb=Math.round(70+48*t);
+              if(y>h*0.62){rr=22;gg=49;bb=58;}
+              const ridge=h*(0.42+0.10*Math.sin(x/52)+0.06*Math.sin(x/19));
+              if(Math.abs(y-ridge)<3 && y>h*0.28){rr=25;gg=53;bb=62;}
+              rows.push(rr+" "+gg+" "+bb);
+            }
+          }
+          const ppmPath=path.join(work,"video-image-"+jobId+".ppm");
+          fs.writeFileSync(ppmPath,"P3\\n"+w+" "+h+"\\n255\\n"+rows.join("\\n"));
+          imagePath=ppmPath;
+        }
+      }catch(e){
+        console.warn("[Video previews] No se pudo preparar el paisaje:",e.message);
+      }
       const results=[];
       const publicImageUrl=image.startsWith("http://")||image.startsWith("https://")
         ? image
