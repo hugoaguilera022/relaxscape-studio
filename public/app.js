@@ -285,17 +285,30 @@ function loadAIImagesSequentially(){
       setTimeout(next,100);
       return;
     }
-    let done=false;
+    let attempts=0, finished=false;
     const advance=()=>{
-      if(done)return;
-      done=true;
+      if(finished)return;
+      finished=true;
       img.dataset.loaded="1";
-      setTimeout(next,1500);
+      setTimeout(next,800);
+    };
+    const retry=()=>{
+      if(finished)return;
+      attempts++;
+      if(attempts<4){
+        img.src=src+(src.includes("?")?"&":"?")+"retry="+attempts+"-"+Date.now();
+        return;
+      }
+      // Nunca dejamos una tarjeta vacía: si el proveedor falla, mostramos una imagen local.
+      img.src="data:image/svg+xml;charset=UTF-8,"+encodeURIComponent(
+        "<svg xmlns='http://www.w3.org/2000/svg' width='1280' height='720'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop stop-color='%230b1220'/><stop offset='1' stop-color='%231b4d63'/></linearGradient></defs><rect width='100%' height='100%' fill='url(%23g)'/><circle cx='70%' cy='35%' r='130' fill='%2348a9a6' opacity='.28'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='white' font-size='34' font-family='Arial'>RelaxScape AI</text></svg>"
+      );
+      setTimeout(advance,300);
     };
     img.onload=advance;
-    img.onerror=advance;
+    img.onerror=retry;
     img.src=src;
-    setTimeout(advance,70000);
+    setTimeout(()=>{if(!finished&&!img.complete)retry()},70000);
   };
   next();
 }
