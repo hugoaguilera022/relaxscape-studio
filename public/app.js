@@ -315,10 +315,10 @@ function loadAIImagesSequentially(){
     };
     img.onload=complete; img.onerror=fail;
     img.src=src;
-    setTimeout(()=>{if(!settled){console.warn("[AI Images] Timeout rápido",item.index+1);fail()}},30000);
+    setTimeout(()=>{if(!settled){console.warn("[AI Images] Timeout rápido",item.index+1);fail()}},45000);
   };
   const pump=()=>{
-    while(active<2 && cursor<queue.length){
+    while(active<3 && cursor<queue.length){
       const item=queue[cursor++]; active++; loadOne(item);
     }
   };
