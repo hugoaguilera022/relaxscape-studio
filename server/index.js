@@ -1261,8 +1261,8 @@ app.post("/api/video-preview-options",(req,res)=>{
       for(let i=0;i<variants.length;i++){
         const track=variants[i];
         let musicPath;
-        if(selectedMusicPaths.length===3){
-          musicPath=selectedMusicPaths[i];
+        if(selectedMusicPaths.length===1){
+          musicPath=selectedMusicPaths[0];
           job.stage="ai-music-ready-"+track.variant;
         }else{
           musicPath=path.join(work,track.file);
@@ -1389,15 +1389,16 @@ app.post("/api/video-preview-final",async(req,res)=>{
 
 app.post("/api/ai-music", async (req,res)=>{
   const musicPrompt=String(req.body?.musicPrompt||"deep relaxation ambient music").trim().slice(0,700);
+  const requestedCount=Math.min(4,Math.max(1,Number(req.body?.count)||4));
   const generationId=++aiMusicGenerationId;
-  aiMusicTracks=aiTracksForBackground(musicPrompt,generationId);
+  aiMusicTracks=aiTracksForBackground(musicPrompt,generationId,requestedCount);
   aiMusicTracks.forEach(t=>{try{fs.rmSync(path.join(MUSIC_DIR,t.file),{force:true});}catch{}});
   aiMusicErrors=[];
   aiMusicPreparing=true;
   Promise.all(aiMusicTracks.map(track=>ensureBuiltinMusic([track])))
     .catch(e=>{if(generationId===aiMusicGenerationId)aiMusicErrors.push(e?.message||String(e));})
     .finally(()=>{if(generationId===aiMusicGenerationId)aiMusicPreparing=false;});
-  res.json({music:[],musicReady:false,musicPreparing:true,generationId,provider:"RelaxScape Free AI Music Engine"});
+  res.json({music:[],musicReady:false,musicPreparing:true,generationId,count:requestedCount,provider:"RelaxScape Free AI Music Engine"});
 });
 
 app.post("/api/ai-options", async (req, res) => {
@@ -1510,13 +1511,14 @@ function buildAIMusicPrompt(originalSearch="", variant=1){
   ].join(" ");
 }
 
-function aiTracksForBackground(prompt="", generationId=0){
+function aiTracksForBackground(prompt="", generationId=0, count=4){
   const originalSearch=String(prompt||"").trim().slice(0,700);
+  const requestedCount=Math.min(4,Math.max(1,Number(count)||4));
   const sessionNonce="music-"+generationId+"-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,10);
   // PALETA SONORA COMÚN: todas las versiones parten del mismo timbre/ambiente.
   // Solo cambian melodía, registro, voicing y pequeñas decisiones de fraseo.
   const soundPalette=musicIntentProfile(originalSearch);
-  return [1,2,3,4].map((variant)=>{
+  return Array.from({length:requestedCount},(_,i)=>i+1).map((variant)=>{
     const file="ai-music-"+sessionNonce+"-"+variant+".mp3";
     const commonSeed=sessionNonce+"|shared-sound-palette";
     const variantBrief=buildAIMusicPrompt(originalSearch,variant)+
