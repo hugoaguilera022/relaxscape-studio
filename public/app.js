@@ -48,7 +48,7 @@ async function generateAIImagesOnly(){
   }catch(e){
     if(status)status.textContent="❌ "+(e.message||"Error generando paisajes.");
     if(ig)ig.innerHTML='<div class="empty">No se pudieron generar los imágenes IA.<br><small>'+escapeHtml(e.message||"Error desconocido")+'</small></div>';
-  }finally{S.aiLoading=false;renderAICreator()}
+  }finally{S.aiLoading=false}
 }
 
 async function generateAIOptions(){
@@ -87,7 +87,6 @@ async function generateAIOptions(){
     renderAICreator();
   }finally{
     S.aiLoading=false;
-    renderAICreator();
   }
 }
 
