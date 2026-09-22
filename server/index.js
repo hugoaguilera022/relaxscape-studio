@@ -1901,8 +1901,6 @@ function buildFreesoundQueries(input=""){
   // La búsqueda de la sección IA devuelve piezas cortas pensadas para poder
   // repetirse durante horas. Mantenemos la búsqueda original y añadimos
   // variantes explícitamente orientadas a loops.
-  const loopQueries=[...expanded].map(x=>String(x).trim()).filter(Boolean).map(x=>x.toLowerCase().includes("loop")?x:x+" loop");
-  expanded.push(...loopQueries);
   return [...new Set(expanded)].filter(Boolean).slice(0,4);
 }
 
@@ -1940,7 +1938,7 @@ async function runFreesoundSearchJob(jobId,input){
         if(!preview)continue;
         const tags=Array.isArray(x.tags)?x.tags.slice(0,12):[];
         const searchable=(String(x.name||"")+" "+tags.join(" ")).toLowerCase();
-        const loopLike=searchable.includes("loop") || searchable.includes("seamless") || searchable.includes("loopable");
+        const relaxingLike=/(relax|ambient|calm|peace|meditat|sleep|soothing|soft|nature|zen|dream|chill|spa|healing|serene|tranquil|acoustic)/i.test(searchable);
         all.push({
           id:x.id,
           name:x.name||"Freesound audio",
@@ -1951,8 +1949,8 @@ async function runFreesoundSearchJob(jobId,input){
           downloads:Number(x.num_downloads||0),
           tags,
           preview,
-          loop:true,
-          loopLike,
+          relaxing:true,
+          relaxingLike,
           sourceUrl:x.url||("https://freesound.org/s/"+x.id),
           provider:"Freesound"
         });
@@ -1965,9 +1963,9 @@ async function runFreesoundSearchJob(jobId,input){
       seen.add(x.id);
       unique.push(x);
     }
-    unique.sort((a,b)=>(Number(b.loopLike)-Number(a.loopLike))||(b.rating||0)-(a.rating||0)||b.downloads-a.downloads);
+    unique.sort((a,b)=>(Number(b.relaxingLike)-Number(a.relaxingLike))||(b.rating||0)-(a.rating||0)||b.downloads-a.downloads);
     job.status="succeeded";
-    job.result={provider:"Freesound",query:input,results:unique.slice(0,12),loopMode:true};
+    job.result={provider:"Freesound",query:input,results:unique.slice(0,12),relaxingMode:true};
   }catch(e){
     console.error("[Freesound Search] ERROR",e.stack||e.message||e);
     job.status="failed";
