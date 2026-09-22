@@ -749,10 +749,9 @@ async function generateHuggingFaceLandscape(prompt, index=0) {
   const finalPrompt = [
     userPrompt,
     variations[index % variations.length],
-    "photorealistic landscape photography",
-    "cinematic natural lighting",
-    "wide 16:9 composition",
-    "no people, no buildings, no text, no logo"
+    "high quality detailed image, professional visual composition, realistic materials and lighting",
+    "16:9 composition",
+    "no watermark, no logo, no unwanted text"
   ].join(", ");
 
   // YouTube: salida 16:9 Full HD 1920x1080. FLUX.1-schnell funciona con 4 pasos;
@@ -773,7 +772,7 @@ async function generateHuggingFaceLandscape(prompt, index=0) {
     throw new Error("Hugging Face no devolvió una imagen válida.");
   }
 
-  const filename = "ai-landscape-" + Date.now() + "-" + index + ".png";
+  const filename = "ai-image-" + Date.now() + "-" + index + ".png";
   const buffer = Buffer.from(await imageBlob.arrayBuffer());
   if (!buffer.length) throw new Error("Hugging Face devolvió una imagen vacía.");
 
@@ -785,7 +784,7 @@ async function generateHuggingFaceLandscape(prompt, index=0) {
     ai: true,
     provider: "Hugging Face Inference Providers · FLUX.1-schnell",
     fallback: false,
-    label: "Paisaje IA " + (index + 1)
+    label: "Imagen IA " + (index + 1)
   };
 }
 
@@ -800,13 +799,12 @@ async function generatePollinationsLandscape(prompt, index=0) {
   const finalPrompt = [
     userPrompt,
     variations[index % variations.length],
-    "photorealistic landscape photography",
-    "cinematic natural lighting",
-    "wide 16:9 composition",
-    "no people, no buildings, no text, no logo"
+    "high quality detailed image, professional visual composition, realistic materials and lighting",
+    "16:9 composition",
+    "no watermark, no logo, no unwanted text"
   ].join(", ");
 
-  const filename = "ai-landscape-pollinations-" + Date.now() + "-" + index + ".svg";
+  const filename = "ai-image-pollinations-" + Date.now() + "-" + index + ".svg";
   const key = String(process.env.POLLINATIONS_API_KEY || "").trim();
 
   // Pollinations cambió su gateway: usamos el endpoint unificado actual primero.
@@ -842,7 +840,7 @@ async function generatePollinationsLandscape(prompt, index=0) {
         ai: true,
         provider: "Pollinations AI · FLUX",
         fallback: true,
-        label: "Paisaje IA " + (index + 1)
+        label: "Imagen IA " + (index + 1)
       };
     } catch (error) {
       lastError = error;
@@ -857,8 +855,8 @@ async function generatePollinationsLandscape(prompt, index=0) {
     ...fallback,
     ai: false,
     fallback: true,
-    provider: "RelaxScape local fallback (Pollinations no disponible)",
-    label: "Paisaje generado"
+    provider: "RelaxScape local image fallback (Pollinations no disponible)",
+    label: "Imagen generada"
   };
 }
 
@@ -883,7 +881,7 @@ app.post("/api/generate-image", async (req, res) => {
 
 
 
-function makeFallbackLandscape(filename, theme="nature") {
+function makeFallbackLandscape(filename, theme="image") {
   const safeTheme = String(theme).replace(/[&<>"]/g, "");
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
   <defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#102a43"/><stop offset="0.55" stop-color="#4b7a8f"/><stop offset="1" stop-color="#d8b47a"/></linearGradient><linearGradient id="water" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#294f63"/><stop offset="1" stop-color="#0b2638"/></linearGradient></defs>
@@ -893,7 +891,7 @@ function makeFallbackLandscape(filename, theme="nature") {
   <path d="M0 820 Q480 760 960 830 T1920 810 L1920 1080 L0 1080Z" fill="url(#water)" opacity=".95"/>
   <text x="70" y="1010" fill="#fff" opacity=".55" font-family="Arial" font-size="34">RelaxScape · ${safeTheme}</text></svg>`;
   fs.writeFileSync(path.join(IMAGE_DIR, filename), svg);
-  return { name: filename, url: "/media/images/" + encodeURIComponent(filename), ai: false, provider: "RelaxScape local fallback", fallback: true, label: "Paisaje relajante" };
+  return { name: filename, url: "/media/images/" + encodeURIComponent(filename), ai: false, provider: "RelaxScape local image fallback", fallback: true, label: "Paisaje relajante" };
 }
 
 let aiMusicPreparing = false;
@@ -931,8 +929,8 @@ async function generateAIImage(prompt, index=0) {
 }
 
 app.post("/api/ai-images", async (req, res) => {
-  const theme = String(req.body?.theme || "peaceful nature landscape").trim().slice(0, 700);
-  const requestedCount = Math.min(4, Math.max(1, Number(req.body?.count || 4)));
+  const theme = String(req.body?.theme || "cinematic relaxing visual").trim().slice(0, 700);
+  const requestedCount = 4;
 
   try {
     // Para que Render Free no se quede bloqueado esperando a Hugging Face,
@@ -946,14 +944,14 @@ app.post("/api/ai-images", async (req, res) => {
     const results = await Promise.all(jobs);
     const images = results.map((r, index) => {
       if (r.ok && r.image) return r.image;
-      const filename = "ai-landscape-local-" + Date.now() + "-" + index + ".svg";
+      const filename = "ai-image-local-" + Date.now() + "-" + index + ".svg";
       const fallback = makeFallbackLandscape(filename, theme + " · opción " + (index + 1));
       return {
         ...fallback,
         ai: false,
         fallback: true,
-        provider: "RelaxScape local fallback",
-        label: "Paisaje IA · opción " + (index + 1)
+        provider: "RelaxScape local image fallback",
+        label: "Imagen IA · opción " + (index + 1)
       };
     });
 
@@ -961,7 +959,7 @@ app.post("/api/ai-images", async (req, res) => {
       images,
       provider: images.some(x => x.provider === "Pollinations AI · FLUX")
         ? "Pollinations AI · FLUX"
-        : "RelaxScape local fallback",
+        : "RelaxScape local image fallback",
       fallbackUsed: images.some(x => x.fallback),
       errors: results.filter(x => !x.ok).map(x => x.error?.message || "Error desconocido")
     });
@@ -1125,7 +1123,7 @@ app.post("/api/video-preview-options",(req,res)=>{
   const music=Array.isArray(req.body?.music)?req.body.music.map(x=>String(x||"").trim()).filter(Boolean).slice(0,1):[];
   const image=String(req.body?.image||"").trim();
   if(!prompt)return res.status(400).json({error:"Escribe primero qué música quieres crear."});
-  if(images.length!==1 && !image)return res.status(400).json({error:"No se generó el paisaje IA de la referencia."});
+  if(images.length!==1 && !image)return res.status(400).json({error:"No se generó el imagen IA de la referencia."});
   const jobId="vp-"+Date.now()+"-"+Math.random().toString(36).slice(2,8);
   const variants=[1].map((variant)=>({
     userSearch:prompt,originalMusicPrompt:prompt,
@@ -1378,7 +1376,7 @@ app.post("/api/ai-options", async (req, res) => {
 
   if (!images.length) {
     return res.status(502).json({
-      error: "No se pudo generar ningún paisaje IA. Revisa HF_TOKEN en Render.",
+      error: "No se pudo generar ningún imagen IA. Revisa HF_TOKEN en Render.",
       imageErrors
     });
   }
