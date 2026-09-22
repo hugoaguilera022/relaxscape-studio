@@ -292,7 +292,7 @@ function renderAICreator(){
   const ig=$("#aiImageGrid"),mg=$("#aiMusicList"),mx=$("#aiMixer");
   if(ig){
     ig.innerHTML=S.aiImages.length?S.aiImages.map((x,i)=>'<button class="ai-photo '+(S.image?.url===x.url?"selected":"")+'" data-url="'+escapeHtml(x.url)+'" data-name="'+escapeHtml(x.name)+'"><img data-src="'+escapeHtml(x.url)+'" src="" alt="Imagen IA '+(i+1)+'"><span>Opción IA '+(i+1)+' · 2K</span></button>').join(""):'<div class="empty">✨ Generando opciones IA…</div>';
-    $("#aiImageGrid .ai-photo").forEach(e=>e.onclick=()=>{S.image={url:e.dataset.url,name:e.dataset.name};renderAICreator()});
+    Array.from(document.querySelectorAll("#aiImageGrid .ai-photo")).forEach(e=>e.onclick=()=>{S.image={url:e.dataset.url,name:e.dataset.name};renderAICreator()});
     if(S.aiImages.length) loadAIImagesSequentially();
   }
   if(mg){
