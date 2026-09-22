@@ -647,26 +647,40 @@ app.get("/api/library", (_, res) => {
 
 app.get("/api/youtube-info", async (req,res)=>{
   const raw=String(req.query.url||"").trim();
-  if(!/^https?:\/\/(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(raw)){
-    return res.status(400).json({error:"Introduce un enlace válido de YouTube."});
-  }
+  if(!raw) return res.status(400).json({error:"Pega un enlace de YouTube."});
   try{
-    const url=new URL(raw);
-    if(url.hostname.replace(/^www\./i,"")==="youtu.be"){
-      if(!url.pathname.slice(1)) throw new Error("Falta el identificador del vídeo.");
-    }else if(!url.searchParams.get("v") && !/^\/shorts\//i.test(url.pathname) && !/^\/embed\//i.test(url.pathname)){
-      throw new Error("No se encontró el identificador del vídeo.");
+    const normalized=/^https?:\/\//i.test(raw)?raw:"https://"+raw;
+    const input=new URL(normalized);
+    const host=input.hostname.toLowerCase().replace(/^www\./,"");
+    if(!["youtube.com","m.youtube.com","music.youtube.com","youtube-nocookie.com","youtu.be"].includes(host)){
+      return res.status(400).json({error:"El enlace no pertenece a YouTube."});
     }
-    const oembed="https://www.youtube.com/oembed?url="+encodeURIComponent(raw)+"&format=json";
-    const r=await fetchWithTimeout(oembed,{headers:{Accept:"application/json"}},10000);
-    const data=await r.json().catch(()=>({}));
-    if(!r.ok) return res.status(400).json({error:"YouTube no pudo reconocer ese vídeo."});
+    let videoId="";
+    if(host==="youtu.be") videoId=input.pathname.split("/").filter(Boolean)[0]||"";
+    else videoId=input.searchParams.get("v")||"";
+    if(!videoId){
+      const m=input.pathname.match(/^\/(?:shorts|embed|live|v)\/([^/?#]+)/i);
+      videoId=m?.[1]||"";
+    }
+    videoId=decodeURIComponent(String(videoId||"")).trim().split(/[?&#]/)[0];
+    if(!/^[A-Za-z0-9_-]{11}$/.test(videoId)){
+      return res.status(400).json({error:"No se encontró un identificador de vídeo válido en el enlace."});
+    }
+    const canonicalUrl="https://www.youtube.com/watch?v="+videoId;
+    const oembed="https://www.youtube.com/oembed?url="+encodeURIComponent(canonicalUrl)+"&format=json";
+    let data={};
+    try{
+      const rr=await fetchWithTimeout(oembed,{headers:{Accept:"application/json","User-Agent":"Mozilla/5.0"}},10000);
+      data=await rr.json().catch(()=>({}));
+    }catch{}
     res.json({
-      title:data.title||"Vídeo de YouTube",
+      title:data.title||"Vídeo de YouTube · "+videoId,
       author:data.author_name||"",
-      thumbnail:data.thumbnail_url||"",
+      thumbnail:data.thumbnail_url||"https://i.ytimg.com/vi/"+videoId+"/hqdefault.jpg",
       sourceUrl:raw,
-      promptSuggestion:String(data.title||"paisaje relajante").slice(0,180),
+      canonicalUrl,
+      videoId,
+      promptSuggestion:String(data.title||"Vídeo de YouTube").slice(0,180),
       audioAnalysisAvailable:false
     });
   }catch(e){
