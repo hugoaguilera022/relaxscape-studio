@@ -78,8 +78,8 @@ async function generateAIOptions(){
       await new Promise(r=>setTimeout(r,1000));
     }
     if(!d||d.status!=="succeeded")throw Error("La búsqueda de sonidos está tardando demasiado.");
-    S.externalMusic=(d.results||[]).map(x=>({...x,relaxing:true}));
-    if(!S.externalMusic.length)throw Error("No se encontraron loops. Prueba con otro instrumento o ambiente.");
+    S.externalMusic=(d.results||[]).map(x=>({...x,relaxing:true,generatedByAI:x.provider==="RelaxScape AI"}));
+    if(!S.externalMusic.length)throw Error("No se encontraron pistas relajantes. Prueba con otra descripción.");
     if(status)status.textContent="✓ 4 paisajes y "+S.externalMusic.length+" loops listos. Selecciona exactamente 2 pistas relajantes para crear tu mezcla.";
     renderAICreator();
   }catch(e){
@@ -121,8 +121,8 @@ async function generateAIMusicOnly(){
   const prompt=(($("#aiMusicPrompt").value||"").trim()||"piano relaxing ambient");
   S.aiLoading=true; S.aiMusic=[]; S.externalMusic=[]; S.selectedExternalMusic=[]; S.music=null;
   const status=$("#aiSelectionStatus"), mg=$("#aiMusicList");
-  if(status)status.textContent="🔎 Buscando audios reales según tu búsqueda…";
-  if(mg)mg.innerHTML='<div class="empty">🔎 Buscando grabaciones reales de instrumentos y ambientes…</div>';
+  if(status)status.textContent="🔎 Buscando música relajante y creando nuevas pistas con IA…";
+  if(mg)mg.innerHTML='<div class="empty">🔎 Buscando música relajante y generando nuevas opciones con IA…</div>';
   try{
     const started=await api("/api/external-music-search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({q:prompt})});
     let d=null;
@@ -134,7 +134,7 @@ async function generateAIMusicOnly(){
     }
     if(!d||d.status!=="succeeded")throw Error("La búsqueda está tardando demasiado.");
     S.externalMusic=(d.results||[]).map(x=>({...x,loop:true}));
-    if(!S.externalMusic.length)throw Error("No se encontraron loops para esa búsqueda.");
+    if(!S.externalMusic.length)throw Error("No se encontraron pistas relajantes para esa búsqueda.");
     if(status)status.textContent="✓ "+S.externalMusic.length+" loops encontrados. Selecciona exactamente 2 pistas relajantes para mezclarlas.";
     renderAICreator();
   }catch(e){
