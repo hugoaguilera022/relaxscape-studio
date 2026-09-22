@@ -2348,9 +2348,8 @@ async function buildSelectedFreesoundMixJob(jobId,tracks,durationMinutes){
   const work=path.join(MUSIC_DIR,"selected-mix-"+jobId);
   fs.mkdirSync(work,{recursive:true});
   try{
-    const local=[];
-    for(let i=0;i<tracks.length;i++){
-      const t=tracks[i]||{};
+    const local=await Promise.all(tracks.map(async (t,i)=>{
+      t=t||{};
       const preview=String(t.preview||"");
       const isAI=preview.includes("/media/music/") || String(t.provider||"").toLowerCase().includes("relaxscape ai");
       if(!preview || (!/^https?:\/\//i.test(preview) && !isAI)) throw new Error("Una de las pistas seleccionadas no es válida.");
@@ -2367,9 +2366,9 @@ async function buildSelectedFreesoundMixJob(jobId,tracks,durationMinutes){
         fs.writeFileSync(file,Buffer.from(await rr.arrayBuffer()));
       }
       if(!fs.statSync(file).size) throw new Error("Una de las pistas seleccionadas llegó vacía.");
-      local.push({file,track:t});
-      job.progress=Math.round(((i+1)/tracks.length)*25);
-    }
+      return {file,track:t};
+    }));
+    job.progress=25;
 
     // Interpretamos qué debe quedar delante y qué debe quedar detrás.
     // La mezcla deja la música al frente y los sonidos ambientales como cama.
@@ -2427,7 +2426,7 @@ async function buildSelectedFreesoundMixJob(jobId,tracks,durationMinutes){
     // sin recodificar hasta alcanzar exactamente la duración solicitada.
     const baseName="selected-relax-mix-base-"+Date.now()+".mp3";
     const basePath=path.join(work,baseName);
-    await runMix(300,basePath,"192k");
+    await runMix(30,basePath,"192k");
     job.progress=70;
 
     const finalName="selected-relax-mix-"+durationMinutes+"min-"+Date.now()+".mp3";
