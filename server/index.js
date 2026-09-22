@@ -1898,6 +1898,11 @@ function buildFreesoundQueries(input=""){
   for(const [needle,...terms] of aliases){
     if(n.includes(needle)) expanded.push(...terms);
   }
+  // La búsqueda de la sección IA devuelve piezas cortas pensadas para poder
+  // repetirse durante horas. Mantenemos la búsqueda original y añadimos
+  // variantes explícitamente orientadas a loops.
+  const loopQueries=[...expanded].map(x=>String(x).trim()).filter(Boolean).map(x=>x.toLowerCase().includes("loop")?x:x+" loop");
+  expanded.push(...loopQueries);
   return [...new Set(expanded)].filter(Boolean).slice(0,4);
 }
 
@@ -1914,7 +1919,7 @@ async function runFreesoundSearchJob(jobId,input){
     const results=await Promise.allSettled(queries.map(async query=>{
       const url=new URL("https://freesound.org/apiv2/search/");
       url.searchParams.set("query",query);
-      url.searchParams.set("page_size","12");
+      url.searchParams.set("page_size","16");
       url.searchParams.set("sort","score");
       url.searchParams.set("fields","id,name,tags,username,license,url,duration,previews,description,avg_rating,num_downloads");
       const r=await fetchWithTimeout(url.toString(),{
@@ -1933,6 +1938,9 @@ async function runFreesoundSearchJob(jobId,input){
       for(const x of result.value){
         const preview=x.previews?.["preview-hq-mp3"]||x.previews?.["preview-lq-mp3"];
         if(!preview)continue;
+        const tags=Array.isArray(x.tags)?x.tags.slice(0,12):[];
+        const searchable=(String(x.name||"")+" "+tags.join(" ")).toLowerCase();
+        const loopLike=searchable.includes("loop") || searchable.includes("seamless") || searchable.includes("loopable");
         all.push({
           id:x.id,
           name:x.name||"Freesound audio",
@@ -1941,8 +1949,10 @@ async function runFreesoundSearchJob(jobId,input){
           duration:Number(x.duration||0),
           rating:x.avg_rating==null?null:Number(x.avg_rating),
           downloads:Number(x.num_downloads||0),
-          tags:Array.isArray(x.tags)?x.tags.slice(0,12):[],
+          tags,
           preview,
+          loop:true,
+          loopLike,
           sourceUrl:x.url||("https://freesound.org/s/"+x.id),
           provider:"Freesound"
         });
@@ -1955,9 +1965,9 @@ async function runFreesoundSearchJob(jobId,input){
       seen.add(x.id);
       unique.push(x);
     }
-    unique.sort((a,b)=>(b.rating||0)-(a.rating||0)||b.downloads-a.downloads);
+    unique.sort((a,b)=>(Number(b.loopLike)-Number(a.loopLike))||(b.rating||0)-(a.rating||0)||b.downloads-a.downloads);
     job.status="succeeded";
-    job.result={provider:"Freesound",query:input,results:unique.slice(0,12)};
+    job.result={provider:"Freesound",query:input,results:unique.slice(0,12),loopMode:true};
   }catch(e){
     console.error("[Freesound Search] ERROR",e.stack||e.message||e);
     job.status="failed";
