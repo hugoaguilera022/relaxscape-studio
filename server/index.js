@@ -885,8 +885,10 @@ app.post("/api/ai-images", async (req, res) => {
     for(let index=0; index<requestedCount; index++){
       try{
         const image=await generatePollinationsLandscape(theme,index);
+        console.log("[AI Images] URL", (index+1)+"/"+requestedCount, image.url);
         results.push({ok:true,image});
       }catch(error){
+        console.error("[AI Images] ERROR", (index+1)+"/"+requestedCount, error?.stack || error?.message || error);
         results.push({ok:false,error});
       }
     }
@@ -903,6 +905,7 @@ app.post("/api/ai-images", async (req, res) => {
       };
     });
 
+    console.log("[AI Images] Respuesta:", images.map((x,i)=>({index:i+1,provider:x.provider,remote:x.remote,url:x.url})));
     return res.json({
       images,
       provider: images.some(x => x.provider === "Pollinations AI · FLUX")

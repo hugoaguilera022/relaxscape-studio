@@ -270,6 +270,8 @@ async function waitForAIMusic(){
 function escapeHtml(v){return String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]))}
 function formatDuration(sec){const s=Math.max(0,Math.round(Number(sec)||0));return Math.floor(s/60)+":"+String(s%60).padStart(2,"0")}
 function loadAIImagesSequentially(){
+  console.groupCollapsed("[RelaxScape AI] Carga de 4 imágenes");
+  console.log("[AI Images] Tarjetas esperadas:", document.querySelectorAll("#aiImageGrid .ai-photo").length);
   const next=()=>{
     const cards=Array.from(document.querySelectorAll("#aiImageGrid .ai-photo"));
     const index=cards.findIndex(card=>{
@@ -280,6 +282,7 @@ function loadAIImagesSequentially(){
     const card=cards[index];
     const img=card.querySelector("img");
     const src=img?.dataset?.src;
+    console.log("[AI Images] Cargando", (index+1)+"/"+cards.length, {url:src,name:card.dataset.name});
     if(!src){
       img.dataset.loaded="1";
       setTimeout(next,100);
@@ -290,11 +293,14 @@ function loadAIImagesSequentially(){
       if(finished)return;
       finished=true;
       img.dataset.loaded="1";
+      console.log("[AI Images] ✓ Cargada", (index+1)+"/"+cards.length, img.currentSrc || img.src);
+      if(index===cards.length-1) console.log("[AI Images] ✓ RESUMEN: 4/4 terminadas");
       setTimeout(next,800);
     };
     const retry=()=>{
       if(finished)return;
       attempts++;
+      console.warn("[AI Images] ⚠ Error", (index+1)+"/"+cards.length, "intento", attempts, {url:src,naturalWidth:img.naturalWidth,naturalHeight:img.naturalHeight});
       if(attempts<4){
         img.src=src+(src.includes("?")?"&":"?")+"retry="+attempts+"-"+Date.now();
         return;
@@ -303,12 +309,14 @@ function loadAIImagesSequentially(){
       img.src="data:image/svg+xml;charset=UTF-8,"+encodeURIComponent(
         "<svg xmlns='http://www.w3.org/2000/svg' width='1280' height='720'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop stop-color='%230b1220'/><stop offset='1' stop-color='%231b4d63'/></linearGradient></defs><rect width='100%' height='100%' fill='url(%23g)'/><circle cx='70%' cy='35%' r='130' fill='%2348a9a6' opacity='.28'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='white' font-size='34' font-family='Arial'>RelaxScape AI</text></svg>"
       );
+      console.error("[AI Images] ✗ Fallo definitivo", (index+1)+"/"+cards.length, src);
       setTimeout(advance,300);
     };
     img.onload=advance;
     img.onerror=retry;
     img.src=src;
-    setTimeout(()=>{if(!finished&&!img.complete)retry()},70000);
+    console.log("[AI Images] → Request", (index+1)+"/"+cards.length, src);
+    setTimeout(()=>{if(!finished&&!img.complete){console.warn("[AI Images] ⏱ Timeout", (index+1)+"/"+cards.length);retry()}},70000);
   };
   next();
 }
