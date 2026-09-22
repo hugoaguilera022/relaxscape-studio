@@ -14,16 +14,23 @@ function parseYouTubeId(raw){
   }catch{return ""}
 }
 async function getYouTubeInfo(raw){
-  try{return await api("/api/youtube-info?url="+encodeURIComponent(raw));}
-  catch(serverError){
-    const id=parseYouTubeId(raw);
-    if(!id)throw serverError;
+  const id=parseYouTubeId(raw);
+  if(!id)throw Error("El enlace de YouTube no contiene un ID de vídeo válido.");
+  const fallback={title:"Vídeo de YouTube · "+id,author:"",thumbnail:"https://i.ytimg.com/vi/"+id+"/hqdefault.jpg",description:"",keywords:"",category:"",duration:"",sourceUrl:raw,videoId:id,audioAnalysisAvailable:false};
+  // No dejamos que una petición del servidor bloquee la interfaz indefinidamente.
+  try{
+    const d=await Promise.race([
+      api("/api/youtube-info?url="+encodeURIComponent(raw)),
+      new Promise((_,reject)=>setTimeout(()=>reject(Error("timeout")),12000))
+    ]);
+    return {...fallback,...d,videoId:id};
+  }catch(serverError){
     try{
       const r=await fetch("https://www.youtube.com/oembed?url="+encodeURIComponent("https://www.youtube.com/watch?v="+id)+"&format=json");
       const d=await r.json();
-      return {title:d.title||("Vídeo de YouTube · "+id),author:d.author_name||"",thumbnail:d.thumbnail_url||("https://i.ytimg.com/vi/"+id+"/hqdefault.jpg"),description:"",keywords:"",category:"",duration:"",sourceUrl:raw,videoId:id,audioAnalysisAvailable:false};
+      return {...fallback,title:d.title||fallback.title,author:d.author_name||"",thumbnail:d.thumbnail_url||fallback.thumbnail};
     }catch{}
-    return {title:"Vídeo de YouTube · "+id,author:"",thumbnail:"https://i.ytimg.com/vi/"+id+"/hqdefault.jpg",description:"",keywords:"",category:"",duration:"",sourceUrl:raw,videoId:id,audioAnalysisAvailable:false};
+    return fallback;
   }
 }
 async function analyze(){const url=($("#ytUrl")?.value||"").trim();if(!url){status("Pega primero el enlace de YouTube.");return}const b=$("#ytAnalyze");if(b)b.disabled=true;status("🔎 Analizando la referencia de YouTube…");try{const d=await getYouTubeInfo(url);const m=$("#ytMeta");if(m)m.textContent="✓ "+d.title+(d.author?" · "+d.author:"")+" · Referencia reconocida.";const v=$("#ytVisualPrompt");if(v&&!v.value)v.value="Representación visual fiel al contenido real del vídeo: "+d.title+". No asumir que es un paisaje; respetar exactamente lugar, sujeto, actividad, época, objetos, clima y ambiente descritos en la referencia.";status("✓ Referencia reconocida. Se generará una única versión en máxima calidad.")}catch(e){status("❌ "+e.message)}finally{if(b)b.disabled=false}}
