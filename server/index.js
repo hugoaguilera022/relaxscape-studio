@@ -2343,7 +2343,92 @@ async function refreshDailyLandscape() {
   return { name: filename, url: `/media/images/${encodeURIComponent(filename)}`, photographer: photo.photographer || "Pexels", sourceUrl: photo.url };
 }
 
-async function generateDaily() {
+const dailyJobs = new Map();
+const DAILY_TIME_ZONE = process.env.DAILY_TIME_ZONE || "Europe/Madrid";
+const AUTOMATION_SECRET = String(process.env.AUTOMATION_SECRET || "").trim();
+
+function madridHour() {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: DAILY_TIME_ZONE, hour: "2-digit", minute: "2-digit", hour12: false
+  }).formatToParts(new Date());
+  return {
+    hour: Number(parts.find(p => p.type === "hour")?.value || 0),
+    minute: Number(parts.find(p => p.type === "minute")?.value || 0)
+  };
+}
+
+function dailyMetadataPath(date) {
+  return path.join(VIDEO_DIR, `daily-${date}.json`);
+}
+
+function writeDailyMetadata(date, data) {
+  fs.writeFileSync(dailyMetadataPath(date), JSON.stringify({
+    date, updatedAt: new Date().toISOString(), ...data
+  }, null, 2));
+}
+
+async function runDailyWithRetry({force=false}={}) {
+  const today = new Intl.DateTimeFormat("en-CA", {timeZone: DAILY_TIME_ZONE}).format(new Date());
+  const existing = dailyJobs.get(today);
+  if (!force && existing?.status === "succeeded") return existing;
+  if (existing?.status === "running") return existing;
+
+  const job = {
+    id: "daily-" + today + "-" + Date.now(),
+    date: today,
+    status: "running",
+    attempts: 0,
+    startedAt: new Date().toISOString(),
+    error: null,
+    video: null
+  };
+  dailyJobs.set(today, job);
+  writeDailyMetadata(today, job);
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    job.attempts = attempt;
+    try {
+      const result = await generateDaily({force});
+      job.status = "succeeded";
+      job.video = result;
+      job.completedAt = new Date().toISOString();
+      job.error = null;
+      writeDailyMetadata(today, job);
+      return job;
+    } catch (e) {
+      job.error = e?.message || String(e);
+      writeDailyMetadata(today, job);
+      console.error(`[Daily automation] intento ${attempt}/3 fallido:`, job.error);
+      if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 5000 * attempt));
+    }
+  }
+
+  job.status = "failed";
+  job.completedAt = new Date().toISOString();
+  writeDailyMetadata(today, job);
+  return job;
+}
+
+app.post("/api/automation/daily", async (req, res) => {
+  if (AUTOMATION_SECRET && req.get("x-automation-secret") !== AUTOMATION_SECRET) {
+    return res.status(401).json({error: "No autorizado."});
+  }
+  try {
+    const result = await runDailyWithRetry({force:Boolean(req.body?.force)});
+    res.status(result.status === "failed" ? 500 : 200).json(result);
+  } catch (e) {
+    console.error("[Daily automation] ERROR:", e.stack || e.message);
+    res.status(500).json({error:e.message || String(e)});
+  }
+});
+
+app.get("/api/automation/status", (_, res) => {
+  const today = new Intl.DateTimeFormat("en-CA", {timeZone: DAILY_TIME_ZONE}).format(new Date());
+  const job = dailyJobs.get(today) || null;
+  res.json({timeZone: DAILY_TIME_ZONE, localTime: madridHour(), today, job});
+});
+
+async function generateDaily({force=false}={}) {
   const music = listFiles(MUSIC_DIR, "/media/music");
   if (!music.length) return console.log("Daily render omitido: falta música.");
   try {
@@ -2376,8 +2461,13 @@ app.get("/health", (_, res) => res.json({ ok: true, service: "RelaxScape", music
 try {
   const rawHour = Number(process.env.DAILY_VIDEO_HOUR ?? 7);
   const hour = Number.isInteger(rawHour) && rawHour >= 0 && rawHour <= 23 ? rawHour : 7;
-  cron.schedule("0 " + hour + " * * *", generateDaily);
-  console.log("[Cron] Programado a las", hour + ":00");
+  cron.schedule("5 * * * *", async () => {
+    const local = madridHour();
+    if (local.hour === hour && local.minute < 15) {
+      await runDailyWithRetry();
+    }
+  });
+  console.log("[Cron] Comprobador horario activo:", DAILY_TIME_ZONE, hour + ":00");
 } catch (e) {
   console.error("[Cron] Desactivado por configuración inválida:", e.message);
 }
