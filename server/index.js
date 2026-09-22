@@ -1225,8 +1225,8 @@ app.post("/api/video-preview-final",async(req,res)=>{
       musicPath:base,
       outputPath:motionSegment,
       durationSeconds:60,
-      width:1280,
-      height:720,
+      width:1920,
+      height:1080,
       variant
     });
     await runFfmpeg([
