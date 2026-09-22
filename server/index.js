@@ -945,6 +945,10 @@ app.post("/api/ai-images", async (req, res) => {
 
 const videoPreviewJobs=new Map();
 
+// Previews de YouTube: MP4 ligero y estable para Render.
+// El objetivo aquí es validar música + paisaje + duración, no renderizar el máster final.
+const YOUTUBE_PREVIEW_SECONDS = 60;
+
 app.post("/api/video-preview-options",(req,res)=>{
   const prompt=String(req.body?.musicPrompt||"").trim().slice(0,700);
   const image=String(req.body?.image||"").trim();
@@ -982,19 +986,19 @@ app.post("/api/video-preview-options",(req,res)=>{
         const out=path.join(VIDEO_DIR,videoName);
         await runFfmpeg([
           "-y","-loop","1","-i",imagePath,"-stream_loop","-1","-i",musicPath,
-          "-t","60",
-          "-r","24",
-          "-vf","scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
+          "-t",String(YOUTUBE_PREVIEW_SECONDS),
+          "-r","2",
+          "-vf","scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
           "-map","0:v:0","-map","1:a:0",
-          "-c:v","libx264","-preset","ultrafast","-crf","30",
-          "-c:a","aac","-b:a","96k","-movflags","+faststart",out
+          "-c:v","libx264","-preset","ultrafast","-tune","stillimage","-crf","32","-threads","1",
+          "-c:a","aac","-b:a","64k","-movflags","+faststart",out
         ]);
         results.push({
           name:videoName,
           url:"/media/videos/"+encodeURIComponent(videoName),
           label:"Vídeo propuesta "+track.variant,
           variant:track.variant,
-          durationSeconds:60,
+          durationSeconds:YOUTUBE_PREVIEW_SECONDS,
           musicUrl:"/media/music/"+encodeURIComponent(track.file),
           originalMusicPrompt:prompt,
           imageUrl:image
