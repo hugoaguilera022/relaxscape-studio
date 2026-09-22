@@ -960,7 +960,7 @@ async function generatePollinationsVideoPreview({prompt,imageUrl,outputPath,vari
   // nuestra música IA. Así evitamos codificar 60 s de vídeo desde cero en Render.
   const qs=new URLSearchParams({
     model:String(process.env.POLLINATIONS_VIDEO_MODEL||"bytedance/seedance-2.0-fast"),
-    duration:"8",
+    duration:"5",
     aspectRatio:"16:9",
     image,
     seed:String(Math.abs(hashString(cleanPrompt+"|"+variant))%2147483647)
