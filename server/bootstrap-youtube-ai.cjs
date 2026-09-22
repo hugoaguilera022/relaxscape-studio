@@ -94,9 +94,58 @@ async function youtubeMetaAndSample(url,work){
     }
   }
 
-  // 2) Fallback: API de una instancia pública de Invidious.
-  // Esto evita depender exclusivamente de la IP de Render frente al bloqueo de YouTube.
+  // 2) Fallback A: Piped. Si YouTube bloquea la IP de Render, consultamos
+  // instancias públicas que exponen metadata + URLs de reproducción.
   let streamInfo=null;
+  let streamSource="";
+  if(!info?.id && videoId){
+    const pipedInstances=[
+      "https://pipedapi.kavin.rocks",
+      "https://pipedapi.leptons.xyz",
+      "https://pipedapi.nosebs.ru",
+      "https://pipedapi.owo.si",
+      "https://pipedapi.ducks.party",
+      "https://api.piped.privacy.com.de",
+      "https://pipedapi.adminforge.de",
+      "https://api.piped.yt"
+    ];
+    for(const base of pipedInstances){
+      try{
+        const ac=new AbortController(),timer=setTimeout(()=>ac.abort(),10000);
+        const rr=await fetch(base+"/streams/"+videoId,{
+          headers:{Accept:"application/json","User-Agent":"Mozilla/5.0"},
+          signal:ac.signal
+        });
+        clearTimeout(timer);
+        if(!rr.ok) continue;
+        const d=await rr.json();
+        if(d?.videoId||d?.title){
+          const playable=(d.videoStreams||[])
+            .filter(x=>x?.url && /mp4/i.test(String(x.mimeType||"")) && x.videoOnly===false)
+            .sort((a,b)=>Number(a.height||9999)-Number(b.height||9999));
+          const chosen=playable.find(x=>Number(x.height||0)<=480)||playable[0];
+          if(chosen?.url){
+            streamInfo={type:"piped",streamUrl:chosen.url,data:d};
+            streamSource="Piped";
+            info={
+              id:videoId,title:d.title||"Vídeo de YouTube",author:d.uploader||d.uploaderName||"",
+              uploader:d.uploader||d.uploaderName||"",channel:d.uploader||d.uploaderName||"",
+              duration:Number(d.duration||60),thumbnail:d.thumbnailUrl||d.thumbnail||"",
+              description:d.description||"",keywords:d.tags||[],tags:d.tags||[]
+            };
+            console.log("[YouTube] fallback Piped:",base);
+            break;
+          }
+        }
+      }catch(e){
+        console.warn("[Piped fallback]",base,e.message);
+      }
+    }
+  }
+
+  // 3) Fallback B: API de una instancia pública de Invidious.
+  // Invidious publica formatStreams con URLs MP4 cuando la instancia puede
+  // obtener una reproducción directa.
   if(!info?.id && videoId){
     const instances=[
       "https://inv.nadeko.net",
@@ -132,7 +181,7 @@ async function youtubeMetaAndSample(url,work){
   }
 
   if(!info?.id){
-    throw Error("YouTube está bloqueando el acceso desde Render. Se probaron varios clientes y un fallback por instancias públicas. "+(metaError?.message||""));
+    throw Error("YouTube está bloqueando el acceso desde Render. Se probaron yt-dlp, Piped e Invidious. "+(metaError?.message||""));
   }
 
   const duration=Math.max(1,Number(info.duration||60));
@@ -140,13 +189,17 @@ async function youtubeMetaAndSample(url,work){
   const clips=[];
   let lastError=null;
 
-  // Si Invidious devolvió una URL de stream, FFmpeg toma solo el fragmento necesario.
+  // Si Piped/Invidious devolvió una URL de stream, FFmpeg toma solo el fragmento necesario.
   if(streamInfo){
-    const formats=(streamInfo.formatStreams||[])
-      .filter(x=>x?.url && x.container==="mp4")
-      .sort((a,b)=>Number(a.height||9999)-Number(b.height||9999));
-    const fmt=formats.find(x=>Number(x.height||0)<=480)||formats[0];
-    if(!fmt?.url) throw Error("La instancia de respaldo encontró el vídeo pero no proporcionó un stream MP4 reproducible.");
+    let streamUrl="";
+    if(streamInfo.type==="piped") streamUrl=streamInfo.streamUrl;
+    else{
+      const formats=(streamInfo.formatStreams||[])
+        .filter(x=>x?.url && x.container==="mp4")
+        .sort((a,b)=>Number(a.height||9999)-Number(b.height||9999));
+      streamUrl=(formats.find(x=>Number(x.height||0)<=480)||formats[0])?.url||"";
+    }
+    if(!streamUrl) throw Error("La instancia de respaldo encontró el vídeo pero no proporcionó un stream MP4 reproducible.");
 
     for(let i=0;i<marks.length;i++){
       const startSec=Math.floor(marks[i]);
