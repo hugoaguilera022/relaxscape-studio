@@ -2417,8 +2417,8 @@ async function buildSelectedFreesoundMixJob(jobId,tracks,durationMinutes){
 
     const previewName="selected-relax-mix-preview-"+durationMinutes+"min-"+Date.now()+".mp3";
     const previewPath=path.join(MUSIC_DIR,previewName);
-    await runMix(Math.min(90,durationMinutes*60),previewPath,"192k");
-    job.preview={name:previewName,url:"/media/music/"+encodeURIComponent(previewName),durationSeconds:90};
+    await runMix(Math.min(30,durationMinutes*60),previewPath,"192k");
+    job.preview={name:previewName,url:"/media/music/"+encodeURIComponent(previewName),durationSeconds:30};
     job.progress=45;
     job.status="preview-ready";
 
