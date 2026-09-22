@@ -1042,7 +1042,7 @@ async function generateLocalMotionVideo({imagePath,musicPath,outputPath,duration
   await runFfmpeg([
     "-y",
     "-loop","1","-framerate","15","-i",imagePath,
-    "-stream_loop","-1","i",musicPath,
+    "-stream_loop","-1","-i",musicPath,
     "-filter_complex",filter,
     "-map","[v]","-map","1:a:0","-t",String(duration),
     "-c:v","libx264","-preset","veryfast","-crf",width>=1280?"18":"22","-threads","2",
