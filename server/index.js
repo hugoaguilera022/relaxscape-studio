@@ -1035,17 +1035,17 @@ function hashString(value=""){
 async function generateLocalMotionVideo({imagePath,musicPath,outputPath,durationSeconds=60,width=480,height=270,variant=1}){
   const duration=Math.max(5,Number(durationSeconds)||60);
   const fps=15;
-  const frames=Math.ceil(duration*fps);
   const v=Math.min(3,Math.max(1,Number(variant)||1));
   const direction=v%2===0 ? "x='iw/2-(iw/zoom/2)*(0.5+0.5*sin(on/90))'" : "x='iw/2-(iw/zoom/2)*(0.5+0.5*cos(on/110))'";
   const y=v===3 ? "y='ih/2-(ih/zoom/2)*(0.5+0.5*sin(on/100))'" : "y='ih/2-(ih/zoom/2)'";
   const zoom=v===2 ? "z='min(zoom+0.00035,1.12)'" : "z='min(zoom+0.00028,1.10)'";
+  const scaledW=Math.round(width*1.15),scaledH=Math.round(height*1.15);
   await runFfmpeg([
-    "-y","-loop","1","-i",imagePath,"-stream_loop","-1","-i",musicPath,
+    "-y","-framerate",String(fps),"-loop","1","-i",imagePath,"-stream_loop","-1","-i",musicPath,
     "-filter_complex",
-    "[0:v]scale="+Math.round(width*1.15)+":"+Math.round(height*1.15)+":force_original_aspect_ratio=increase,crop="+Math.round(width*1.15)+":"+Math.round(height*1.15)+",zoompan="+zoom+":"+direction+":"+y+":d="+frames+":s="+width+"x"+height+":fps="+fps+",format=yuv420p[v]",
+    "[0:v]scale="+scaledW+":"+scaledH+":force_original_aspect_ratio=increase,crop="+scaledW+":"+scaledH+",zoompan="+zoom+":"+direction+":"+y+":d=1:s="+width+"x"+height+":fps="+fps+",format=yuv420p[v]",
     "-map","[v]","-map","1:a:0","-t",String(duration),
-    "-c:v","libx264","-preset","fast","-crf",width>=1280?"18":"22","-threads","1",
+    "-c:v","libx264","-preset","fast","-crf",width>=1280?"18":"22","-threads","2",
     "-c:a","aac","-b:a",width>=1280?"256k":"128k","-ar","48000","-ac","2","-movflags","+faststart",outputPath
   ]);
 }
