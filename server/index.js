@@ -658,12 +658,26 @@ app.get("/api/youtube-info", async (req,res)=>{
     const r=await fetchWithTimeout(oembed,{headers:{Accept:"application/json"}},10000);
     const data=await r.json().catch(()=>({}));
     if(!r.ok) return res.status(400).json({error:"YouTube no pudo reconocer ese vídeo."});
+    let description="";
+    let keywords="";
+    try{
+      const page=await fetchWithTimeout(raw,{headers:{Accept:"text/html","User-Agent":"Mozilla/5.0"}},10000);
+      const html=await page.text();
+      const getMeta=(key)=>{
+        const a=new RegExp("<meta[^>]+(?:name|property)=[\\\"']"+key+"[\\\"'][^>]+content=[\\\"']([^\\\"']*)[\\\"']","i").exec(html);
+        return a?a[1].replace(/&amp;/g,"&").replace(/&#39;/g,"'").replace(/&quot;/g,"\\\"").trim():"";
+      };
+      description=getMeta("og:description")||getMeta("description");
+      keywords=getMeta("keywords");
+    }catch{}
     res.json({
       title:data.title||"Vídeo de YouTube",
       author:data.author_name||"",
       thumbnail:data.thumbnail_url||"",
+      description:description.slice(0,2500),
+      keywords:keywords.slice(0,700),
       sourceUrl:raw,
-      promptSuggestion:String(data.title||"paisaje relajante").slice(0,180)
+      promptSuggestion:String(data.title||description||"paisaje relajante").slice(0,180)
     });
   }catch(e){
     res.status(400).json({error:"No se pudo analizar el enlace de YouTube: "+(e.message||e)});
