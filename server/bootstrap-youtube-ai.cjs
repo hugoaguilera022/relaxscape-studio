@@ -170,7 +170,7 @@ async function youtubeMetaAndSample(url,work){
             "--no-warnings","--no-playlist",
             "--extractor-args","youtube:player_client="+client,
             "-f","worst[ext=mp4]/worst",
-            "--download-sections","*"+startSec+"-"+endSec",
+            "--download-sections","*"+startSec+"-"+endSec,
             "--force-keyframes-at-cuts","-o",out,url
           ]);
           if(fs.existsSync(out)&&fs.statSync(out).size>5000){clips.push(out);lastError=null;break}
