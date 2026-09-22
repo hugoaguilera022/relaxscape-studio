@@ -1128,30 +1128,32 @@ async function generateLocalMotionVideo({imagePath,musicPath,outputPath,duration
   });
 
   try{
-    await runFfmpeg([
-      "-y",
-      "-loop","1",
-      "-framerate","10",
-      "-i",imagePath,
-      "-stream_loop","-1",
-      "-i",musicPath,
-      "-t",String(segmentSeconds),
-      "-map","0:v:0",
-      "-map","1:a:0",
-      "-vf",videoFilter,
-      "-r","10",
-      "-c:v","libx264",
-      "-preset","ultrafast",
-      "-crf",width>=1280?"20":"23",
-      "-threads","2",
-      "-pix_fmt","yuv420p",
-      "-c:a","aac",
-      "-b:a",width>=1280?"256k":"128k",
-      "-ar","48000",
-      "-ac","2",
-      "-movflags","+faststart",
-      segmentPath
-    ]);
+    const renderSegment=async(targetWidth,targetHeight)=>{
+      const targetFilter=
+        "scale="+Math.round(targetWidth*1.04)+":"+Math.round(targetHeight*1.04)+
+        ":force_original_aspect_ratio=increase,crop="+targetWidth+":"+targetHeight+
+        ",format=yuv420p";
+      await runFfmpeg([
+        "-y","-loop","1","-framerate","8","-i",imagePath,
+        "-stream_loop","-1","-i",musicPath,
+        "-t",String(segmentSeconds),
+        "-map","0:v:0","-map","1:a:0",
+        "-vf",targetFilter,"-r","8",
+        "-c:v","libx264","-preset","ultrafast",
+        "-crf",targetWidth>=1280?"23":"28","-threads","1",
+        "-pix_fmt","yuv420p",
+        "-c:a","aac","-b:a",targetWidth>=1280?"192k":"128k",
+        "-ar","48000","-ac","2","-movflags","+faststart",
+        segmentPath
+      ]);
+    };
+    try{
+      await renderSegment(width,height);
+    }catch(firstError){
+      console.warn("[YouTube single] 1280/720 render failed, retrying lightweight:",firstError.message);
+      fs.rmSync(segmentPath,{force:true});
+      await renderSegment(640,360);
+    }
 
     if(!fs.existsSync(segmentPath) || !fs.statSync(segmentPath).size){
       throw new Error("FFmpeg no creó el segmento de la versión "+v+".");
