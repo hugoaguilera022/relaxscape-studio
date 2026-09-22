@@ -1148,8 +1148,8 @@ app.post("/api/video-preview-options",(req,res)=>{
           musicPath,
           outputPath:out,
           durationSeconds:YOUTUBE_PREVIEW_SECONDS,
-          width:480,
-          height:270,
+          width:1280,
+          height:720,
           variant:track.variant
         });
         console.log("[YouTube 3 versiones] Vídeo local creado:",track.variant);
