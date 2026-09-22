@@ -1334,20 +1334,22 @@ app.post("/api/video-preview-final",async(req,res)=>{
     // Creamos un tramo corto con movimiento real y después lo repetimos sin
     // volver a renderizar horas de vídeo: rápido, gratis y estable en Render.
     const motionSegment=path.join(work,"motion-segment.mp4");
+    // Renderizamos solo 15 segundos. El archivo final se crea repitiendo
+    // este segmento completo con stream copy: no se vuelve a codificar la hora.
     await generateLocalMotionVideo({
       imagePath,
       musicPath:base,
       outputPath:motionSegment,
-      durationSeconds:60,
+      durationSeconds:15,
       width:1920,
       height:1080,
       variant
     });
     await runFfmpeg([
-      "-y","-stream_loop","-1","-i",motionSegment,"-stream_loop","-1","-i",base,
+      "-y","-stream_loop","-1","-i",motionSegment,
       "-t",String(hours*3600),
-      "-map","0:v:0","-map","1:a:0",
-      "-c:v","copy","-c:a","aac","-b:a","160k","-movflags","+faststart",out
+      "-map","0:v:0","-map","0:a:0",
+      "-c","copy","-movflags","+faststart",out
     ]);
     res.json({name:finalName,url:"/media/videos/"+encodeURIComponent(finalName),hours,variant,generatedFromSearch:true,originalMusicPrompt:prompt});
   }catch(e){
