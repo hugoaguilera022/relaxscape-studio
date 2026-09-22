@@ -181,10 +181,13 @@ async function makeCompositionWav(track, wavPath, durationMs=18000){
   // Si no se pide instrumento, NO se inventa ninguno.
   const lead=requestedRoles[0]||null;
   const companions=requestedRoles.slice(1);
+  const sharedSoundRoles=[...requestedRoles];
 
   // -------------------- 2. SEMILLA + PARAMETROS --------------------
   let h=2166136261>>>0;
-  const seedText=rawBrief+"|v="+variant+"|"+String(track.generationSeed||"");
+  const sharedSoundSeed=String(track.generationSeed||"");
+  const melodySeed=String(track.melodySeed||("|melody|v="+variant));
+  const seedText=rawBrief+"|shared="+sharedSoundSeed+"|melody="+melodySeed;
   for(const ch of seedText){h^=ch.charCodeAt(0);h=Math.imul(h,16777619)>>>0;}
   let rngState=(h^((variant+1)*0x9e3779b9))>>>0;
   const rnd=()=>{rngState^=rngState<<13;rngState^=rngState>>>17;rngState>>>=0;return rngState/4294967296;};
@@ -1473,26 +1476,39 @@ function buildAIMusicPrompt(originalSearch="", variant=1){
     "Use professional acoustic/ambient production: realistic instrument timbres, controlled dynamics, warm low mids, clean high frequencies, depth, stereo space and tasteful reverb.",
     "No vocals, no lyrics, no spoken word, no harsh distortion, no EDM drops, no aggressive drums or bass unless explicitly requested by the search.",
     variants[(Math.max(1,Number(variant))-1)%4],
-    "The result must feel like a finished piece of music, not a static drone or a one-bar loop."
+    "The result must feel like a finished piece of music, not a static drone or a one-bar loop.",
+    "All variants belong to the same source-video soundtrack family: preserve the same sound palette and mix character; variation is melodic, not timbral."
   ].join(" ");
 }
 
 function aiTracksForBackground(prompt="", generationId=0){
   const originalSearch=String(prompt||"").trim().slice(0,700);
   const sessionNonce="music-"+generationId+"-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,10);
+  // PALETA SONORA COMÚN: todas las versiones parten del mismo timbre/ambiente.
+  // Solo cambian melodía, registro, voicing y pequeñas decisiones de fraseo.
+  const soundPalette=musicIntentProfile(originalSearch);
   return [1,2,3,4].map((variant)=>{
     const file="ai-music-"+sessionNonce+"-"+variant+".mp3";
+    const commonSeed=sessionNonce+"|shared-sound-palette";
+    const variantBrief=buildAIMusicPrompt(originalSearch,variant)+
+      " IMPORTANT: this is one of several variations of the SAME SOURCE VIDEO. "+
+      "Keep EXACTLY the same instrumental palette, timbres, ambience, production character, tempo family and sound-design layers as the other versions. "+
+      "Do not introduce a new instrument, new genre or new sound between versions. "+
+      "Only change the original melody, melodic contour, note choices, register, voicing and phrase structure. "+
+      "SHARED SOUND PALETTE: "+soundPalette+".";
     return {
       ...BUILTIN_MUSIC[(variant-1)%BUILTIN_MUSIC.length],
       userSearch:originalSearch,
       originalMusicPrompt:originalSearch,
-      userMusicBrief:buildAIMusicPrompt(originalSearch,variant),
-      musicProfile:buildAIMusicPrompt(originalSearch,variant),
+      userMusicBrief:variantBrief,
+      musicProfile:variantBrief,
       file,
       label:"IA · "+variant,
       variant,
       forceRegenerate:true,
-      generationSeed:sessionNonce,
+      generationSeed:commonSeed,
+      melodySeed:sessionNonce+"|melody|"+variant,
+      soundPalette,
       sessionNonce
     };
   });
