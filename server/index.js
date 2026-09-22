@@ -789,12 +789,12 @@ async function generateHuggingFaceLandscape(prompt, index=0) {
 }
 
 async function generatePollinationsLandscape(prompt, index=0) {
-  const userPrompt = String(prompt || "peaceful nature landscape").trim().slice(0, 700);
+  const userPrompt = String(prompt || "cinematic relaxing visual").trim().slice(0, 700);
   const variations = [
-    "wide cinematic establishing shot, peaceful composition, realistic natural light, strong foreground depth",
-    "wide cinematic landscape, atmospheric perspective, natural color, realistic professional photography, different camera angle",
-    "wide cinematic landscape, subtle mist, detailed foreground, soft realistic lighting, photorealistic",
-    "wide cinematic landscape, tranquil premium travel photography, realistic textures, natural depth and light"
+    "cinematic composition, realistic natural lighting, strong depth and clear subject separation, distinctive camera angle",
+    "professional visual composition, highly detailed textures, atmospheric depth, realistic lighting, different perspective",
+    "dramatic but natural lighting, detailed subject, realistic materials, strong depth, polished cinematic framing",
+    "premium cinematic visual, rich fine details, balanced composition, varied perspective, realistic light and texture"
   ];
   const finalPrompt = [
     userPrompt,
@@ -804,24 +804,23 @@ async function generatePollinationsLandscape(prompt, index=0) {
     "no watermark, no logo, no unwanted text"
   ].join(", ");
 
-  const filename = "ai-image-pollinations-" + Date.now() + "-" + index + ".svg";
-  const key = String(process.env.POLLINATIONS_API_KEY || "").trim();
-
-  // Pollinations cambió su gateway: usamos el endpoint unificado actual primero.
-  // Si no hay saldo o el proveedor falla, NO rompemos Crear IA/YouTube:
-  // devolvemos un paisaje local válido como último recurso.
   const seed = Date.now() + index * 7919;
   const encodedPrompt = encodeURIComponent(finalPrompt);
-  const attempts = key
-    ? [
-        "https://gen.pollinations.ai/image/" + encodedPrompt + "?model=flux&width=1920&height=1080&seed=" + seed + "&enhance=true&safe=false&nologo=true",
-        "https://gen.pollinations.ai/image/" + encodedPrompt + "?model=flux&width=1280&height=720&seed=" + (seed + 1) + "&enhance=true&safe=false&nologo=true",
-        "https://image.pollinations.ai/prompt/" + encodedPrompt + "?model=flux&width=1280&height=720&seed=" + (seed + 2)
-      ]
-    : [
-        "https://image.pollinations.ai/prompt/" + encodedPrompt + "?model=flux&width=1920&height=1080&seed=" + seed,
-        "https://image.pollinations.ai/prompt/" + encodedPrompt + "?model=flux&width=1280&height=720&seed=" + (seed + 1)
-      ];
+  const key = String(process.env.POLLINATIONS_API_KEY || "").trim();
+
+  // Pollinations puede rechazar parámetros nuevos en el gateway gen.*.
+  // Usamos el endpoint de imagen compatible y estable con solo parámetros básicos.
+  const publicUrl =
+    "https://image.pollinations.ai/prompt/" + encodedPrompt +
+    "?width=1280&height=720&seed=" + seed + "&nologo=true";
+
+  // Con API key intentamos además el gateway actual. Si falla, mantenemos la URL
+  // pública compatible para que el navegador del usuario pueda cargarla directamente.
+  const attempts = key ? [
+    "https://gen.pollinations.ai/image/" + encodedPrompt +
+      "?width=1280&height=720&seed=" + seed + "&nologo=true",
+    publicUrl
+  ] : [publicUrl];
 
   let lastError = null;
   for (const url of attempts) {
@@ -830,41 +829,24 @@ async function generatePollinationsLandscape(prompt, index=0) {
       if (key && url.startsWith("https://gen.pollinations.ai/")) {
         headers.Authorization = "Bearer " + key;
       }
-      const r = await fetchWithTimeout(url, { headers }, 60000);
-      if (!r.ok) {
-        const body = await r.text().catch(() => "");
-        throw new Error("Pollinations HTTP " + r.status + (body ? " · " + body.slice(0, 180) : ""));
-      }
-      const buffer = Buffer.from(await r.arrayBuffer());
-      if (!buffer.length) throw new Error("Pollinations devolvió una imagen vacía.");
-      const contentType=String(r.headers.get("content-type")||"").toLowerCase();
-      const ext=contentType.includes("png")?".png":contentType.includes("webp")?".webp":contentType.includes("svg")?".svg":".jpg";
-      const actualFilename=filename.replace(/\.svg$/i,ext);
-      fs.writeFileSync(path.join(IMAGE_DIR,actualFilename), buffer);
+
+      // No descargamos la imagen en Render. Así la cola/límite de Pollinations
+      // se aplica al navegador del usuario y no a la IP compartida de Render.
       return {
-        name: actualFilename,
-        url: "/media/images/" + encodeURIComponent(actualFilename),
+        name: "pollinations-" + seed + ".jpg",
+        url,
         ai: true,
         provider: "Pollinations AI · FLUX",
-        fallback: true,
+        fallback: false,
+        remote: true,
         label: "Imagen IA " + (index + 1)
       };
     } catch (error) {
       lastError = error;
-      console.warn("[Pollinations Image] intento fallido:", error.message);
     }
   }
 
-  // Último recurso gratuito y local: nunca dejamos la generación sin imagen.
-  const fallback = makeFallbackLandscape(filename, userPrompt);
-  // Último recurso gratuito y local: el SVG conserva su extensión correcta.
-  return {
-    ...fallback,
-    ai: false,
-    fallback: true,
-    provider: "RelaxScape local image fallback (Pollinations no disponible)",
-    label: "Imagen generada"
-  };
+  throw lastError || new Error("No se pudo preparar la imagen IA.");
 }
 
 app.post("/api/generate-image", async (req, res) => {
