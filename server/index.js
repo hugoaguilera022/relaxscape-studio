@@ -1037,53 +1037,79 @@ async function generateLocalMotionVideo({imagePath,musicPath,outputPath,duration
   const v=Math.min(3,Math.max(1,Number(variant)||1));
   if(!fs.existsSync(imagePath)) throw new Error("No existe la imagen del vídeo: "+imagePath);
   if(!fs.existsSync(musicPath)) throw new Error("No existe la música del vídeo: "+musicPath);
-  const imageSize=fs.statSync(imagePath).size;
-  const musicSize=fs.statSync(musicPath).size;
-  if(!imageSize) throw new Error("La imagen del vídeo está vacía.");
-  if(!musicSize) throw new Error("La música del vídeo está vacía.");
+  if(!fs.statSync(imagePath).size) throw new Error("La imagen del vídeo está vacía.");
+  if(!fs.statSync(musicPath).size) throw new Error("La música del vídeo está vacía.");
 
-  // Render estable para Render: una sola imagen en bucle + una pista en bucle.
-  // Las tres versiones siguen siendo distintas porque reciben su propia imagen
-  // y su propia composición musical. Evitamos filter_complex/zoompan para
-  // reducir puntos de fallo en el encoder.
+  // IMPORTANTE: no codificamos 60 segundos desde cero. Primero creamos un
+  // segmento corto y después lo repetimos hasta la duración solicitada.
+  // Esto reduce muchísimo el trabajo de CPU de Render y mantiene exactamente
+  // la misma imagen y la misma música de cada versión.
+  const segmentPath=outputPath.replace(/\.mp4$/i,"-segment.mp4");
+  const segmentSeconds=5;
   const videoFilter=
     "scale="+Math.round(width*1.08)+":"+Math.round(height*1.08)+
     ":force_original_aspect_ratio=increase,crop="+width+":"+height+
     ",format=yuv420p";
 
-  const args=[
-    "-y",
-    "-loop","1",
-    "-framerate","15",
-    "-i",imagePath,
-    "-stream_loop","-1",
-    "-i",musicPath,
-    "-t",String(duration),
-    "-map","0:v:0",
-    "-map","1:a:0",
-    "-vf",videoFilter,
-    "-r","15",
-    "-c:v","libx264",
-    "-preset","veryfast",
-    "-crf",width>=1280?"18":"22",
-    "-threads","2",
-    "-pix_fmt","yuv420p",
-    "-c:a","aac",
-    "-b:a",width>=1280?"256k":"128k",
-    "-ar","48000",
-    "-ac","2",
-    "-movflags","+faststart",
-    outputPath
-  ];
-
-  console.log("[YouTube 3 versiones] Render local",{
-    variant:v,duration,width,height,imagePath,imageSize,musicPath,musicSize,outputPath
+  console.log("[YouTube 3 versiones] Preparando segmento",{
+    variant:v,width,height,imagePath,musicPath,segmentPath
   });
-  await runFfmpeg(args);
-  if(!fs.existsSync(outputPath) || !fs.statSync(outputPath).size){
-    throw new Error("FFmpeg terminó sin crear el vídeo de la versión "+v+".");
+
+  try{
+    await runFfmpeg([
+      "-y",
+      "-loop","1",
+      "-framerate","10",
+      "-i",imagePath,
+      "-stream_loop","-1",
+      "-i",musicPath,
+      "-t",String(segmentSeconds),
+      "-map","0:v:0",
+      "-map","1:a:0",
+      "-vf",videoFilter,
+      "-r","10",
+      "-c:v","libx264",
+      "-preset","ultrafast",
+      "-crf",width>=1280?"20":"23",
+      "-threads","2",
+      "-pix_fmt","yuv420p",
+      "-c:a","aac",
+      "-b:a",width>=1280?"256k":"128k",
+      "-ar","48000",
+      "-ac","2",
+      "-movflags","+faststart",
+      segmentPath
+    ]);
+
+    if(!fs.existsSync(segmentPath) || !fs.statSync(segmentPath).size){
+      throw new Error("FFmpeg no creó el segmento de la versión "+v+".");
+    }
+
+    console.log("[YouTube 3 versiones] Segmento creado",v,fs.statSync(segmentPath).size,"bytes");
+
+    await runFfmpeg([
+      "-y",
+      "-stream_loop","-1",
+      "-i",segmentPath,
+      "-t",String(duration),
+      "-map","0:v:0",
+      "-map","0:a:0",
+      "-c:v","copy",
+      "-c:a","aac",
+      "-b:a",width>=1280?"256k":"128k",
+      "-ar","48000",
+      "-ac","2",
+      "-movflags","+faststart",
+      outputPath
+    ]);
+
+    if(!fs.existsSync(outputPath) || !fs.statSync(outputPath).size){
+      throw new Error("FFmpeg terminó sin crear el vídeo de la versión "+v+".");
+    }
+    console.log("[YouTube 3 versiones] MP4 verificado",v,fs.statSync(outputPath).size,"bytes");
+  }finally{
+    fs.rmSync(segmentPath,{force:true});
   }
-  console.log("[YouTube 3 versiones] MP4 verificado",v,fs.statSync(outputPath).size,"bytes");
 }
 
 async function muxExternalVideoWithMusic(videoPath,musicPath,outPath){
