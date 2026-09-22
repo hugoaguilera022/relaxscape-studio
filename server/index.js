@@ -117,7 +117,7 @@ async function makeCompositionWav(track, wavPath, durationMs=18000){
   // 5) renderiza esos eventos con el timbre solicitado.
   // IMPORTANTE: este bloque es exclusivamente de MÚSICA. La generación de imágenes
   // no se toca.
-  const sr=48000, dur=Math.max(8,Math.min(600,Number(durationMs||8000)/1000)), n=Math.round(sr*dur), samples=new Float32Array(n*2);
+  const sr=44100, dur=Math.max(6,Math.min(600,Number(durationMs||6000)/1000)), n=Math.round(sr*dur), samples=new Float32Array(n*2);
   const variant=((Number(track.variant||1)-1)%4+4)%4;
   const rawBrief=String(track.userSearch||track.originalMusicPrompt||"relaxscape");
   const brief=rawBrief.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
@@ -595,7 +595,7 @@ async function makeCompositionWav(track, wavPath, durationMs=18000){
   for(let i=0;i<samples.length;i++)samples[i]*=gain;
   writeWav(wavPath,samples,sr,2);
 }
-async function generateAIMusicFile(track, outPath, durationMs=8000){
+async function generateAIMusicFile(track, outPath, durationMs=6000){
   // Motor local gratuito: la búsqueda del usuario controla directamente la composición.
   // Generamos WAV temporal y lo convertimos a MP3 real para que el navegador lo reproduzca.
   const wavPath=outPath.replace(/\.mp3$/i,".wav");
@@ -824,7 +824,7 @@ async function generatePollinationsLandscape(prompt, index=0) {
       if (key && url.startsWith("https://gen.pollinations.ai/")) {
         headers.Authorization = "Bearer " + key;
       }
-      const r = await fetchWithTimeout(url, { headers }, 120000);
+      const r = await fetchWithTimeout(url, { headers }, 30000);
       if (!r.ok) {
         const body = await r.text().catch(() => "");
         throw new Error("Pollinations HTTP " + r.status + (body ? " · " + body.slice(0, 180) : ""));
@@ -962,14 +962,7 @@ app.post("/api/ai-images", async (req, res) => {
         });
       }
 
-      const quotaOnly = errors.length > 0 && errors.every(msg => /credit|quota|deplet|included|balance|rate.?limit/i.test(String(msg)));
-      if (!quotaOnly) {
-        return res.status(502).json({
-          error: "No se pudo generar ningún paisaje IA.",
-          imageErrors: errors
-        });
-      }
-      console.warn("[AI Images] Hugging Face sin créditos; usando Pollinations.");
+      console.warn("[AI Images] Hugging Face no pudo generar las imágenes; usando Pollinations como respaldo.", errors);
     }
 
     const requestedCount = Math.min(4, Math.max(1, Number(req.body?.count || 4)));
@@ -1379,9 +1372,18 @@ app.post("/api/ai-music", async (req,res)=>{
   aiMusicTracks.forEach(t=>{try{fs.rmSync(path.join(MUSIC_DIR,t.file),{force:true});}catch{}});
   aiMusicErrors=[];
   aiMusicPreparing=true;
-  Promise.all(aiMusicTracks.map(track=>ensureBuiltinMusic([track])))
-    .catch(e=>{if(generationId===aiMusicGenerationId)aiMusicErrors.push(e?.message||String(e));})
-    .finally(()=>{if(generationId===aiMusicGenerationId)aiMusicPreparing=false;});
+  (async()=>{
+    try{
+      for(const track of aiMusicTracks){
+        if(generationId!==aiMusicGenerationId) return;
+        await ensureBuiltinMusic([track]);
+      }
+    }catch(e){
+      if(generationId===aiMusicGenerationId)aiMusicErrors.push(e?.message||String(e));
+    }finally{
+      if(generationId===aiMusicGenerationId)aiMusicPreparing=false;
+    }
+  })();
   res.json({music:[],musicReady:false,musicPreparing:true,generationId,count:requestedCount,provider:"RelaxScape Free AI Music Engine"});
 });
 
