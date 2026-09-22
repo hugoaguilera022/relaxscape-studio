@@ -983,11 +983,11 @@ app.post("/api/video-preview-options",(req,res)=>{
         await runFfmpeg([
           "-y","-loop","1","-i",imagePath,"-stream_loop","-1","-i",musicPath,
           "-t","60",
-          "-r","30",
-          "-vf","scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
+          "-r","24",
+          "-vf","scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
           "-map","0:v:0","-map","1:a:0",
-          "-c:v","libx264","-preset","veryfast","-crf","27",
-          "-c:a","aac","-b:a","128k","-movflags","+faststart",out
+          "-c:v","libx264","-preset","ultrafast","-crf","30",
+          "-c:a","aac","-b:a","96k","-movflags","+faststart",out
         ]);
         results.push({
           name:videoName,
@@ -1005,6 +1005,7 @@ app.post("/api/video-preview-options",(req,res)=>{
       job.status="succeeded";
     }catch(e){
       console.error("[Video previews] ERROR",e.stack||e.message||e);
+      console.error("[Video previews] job=",jobId,"progress=",job.progress,"results=",job.results.length);
       job.status="failed";
       job.error=e?.message||String(e);
     }finally{
@@ -2008,6 +2009,10 @@ process.on("uncaughtException", e => console.error("[UncaughtException]", e));
 app.get("*splat", (_, res) => res.sendFile(path.join(PUBLIC, "index.html")));
 
 const port = Number(process.env.PORT || 3000);
-app.listen(port, () => {
-  console.log(`RelaxScape activo en http://localhost:${port}`);
+const server = app.listen(port, "0.0.0.0", () => {
+  console.log(`RelaxScape activo en http://0.0.0.0:${port}`);
 });
+// Render uses a reverse proxy in front of Node. Keep the connection open long
+// enough for the proxy and avoid intermittent 502s on long-running operations.
+server.keepAliveTimeout = 120000;
+server.headersTimeout = 125000;
