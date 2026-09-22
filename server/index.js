@@ -647,90 +647,32 @@ app.get("/api/library", (_, res) => {
 
 app.get("/api/youtube-info", async (req,res)=>{
   const raw=String(req.query.url||"").trim();
-  if(!raw) return res.status(400).json({error:"Pega un enlace de YouTube."});
+  if(!/^https?:\/\/(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(raw)){
+    return res.status(400).json({error:"Introduce un enlace válido de YouTube."});
+  }
   try{
-    // Aceptamos también enlaces pegados sin protocolo (youtube.com/..., youtu.be/...).
-    const normalizedRaw=/^https?:\/\//i.test(raw) ? raw : "https://"+raw;
-    const url=new URL(normalizedRaw);
-    const host=url.hostname.toLowerCase().replace(/^www\./,"");
-    const isYouTubeHost=["youtube.com","m.youtube.com","music.youtube.com","youtube-nocookie.com","youtu.be"].includes(host);
-    if(!isYouTubeHost) return res.status(400).json({error:"El enlace no pertenece a YouTube. Usa un enlace youtube.com, youtu.be o youtube.com/shorts/... ."});
-
-    let videoId="";
-    if(host==="youtu.be"){
-      videoId=url.pathname.split("/").filter(Boolean)[0]||"";
-    }else{
-      videoId=url.searchParams.get("v")||"";
-      if(!videoId){
-        const m=url.pathname.match(/^\/(?:shorts|embed|live|v)\/([^/?#]+)/i);
-        videoId=m?.[1]||"";
-      }
+    const url=new URL(raw);
+    if(url.hostname.replace(/^www\./i,"")==="youtu.be"){
+      if(!url.pathname.slice(1)) throw new Error("Falta el identificador del vídeo.");
+    }else if(!url.searchParams.get("v") && !/^\/shorts\//i.test(url.pathname) && !/^\/embed\//i.test(url.pathname)){
+      throw new Error("No se encontró el identificador del vídeo.");
     }
-    videoId=decodeURIComponent(String(videoId||"").trim()).split(/[?&#]/)[0];
-    if(!/^[A-Za-z0-9_-]{11}$/.test(videoId)){
-      throw new Error("No se encontró un identificador de vídeo válido. Pega la URL completa de YouTube (por ejemplo youtube.com/watch?v=ID o youtu.be/ID).");
-    }
-
-    // Normalizamos cualquier variante válida a una URL watch estándar para que
-    // oEmbed no dependa del formato concreto que haya pegado el usuario.
-    const canonicalUrl="https://www.youtube.com/watch?v="+encodeURIComponent(videoId);
-    // oEmbed es útil para título/autor, pero no debe decidir si el vídeo existe:
-    // algunos vídeos válidos no responden a oEmbed desde servidores cloud.
-    const oembed="https://www.youtube.com/oembed?url="+encodeURIComponent(canonicalUrl)+"&format=json";
-    let data={};
-    try{
-      const oembedResponse=await fetchWithTimeout(oembed,{headers:{Accept:"application/json","User-Agent":"Mozilla/5.0"}},10000);
-      data=await oembedResponse.json().catch(()=>({}));
-    }catch{}
-    let description="";
-    let keywords="";
-    let category="";
-    let duration="";
-    let playerDetails={};
-    try{
-      // Siempre intentamos leer la página canónica, incluso si oEmbed falla.
-      const page=await fetchWithTimeout(canonicalUrl,{headers:{Accept:"text/html","User-Agent":"Mozilla/5.0"}},15000);
-      const html=await page.text();
-      const getMeta=(key)=>{
-        const a=new RegExp("<meta[^>]+(?:name|property)=[\\\"']"+key+"[\\\"'][^>]+content=[\\\"']([^\\\"']*)[\\\"']","i").exec(html);
-        return a?a[1].replace(/&amp;/g,"&").replace(/&#39;/g,"'").replace(/&quot;/g,"\\\"").trim():"";
-      };
-      description=getMeta("og:description")||getMeta("description");
-      keywords=getMeta("keywords");
-      const m=/ytInitialPlayerResponse\\s*=\\s*(\\{.*?\\})\\s*;/.exec(html);
-      if(m){
-        try{
-          const parsed=JSON.parse(m[1]);
-          playerDetails=parsed.videoDetails||{};
-          description=String(playerDetails.shortDescription||description).trim();
-          keywords=Array.isArray(playerDetails.keywords)?playerDetails.keywords.join(", "):keywords;
-          category=String(parsed.microformat?.playerMicroformatRenderer?.category||"").trim();
-          duration=String(playerDetails.lengthSeconds||"").trim();
-        }catch{}
-      }
-    }catch{}
-    const mergedTitle=String(playerDetails.title||data.title||"Vídeo de YouTube · "+videoId).trim();
-    const mergedAuthor=String(playerDetails.author||data.author_name||"").trim();
-    const mergedThumb=String(playerDetails.thumbnail?.thumbnails?.slice(-1)[0]?.url||data.thumbnail_url||"https://i.ytimg.com/vi/"+videoId+"/hqdefault.jpg").trim();
-    // Si al menos tenemos un ID válido y YouTube nos permitió consultar la página,
-    // devolvemos la referencia aunque oEmbed no haya respondido.
+    const oembed="https://www.youtube.com/oembed?url="+encodeURIComponent(raw)+"&format=json";
+    const r=await fetchWithTimeout(oembed,{headers:{Accept:"application/json"}},10000);
+    const data=await r.json().catch(()=>({}));
+    if(!r.ok) return res.status(400).json({error:"YouTube no pudo reconocer ese vídeo."});
     res.json({
-      title:mergedTitle,
-      author:mergedAuthor,
-      thumbnail:mergedThumb,
-      description:description.slice(0,5000),
-      keywords:keywords.slice(0,1500),
-      category,
-      duration,
+      title:data.title||"Vídeo de YouTube",
+      author:data.author_name||"",
+      thumbnail:data.thumbnail_url||"",
       sourceUrl:raw,
-      promptSuggestion:String(mergedTitle+" "+description).slice(0,240),
+      promptSuggestion:String(data.title||"paisaje relajante").slice(0,180),
       audioAnalysisAvailable:false
     });
   }catch(e){
     res.status(400).json({error:"No se pudo analizar el enlace de YouTube: "+(e.message||e)});
   }
 });
-
 app.post("/api/upload/image", imageUpload.single("image"), (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No se recibió ninguna imagen." });
   res.json({ name: req.file.filename, url: `/media/images/${encodeURIComponent(req.file.filename)}` });
