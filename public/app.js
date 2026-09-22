@@ -103,29 +103,29 @@ function bindAIButtons(){
 }
 
 async function generateAIMusicOnly(){
-  const prompt=(($( "#aiMusicPrompt").value||"").trim()||"piano relaxing ambient");
+  const prompt=(($("#aiMusicPrompt").value||"").trim()||"piano relaxing ambient");
   S.aiLoading=true; S.aiMusic=[]; S.externalMusic=[]; S.selectedExternalMusic=[]; S.music=null;
-  const status=$( "#aiSelectionStatus"), mg=$( "#aiMusicList");
-  if(status)status.textContent="🔎 Buscando audios reales en Freesound según tu búsqueda…";
-  if(mg)mg.innerHTML='<div class="empty">🔎 Buscando grabaciones reales de los instrumentos y ambientes solicitados…</div>';
+  const status=$("#aiSelectionStatus"), mg=$("#aiMusicList");
+  if(status)status.textContent="♫ Generando 4 opciones de música IA…";
+  if(mg)mg.innerHTML='<div class="empty">♫ Generando música IA según tu descripción…</div>';
   try{
-    const started=await api("/api/external-music-search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({q:prompt})});
-    let d=null;
-    for(let n=0;n<90;n++){
-      d=await api("/api/external-music-search-status?jobId="+encodeURIComponent(started.jobId));
-      if(d.status==="succeeded")break;
-      if(d.status==="failed")throw Error(d.error||"Freesound no pudo completar la búsqueda.");
-      await new Promise(r=>setTimeout(r,1000));
+    await api("/api/ai-music",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({musicPrompt:prompt,count:4})
+    });
+    await waitForAIMusic();
+    if(S.aiMusic[0]){
+      S.music=S.aiMusic[0];
+      renderAICreator(); update(); picker();
     }
-    if(!d||d.status!=="succeeded")throw Error("La búsqueda de Freesound está tardando demasiado.");
-    S.externalMusic=d.results||[];
-    if(!S.externalMusic.length)throw Error("No se encontraron audios que coincidan con la búsqueda.");
-    if(status)status.textContent="✓ "+S.externalMusic.length+" previas reales encontradas. Escucha y elige una.";
-    renderAICreator();
+    if(status)status.textContent="✓ Música IA generada. Puedes escuchar y elegir una de las 4 opciones.";
   }catch(e){
-    if(status)status.textContent="Error de búsqueda: "+e.message;
-    if(mg)mg.innerHTML='<div class="empty">No se pudo buscar audio externo.<br><small>'+e.message+'</small></div>';
-  }finally{S.aiLoading=false;renderAICreator()}
+    if(status)status.textContent="❌ "+(e.message||"No se pudo generar la música IA.");
+  }finally{
+    S.aiLoading=false;
+    renderAICreator();
+  }
 }
 
 async function importExternalMusic(x){
