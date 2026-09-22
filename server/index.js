@@ -779,17 +779,18 @@ async function generatePollinationsLandscape(prompt, index=0) {
     "no people, no buildings, no text, no logo"
   ].join(", ");
 
-  const filename = "ai-landscape-pollinations-" + Date.now() + "-" + index + ".jpg";
+  const filename = "ai-landscape-pollinations-" + Date.now() + "-" + index + ".svg";
   const key = String(process.env.POLLINATIONS_API_KEY || "").trim();
 
   // Pollinations cambió su gateway: usamos el endpoint unificado actual primero.
   // Si no hay saldo o el proveedor falla, NO rompemos Crear IA/YouTube:
   // devolvemos un paisaje local válido como último recurso.
+  const seed = Date.now() + index * 7919;
   const attempts = [
     "https://gen.pollinations.ai/image/" + encodeURIComponent(finalPrompt) +
-      "?model=flux&width=1920&height=1080&nologo=true&seed=" + (Date.now() + index * 7919),
-    "https://image.pollinations.ai/prompt/" + encodeURIComponent(finalPrompt) +
-      "?width=1920&height=1080&nologo=true&seed=" + (Date.now() + index * 7919)
+      "?model=black-forest-labs/flux.1-schnell&aspectRatio=16:9&seed=" + seed,
+    "https://gen.pollinations.ai/image/" + encodeURIComponent(finalPrompt) +
+      "?model=flux&seed=" + seed
   ];
 
   let lastError = null;
@@ -823,24 +824,7 @@ async function generatePollinationsLandscape(prompt, index=0) {
 
   // Último recurso gratuito y local: nunca dejamos la generación sin imagen.
   const fallback = makeFallbackLandscape(filename, userPrompt);
-  // El fallback local es SVG; FFmpeg no trae decodificador SVG en Render.
-  // Convertimos el SVG a PNG con un formato que FFmpeg pueda leer.
-  const svgPath = path.join(IMAGE_DIR, filename);
-  const pngFilename = filename.replace(/\.jpg$/i, ".png");
-  const pngPath = path.join(IMAGE_DIR, pngFilename);
-  try {
-    const svgData = fs.readFileSync(svgPath);
-    const base64 = svgData.toString("base64");
-    const dataUrl = "data:image/svg+xml;base64," + base64;
-    const sharp = require("sharp");
-    await sharp(Buffer.from(svgData)).png().toFile(pngPath);
-    fs.unlinkSync(svgPath);
-    fallback.name = pngFilename;
-    fallback.url = "/media/images/" + encodeURIComponent(pngFilename);
-  } catch (e) {
-    console.warn("[Pollinations Image] No se pudo rasterizar fallback SVG:", e.message);
-  }
-  return {
+  // Último recurso gratuito y local: el SVG conserva su extensión correcta.\n  return {
     ...fallback,
     ai: false,
     fallback: true,
@@ -1012,7 +996,7 @@ async function generatePollinationsVideoPreview({prompt,imageUrl,outputPath,vari
   // Pollinations genera el movimiento; después solo sustituimos su audio por
   // nuestra música IA. Así evitamos codificar 60 s de vídeo desde cero en Render.
   const qs=new URLSearchParams({
-    model:String(process.env.POLLINATIONS_VIDEO_MODEL||"ltx-2"),
+    model:String(process.env.POLLINATIONS_VIDEO_MODEL||"bytedance/seedance-2.0-fast"),
     duration:"5",
     audio:"false",
     aspectRatio:"16:9",
