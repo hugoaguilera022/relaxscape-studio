@@ -2307,8 +2307,9 @@ async function buildSelectedFreesoundMixJob(jobId,tracks,durationMinutes){
     const local=[];
     for(let i=0;i<tracks.length;i++){
       const t=tracks[i]||{};
-      if(!t.preview || !/^https?:\/\//i.test(t.preview)) throw new Error("Una de las pistas seleccionadas no es válida.");
-      const isAI=String(t.preview).includes("/media/music/") || String(t.provider||"").toLowerCase().includes("relaxscape ai");
+      const preview=String(t.preview||"");
+      const isAI=preview.includes("/media/music/") || String(t.provider||"").toLowerCase().includes("relaxscape ai");
+      if(!preview || (!/^https?:\/\//i.test(preview) && !isAI)) throw new Error("Una de las pistas seleccionadas no es válida.");
       let file;
       if(isAI){
         const rawName=decodeURIComponent(String(t.preview).split("/").pop());
@@ -2343,15 +2344,15 @@ async function buildSelectedFreesoundMixJob(jobId,tracks,durationMinutes){
       inputs.push("-stream_loop","-1","-i",local[i].file);
       const label="a"+i;
       // EQ muy suave para limpiar graves y dejar espacio; no destruye el carácter del sonido.
+      const fadeOutStart=Math.max(2,Math.min(297,durationMinutes*60-3));
       const filter=[
         "["+i+":a]aresample=48000",
         "highpass=f=35",
         "lowpass=f=18000",
         "volume="+baseGain.toFixed(3),
         "afade=t=in:st=0:d=2",
-        "afade=t=out:st="+Math.max(2,Math.min(300,durationMinutes*60-3))+":d=3",
-        "["+label+"]"
-      ].join(",");
+        "afade=t=out:st="+fadeOutStart+":d=3"
+      ].join(",")+"["+label+"]";
       filters.push(filter);
     }
 
@@ -2372,7 +2373,7 @@ async function buildSelectedFreesoundMixJob(jobId,tracks,durationMinutes){
 
     const previewName="selected-relax-mix-preview-"+durationMinutes+"min-"+Date.now()+".mp3";
     const previewPath=path.join(MUSIC_DIR,previewName);
-    await runMix(90,previewPath,"192k");
+    await runMix(Math.min(90,durationMinutes*60),previewPath,"192k");
     job.preview={name:previewName,url:"/media/music/"+encodeURIComponent(previewName),durationSeconds:90};
     job.progress=45;
     job.status="preview-ready";
