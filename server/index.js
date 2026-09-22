@@ -1905,6 +1905,69 @@ function buildFreesoundQueries(input=""){
 }
 const freesoundSearchJobs=new Map();
 
+async function searchOpenverseAudio(input, queries){
+  const requestQueries=[input,...queries.slice(0,7)].filter(Boolean);
+  const settled=await Promise.allSettled(requestQueries.map(async q=>{
+    const u=new URL("https://api.openverse.org/v1/audio/");
+    u.searchParams.set("q",q); u.searchParams.set("page_size","20");
+    u.searchParams.set("page",String(1+Math.floor(Math.random()*3)));
+    const rr=await fetchWithTimeout(u.toString(),{headers:{Accept:"application/json","User-Agent":"RelaxScape-Studio/1.0"}},8000);
+    const data=await rr.json().catch(()=>({}));
+    if(!rr.ok)throw new Error(data.detail||data.error||("HTTP "+rr.status));
+    return Array.isArray(data.results)?data.results:[];
+  }));
+  const out=[],seen=new Set();
+  for(const r of settled){
+    if(r.status!=="fulfilled")continue;
+    for(const x of r.value){
+      const url=String(x.url||""); const id=String(x.id||url);
+      if(!url||seen.has(id))continue;
+      const duration=Number(x.duration||0)/1000;
+      if(duration && (duration<3||duration>900))continue;
+      const tags=Array.isArray(x.tags)?x.tags.map(t=>t.name||t):[];
+      const searchable=(String(x.title||"")+" "+String(x.creator||"")+" "+tags.join(" ")).toLowerCase();
+      if(!/(music|ambient|loop|relax|calm|peace|meditat|flute|piano|guitar|harp|water|rain|ocean|forest|nature|soundscape|sleep|zen|spa|acoustic)/i.test(searchable))continue;
+      seen.add(id);
+      out.push({id:"openverse-"+id,name:x.title||"Openverse relaxing audio",username:x.creator||"Unknown",
+        license:x.license||"Openverse",licenseUrl:x.license_url||"",duration,rating:null,downloads:0,tags:tags.slice(0,16),
+        preview:url,relaxing:true,relaxingLike:true,musicLike:true,searchScore:8,
+        sourceUrl:x.foreign_landing_url||x.detail_url||"",provider:"Openverse"});
+    }
+  }
+  return out;
+}
+
+async function searchWikimediaAudio(input, queries){
+  const requestQueries=[input,...queries.slice(0,5)].filter(Boolean);
+  const settled=await Promise.allSettled(requestQueries.map(async q=>{
+    const u=new URL("https://commons.wikimedia.org/w/api.php");
+    u.searchParams.set("action","query"); u.searchParams.set("generator","search");
+    u.searchParams.set("gsrsearch",q+" filetype:audio"); u.searchParams.set("gsrnamespace","6");
+    u.searchParams.set("gsrlimit","20"); u.searchParams.set("prop","imageinfo");
+    u.searchParams.set("iiprop","url|mime|extmetadata"); u.searchParams.set("format","json"); u.searchParams.set("origin","*");
+    const rr=await fetchWithTimeout(u.toString(),{headers:{Accept:"application/json","User-Agent":"RelaxScape-Studio/1.0"}},8000);
+    const data=await rr.json().catch(()=>({})); if(!rr.ok)throw new Error("Wikimedia HTTP "+rr.status);
+    return Object.values(data?.query?.pages||{});
+  }));
+  const out=[],seen=new Set();
+  for(const r of settled){
+    if(r.status!=="fulfilled")continue;
+    for(const page of r.value){
+      const info=page?.imageinfo?.[0]; if(!info?.url||!String(info.mime||"").startsWith("audio/")||seen.has(info.url))continue;
+      const meta=info.extmetadata||{}; const title=String(page.title||"").replace(/^File:/i,"");
+      const searchable=(title+" "+String(meta.ImageDescription?.value||"")).toLowerCase();
+      if(!/(music|ambient|loop|relax|calm|peace|meditat|flute|piano|guitar|harp|water|rain|ocean|forest|nature|soundscape|sleep|zen|spa|acoustic)/i.test(searchable))continue;
+      const duration=Number(meta.Duration?.value||0); if(duration && (duration<3||duration>900))continue;
+      seen.add(info.url);
+      out.push({id:"wikimedia-"+page.pageid,name:title,username:"Wikimedia Commons",
+        license:String(meta.LicenseShortName?.value||meta.License?.value||"Wikimedia Commons"),duration,rating:null,downloads:0,tags:[],
+        preview:info.url,relaxing:true,relaxingLike:true,musicLike:true,searchScore:7,
+        sourceUrl:info.descriptionurl||"",provider:"Wikimedia Commons"});
+    }
+  }
+  return out;
+}
+
 async function runFreesoundSearchJob(jobId,input){
   const job=freesoundSearchJobs.get(jobId);
   if(!job)return;
