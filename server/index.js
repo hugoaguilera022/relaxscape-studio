@@ -614,7 +614,7 @@ async function ensureBuiltinMusic(tracks=[]){
     try{
       const out=path.join(MUSIC_DIR,track.file);
       fs.rmSync(out,{force:true});
-      await generateAIMusicFile(track,out);
+      await generateAIMusicFile(track,out,12000);
       track.provider="RelaxScape Free AI Music Engine";
       track.generated=true;
       track.fallback=false;
@@ -1874,28 +1874,59 @@ app.post("/api/generate-ai-video", async (req, res) => {
 function buildFreesoundQueries(input=""){
   const q=String(input||"").trim().slice(0,500);
   const n=q.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
-  const expanded=[q];
+  const expanded=[];
   const add=(...xs)=>expanded.push(...xs);
 
-  if(/flauta|flute|bamboo/.test(n)) add("relaxing flute","ambient flute","flute meditation");
-  if(/piano/.test(n)) add("relaxing piano","ambient piano","soft piano meditation");
-  if(/guitarra|guitar/.test(n)) add("relaxing acoustic guitar","ambient guitar","soft guitar meditation");
-  if(/violin|violin/.test(n)) add("relaxing violin","ambient strings","soft violin");
-  if(/cuerda|strings|string/.test(n)) add("relaxing strings","ambient strings","soft string ensemble");
-  if(/arpa|harp/.test(n)) add("relaxing harp","ambient harp","soft harp meditation");
-  if(/kalimba/.test(n)) add("relaxing kalimba","ambient kalimba","soft kalimba");
-  if(/lluvia|rain/.test(n)) add("relaxing rain","rain ambience","soft rain nature");
-  if(/agua|rio|río|chorro|corriente|cascada|water|stream|river|waterfall/.test(n)){
-    add("flowing water relaxing","water ambience nature","soft stream water","water meditation ambience");
-  }
-  if(/oceano|océano|mar|olas|ocean|sea|waves/.test(n)) add("relaxing ocean waves","sea ambience","soft waves meditation");
-  if(/bosque|forest|naturaleza|nature|pajar|bird/.test(n)) add("forest relaxation ambience","nature meditation","peaceful forest birds");
-  if(/chimenea|fuego|fire|fireplace/.test(n)) add("fireplace ambience relaxing","soft fire crackling","cozy fireplace meditation");
+  // Búsqueda amplia: combinamos la intención exacta con vocabulario musical
+  // y de soundscape para evitar que Freesound devuelva siempre los mismos audios.
+  add(
+    q,
+    q+" relaxing music",
+    q+" ambient music",
+    q+" relaxing loop",
+    q+" ambient loop",
+    q+" meditation music",
+    q+" peaceful soundscape"
+  );
 
-  // Variantes generales para que una búsqueda nueva no quede limitada
-  // a una única coincidencia de Freesound.
-  add(q+" relaxing",q+" ambient",q+" meditation");
-  return [...new Set(expanded)].filter(Boolean).slice(0,8);
+  if(/flauta|flute|bamboo/.test(n)){
+    add("relaxing flute music","soft flute ambient loop","bamboo flute meditation music","flute nature soundscape");
+  }
+  if(/piano/.test(n)){
+    add("relaxing piano music","soft piano ambient loop","piano meditation music","peaceful piano soundscape");
+  }
+  if(/guitarra|guitar/.test(n)){
+    add("relaxing acoustic guitar music","soft guitar ambient loop","acoustic guitar meditation music","peaceful guitar soundscape");
+  }
+  if(/violin|violin/.test(n)){
+    add("relaxing violin music","soft strings ambient loop","violin meditation music","peaceful string soundscape");
+  }
+  if(/cuerda|strings|string/.test(n)){
+    add("relaxing strings music","ambient string ensemble loop","soft strings meditation music");
+  }
+  if(/arpa|harp/.test(n)){
+    add("relaxing harp music","ambient harp loop","soft harp meditation music");
+  }
+  if(/kalimba/.test(n)){
+    add("relaxing kalimba music","ambient kalimba loop","soft kalimba meditation music");
+  }
+  if(/lluvia|rain/.test(n)){
+    add("rain relaxing music","rain ambient loop","soft rain meditation soundscape","rain piano ambient");
+  }
+  if(/agua|rio|río|chorro|corriente|cascada|water|stream|river|waterfall/.test(n)){
+    add("flowing water relaxing soundscape","water ambient music loop","soft stream meditation","waterfall ambient loop","running water peaceful soundscape");
+  }
+  if(/oceano|océano|mar|olas|ocean|sea|waves/.test(n)){
+    add("relaxing ocean ambient music","soft ocean waves loop","sea meditation soundscape","peaceful waves ambient");
+  }
+  if(/bosque|forest|naturaleza|nature|pajar|bird/.test(n)){
+    add("forest relaxing music","forest ambient loop","nature meditation music","peaceful forest soundscape");
+  }
+  if(/chimenea|fuego|fire|fireplace/.test(n)){
+    add("fireplace relaxing music","fire ambient loop","cozy fireplace soundscape","fire meditation ambience");
+  }
+
+  return [...new Set(expanded)].filter(Boolean).slice(0,18);
 }
 const freesoundSearchJobs=new Map();
 
@@ -1905,80 +1936,155 @@ async function runFreesoundSearchJob(jobId,input){
   try{
     const key=process.env.FREESOUND_API_KEY;
     if(!key)throw new Error("Falta FREESOUND_API_KEY en Render.");
-    const queries=buildFreesoundQueries(input).slice(0,4);
+
+    const queries=buildFreesoundQueries(input);
     const all=[];
-    const results=await Promise.allSettled(queries.map(async query=>{
+    const seenRequests=new Set();
+
+    // Hasta 18 búsquedas distintas + páginas aleatorias. La combinación exacta
+    // cambia en cada ejecución para que una misma búsqueda no entregue siempre
+    // la misma lista.
+    const requestPlan=[];
+    for(let i=0;i<queries.length;i++){
+      const page=1+(Math.floor(Math.random()*4));
+      const keyReq=queries[i]+"|"+page;
+      if(seenRequests.has(keyReq))continue;
+      seenRequests.add(keyReq);
+      requestPlan.push({query:queries[i],page});
+    }
+
+    const results=await Promise.allSettled(requestPlan.map(async ({query,page})=>{
       const url=new URL("https://freesound.org/apiv2/search/");
       url.searchParams.set("query",query);
-      url.searchParams.set("page_size","16");
-      url.searchParams.set("sort","score");
+      url.searchParams.set("page_size","20");
+      url.searchParams.set("page",String(page));
+      url.searchParams.set("sort",Math.random()>0.55?"score":"rating_desc");
       url.searchParams.set("fields","id,name,tags,username,license,url,duration,previews,description,avg_rating,num_downloads");
-      const r=await fetchWithTimeout(url.toString(),{
+      const rr=await fetchWithTimeout(url.toString(),{
         headers:{Authorization:"Token "+key,Accept:"application/json"}
       },7000);
-      const data=await r.json().catch(()=>({}));
-      if(!r.ok)throw new Error(data.detail||data.error||("HTTP "+r.status));
-      return Array.isArray(data.results)?data.results:[];
+      const data=await rr.json().catch(()=>({}));
+      if(!rr.ok)throw new Error(data.detail||data.error||("HTTP "+rr.status));
+      return {query,items:Array.isArray(data.results)?data.results:[]};
     }));
-    for(let i=0;i<results.length;i++){
-      const result=results[i];
+
+    for(const result of results){
       if(result.status==="rejected"){
-        console.warn("[Freesound Search] Query skipped:",queries[i],result.reason?.message||result.reason);
+        console.warn("[Freesound Search] Query skipped:",result.reason?.message||result.reason);
         continue;
       }
-      for(const x of result.value){
+      for(const x of result.value.items){
         const preview=x.previews?.["preview-hq-mp3"]||x.previews?.["preview-lq-mp3"];
         if(!preview)continue;
-        const tags=Array.isArray(x.tags)?x.tags.slice(0,12):[];
-        const searchable=(String(x.name||"")+" "+tags.join(" ")).toLowerCase();
-        const relaxingLike=/(relax|ambient|calm|peace|meditat|sleep|soothing|soft|nature|zen|dream|chill|spa|healing|serene|tranquil|acoustic)/i.test(searchable);
+
+        const tags=Array.isArray(x.tags)?x.tags.slice(0,16):[];
+        const searchable=(String(x.name||"")+" "+tags.join(" ")+" "+String(x.description||"")).toLowerCase();
+
+        // Priorizamos música/ambientes relajantes y penalizamos claramente
+        // efectos no musicales para que una búsqueda como "flauta + agua"
+        // no termine dominada por sonidos sueltos sin carácter musical.
+        const musicLike=/(music|musical|melody|melodic|instrumental|ambient|loop|meditat|piano|flute|guitar|harp|kalimba|strings|soundscape|pad|drone|chill|relax|calm|peace|sleep|spa|zen|acoustic)/i.test(searchable);
+        const relaxingLike=/(relax|ambient|calm|peace|meditat|sleep|soothing|soft|nature|zen|dream|chill|spa|healing|serene|tranquil|acoustic|soundscape|music|loop)/i.test(searchable);
+        const harshLike=/(gun|weapon|scream|explosion|sirens?|alarm|engine|car crash|crowd|shout|industrial|horror)/i.test(searchable);
+
+        if(!musicLike && !relaxingLike)continue;
+        const duration=Number(x.duration||0);
+        if(duration<3 || duration>900)continue;
+
+        const queryBonus=result.value.query===input?8:0;
+        const score=
+          (musicLike?8:0)+
+          (relaxingLike?8:0)+
+          (queryBonus)+
+          Math.min(5,Number(x.avg_rating||0))+
+          Math.min(3,Math.log10(Math.max(1,Number(x.num_downloads||0))))-
+          (harshLike?12:0);
+
         all.push({
           id:x.id,
-          name:x.name||"Freesound audio",
+          name:x.name||"Freesound relaxing audio",
           username:x.username||"Unknown",
           license:x.license||"Unknown",
-          duration:Number(x.duration||0),
+          duration,
           rating:x.avg_rating==null?null:Number(x.avg_rating),
           downloads:Number(x.num_downloads||0),
           tags,
           preview,
           relaxing:true,
-          relaxingLike,
+          relaxingLike:relaxingLike,
+          musicLike,
+          searchScore:score,
           sourceUrl:x.url||("https://freesound.org/s/"+x.id),
           provider:"Freesound"
         });
       }
     }
+
+    // Deduplicación + selección diversa por etiquetas/nombre. No cogemos
+    // simplemente los primeros resultados más populares.
     const unique=[];
-    const seen=new Set();
+    const seenIds=new Set();
     for(const x of all){
-      if(seen.has(x.id))continue;
-      seen.add(x.id);
+      if(seenIds.has(x.id))continue;
+      seenIds.add(x.id);
       unique.push(x);
     }
-    unique.sort((a,b)=>(Number(b.relaxingLike)-Number(a.relaxingLike))||(b.rating||0)-(a.rating||0)||b.downloads-a.downloads);
 
-    // Además de Freesound, generamos nuevas opciones con el motor musical
-    // interno de RelaxScape basadas en la búsqueda del usuario. Así cada
-    // búsqueda puede producir material original y no depender siempre de
-    // los mismos audios externos.
-    const aiTracks=aiTracksForBackground(input,Date.now(),4);
+    unique.sort((a,b)=>b.searchScore-a.searchScore);
+    const pool=unique.slice(0,Math.min(100,unique.length));
+    const chosen=[];
+    const usedFamilies=new Set();
+
+    function family(x){
+      const t=(x.name+" "+(x.tags||[]).join(" ")).toLowerCase();
+      const families=[
+        ["flute","flauta"],["piano"],["guitar","guitarra"],["water","agua","river","stream","waterfall"],
+        ["rain","lluvia"],["ocean","sea","waves","mar"],["forest","bosque","nature"],
+        ["strings","violin","cello"],["harp","arpa"],["kalimba"],["ambient","soundscape"],
+        ["loop"],["meditation","zen","spa"],["sleep","sueño"]
+      ];
+      for(const f of families)if(f.some(k=>t.includes(k)))return f[0];
+      return "other";
+    }
+
+    // Primera pasada: una opción por familia; segunda pasada: rellenamos.
+    for(const x of pool){
+      const fam=family(x);
+      if(!usedFamilies.has(fam)){
+        chosen.push(x);
+        usedFamilies.add(fam);
+      }
+      if(chosen.length>=20)break;
+    }
+    for(const x of pool){
+      if(chosen.length>=20)break;
+      if(!chosen.some(y=>y.id===x.id))chosen.push(x);
+    }
+
+    // Barajado ponderado al final: mantiene calidad pero cambia el orden y evita
+    // que la interfaz parezca congelada en las mismas cuatro pistas.
+    chosen.sort(()=>Math.random()-0.5);
+
+    // Además de Freesound, generamos 4 piezas originales. Cada ejecución recibe
+    // una semilla nueva, por lo que no reutiliza el mismo material.
+    const aiTracks=aiTracksForBackground(input,Date.now()+Math.floor(Math.random()*1000000),4);
     await ensureBuiltinMusic(aiTracks);
     const aiResults=aiTracks.map((t,i)=>{
       const filePath=path.join(MUSIC_DIR,t.file);
       if(!fs.existsSync(filePath)) return null;
       return {
         id:"ai-"+t.file,
-        name:"IA · "+(t.variant||i+1)+" · "+input,
+        name:"IA · Música relajante · "+(t.variant||i+1)+" · "+input,
         username:"RelaxScape AI",
         license:"Generated by RelaxScape",
-        duration:6,
+        duration:12,
         rating:null,
         downloads:0,
-        tags:["ai","relaxing","ambient",...(t.soundPalette||"").split(",").slice(0,4)],
+        tags:["ai","relaxing","ambient","music",...(t.soundPalette||"").split(",").slice(0,4)],
         preview:"/media/music/"+encodeURIComponent(t.file),
         relaxing:true,
         relaxingLike:true,
+        musicLike:true,
         generated:true,
         sourceUrl:"",
         provider:"RelaxScape AI"
@@ -1989,9 +2095,11 @@ async function runFreesoundSearchJob(jobId,input){
     job.result={
       provider:"Freesound + RelaxScape AI",
       query:input,
-      results:[...aiResults,...unique.slice(0,12)],
+      results:[...aiResults,...chosen],
       relaxingMode:true,
-      aiGenerated:aiResults.length
+      aiGenerated:aiResults.length,
+      searchQueries:requestPlan.length,
+      foundBeforeFiltering:all.length
     };
   }catch(e){
     console.error("[Freesound Search] ERROR",e.stack||e.message||e);
