@@ -812,8 +812,8 @@ async function generatePollinationsLandscape(prompt, index=0) {
   // devolvemos un paisaje local válido como último recurso.
   const seed = Date.now() + index * 7919;
   const attempts = [
-    "https://gen.pollinations.ai/image/" + encodeURIComponent(finalPrompt) + "?width=1920&height=1080&nologo=true",
-    "https://image.pollinations.ai/prompt/" + encodeURIComponent(finalPrompt) + "?width=1920&height=1080&nologo=true"
+    "https://gen.pollinations.ai/image/" + encodeURIComponent(finalPrompt) + "?width=1920&height=1080&nologo=true&seed=" + seed,
+    "https://image.pollinations.ai/prompt/" + encodeURIComponent(finalPrompt) + "?width=1920&height=1080&nologo=true&seed=" + seed
   ];
 
   let lastError = null;
@@ -823,7 +823,7 @@ async function generatePollinationsLandscape(prompt, index=0) {
       if (key && url.startsWith("https://gen.pollinations.ai/")) {
         headers.Authorization = "Bearer " + key;
       }
-      const r = await fetchWithTimeout(url, { headers }, 8000);
+      const r = await fetchWithTimeout(url, { headers }, 60000);
       if (!r.ok) {
         const body = await r.text().catch(() => "");
         throw new Error("Pollinations HTTP " + r.status + (body ? " · " + body.slice(0, 180) : ""));
@@ -936,12 +936,17 @@ app.post("/api/ai-images", async (req, res) => {
     // Para que Render Free no se quede bloqueado esperando a Hugging Face,
     // usamos Pollinations como motor IA principal con un timeout corto.
     // Si falla, cada opción recibe inmediatamente un paisaje local válido.
-    const jobs = Array.from({ length: requestedCount }, (_, index) =>
-      generatePollinationsLandscape(theme, index)
-        .then(image => ({ ok: true, image }))
-        .catch(error => ({ ok: false, error }))
-    );
-    const results = await Promise.all(jobs);
+    const results = [];
+    // Pollinations free queue is limited to one pending request per IP.
+    // Do NOT use Promise.all here: Render's shared server IP would receive 429.
+    for(let index=0; index<requestedCount; index++){
+      try{
+        const image=await generatePollinationsLandscape(theme,index);
+        results.push({ok:true,image});
+      }catch(error){
+        results.push({ok:false,error});
+      }
+    }
     const images = results.map((r, index) => {
       if (r.ok && r.image) return r.image;
       const filename = "ai-image-local-" + Date.now() + "-" + index + ".svg";
@@ -965,7 +970,7 @@ app.post("/api/ai-images", async (req, res) => {
     });
   } catch (e) {
     console.error("[AI Landscape] ERROR", e);
-    res.status(502).json({ error: "Error generando paisajes IA: " + (e.message || e) });
+    res.status(502).json({ error: "Error generando imágenes IA: " + (e.message || e) });
   }
 });
 
