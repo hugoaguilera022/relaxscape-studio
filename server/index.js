@@ -1058,7 +1058,7 @@ const videoPreviewJobs=new Map();
 
 // Previews de YouTube: MP4 ligero y estable para Render.
 // El objetivo aquí es validar música + paisaje + duración, no renderizar el máster final.
-const YOUTUBE_PREVIEW_SECONDS = 60;
+const YOUTUBE_PREVIEW_SECONDS = 15;
 
 
 async function generatePollinationsVideoPreview({prompt,imageUrl,outputPath,variant=1}){
@@ -1304,8 +1304,10 @@ app.post("/api/video-preview-options",(req,res)=>{
           musicPath,
           outputPath:out,
           durationSeconds:YOUTUBE_PREVIEW_SECONDS,
-          width:1920,
-          height:1080,
+          // La previsualización es deliberadamente ligera para Render.
+          // El máster final mantiene 1920x1080.
+          width:1280,
+          height:720,
           variant:track.variant
         });
         console.log("[YouTube single] Vídeo local 1080p creado:",track.variant);
