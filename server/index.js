@@ -754,13 +754,18 @@ async function generateHuggingFaceLandscape(prompt, index=0) {
     "no people, no buildings, no text, no logo"
   ].join(", ");
 
-  // Hugging Face recomienda Inference Providers con selección automática.
-  // No enviamos parámetros específicos de tamaño/pasos para evitar incompatibilidades
-  // entre proveedores; el proveedor se encarga de los parámetros soportados.
+  // YouTube: salida 16:9 Full HD 1920x1080. FLUX.1-schnell funciona con 4 pasos;
+  // aumentamos resolución y añadimos negative prompt sin cambiar de modelo ni proveedor.
+  // La documentación de Hugging Face expone width/height/steps/guidance/negative_prompt.
   const imageBlob = await client.textToImage({
     model: "black-forest-labs/FLUX.1-schnell",
     inputs: finalPrompt,
-    provider: "auto"
+    provider: "auto",
+    width: 1920,
+    height: 1080,
+    num_inference_steps: 4,
+    guidance_scale: 0,
+    negative_prompt: "low quality, blurry, pixelated, jpeg artifacts, distorted geometry, duplicate objects, extra limbs, people, text, letters, captions, watermark, logo"
   });
 
   if (!imageBlob || typeof imageBlob.arrayBuffer !== "function") {
@@ -808,8 +813,8 @@ async function generatePollinationsLandscape(prompt, index=0) {
   // devolvemos un paisaje local válido como último recurso.
   const seed = Date.now() + index * 7919;
   const attempts = [
-    "https://gen.pollinations.ai/image/" + encodeURIComponent(finalPrompt),
-    "https://image.pollinations.ai/prompt/" + encodeURIComponent(finalPrompt)
+    "https://gen.pollinations.ai/image/" + encodeURIComponent(finalPrompt) + "?width=1920&height=1080&nologo=true",
+    "https://image.pollinations.ai/prompt/" + encodeURIComponent(finalPrompt) + "?width=1920&height=1080&nologo=true"
   ];
 
   let lastError = null;
@@ -933,7 +938,7 @@ app.post("/api/ai-images", async (req, res) => {
     // Si la cuota mensual está agotada, cada una de las 4 opciones pasa
     // automáticamente al generador externo gratuito Pollinations.
     if (token) {
-      const jobs = Array.from({ length: 4 }, (_, index) =>
+      const jobs = Array.from({ length: 3 }, (_, index) =>
         Promise.race([
           generateHuggingFaceLandscape(theme, index),
           new Promise((_, reject) =>
