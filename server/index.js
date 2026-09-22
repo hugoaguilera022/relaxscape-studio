@@ -1130,34 +1130,19 @@ app.post("/api/video-preview-options",(req,res)=>{
         await generateAIMusicFile(track,musicPath,18000);
         const videoName="video-preview-"+jobId+"-"+track.variant+".mp4";
         const out=path.join(VIDEO_DIR,videoName);
-        const externalVideo=path.join(work,"external-"+track.variant+".mp4");
-
-        job.stage="ai-video-"+track.variant;
-        try{
-          await generatePollinationsVideoPreview({
-            prompt:track.originalMusicPrompt,
-            imageUrl:publicImageUrl,
-            outputPath:externalVideo,
-            variant:track.variant
-          });
-          job.stage="mix-"+track.variant;
-          await muxExternalVideoWithMusic(externalVideo,musicPath,out);
-          console.log("[Video previews] Pollinations OK:",track.variant);
-        }catch(externalErr){
-          // Fallback local: si el proveedor externo está sin cuota/modelo,
-          // mantenemos el flujo funcional sin tocar la generación de imágenes.
-          console.warn("[Video previews] Pollinations fallback:",externalErr.message);
-          job.stage="local-video-"+track.variant;
-          await generateLocalMotionVideo({
-            imagePath,
-            musicPath,
-            outputPath:out,
-            durationSeconds:YOUTUBE_PREVIEW_SECONDS,
-            width:480,
-            height:270,
-            variant:track.variant
-          });
-        }
+        // YOUTUBE: las 3 versiones se generan SIEMPRE localmente.
+        // No esperamos a Pollinations Video ni dependemos de saldo externo.
+        job.stage="local-video-"+track.variant;
+        await generateLocalMotionVideo({
+          imagePath,
+          musicPath,
+          outputPath:out,
+          durationSeconds:YOUTUBE_PREVIEW_SECONDS,
+          width:480,
+          height:270,
+          variant:track.variant
+        });
+        console.log("[YouTube 3 versiones] Vídeo local creado:",track.variant);
         results.push({
           name:videoName,
           url:"/media/videos/"+encodeURIComponent(videoName),
