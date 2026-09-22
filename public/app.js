@@ -224,11 +224,11 @@ async function createSelectedFreesoundMix(){
       if(job.preview && !S.music){
         S.music={url:job.preview.url,name:job.preview.name,isFreesoundPreview:true,durationMinutes:S.aiMixMinutes};
         renderAICreator();update();picker();
-        if(status)status.textContent="✓ Previa real de la mezcla lista. La mezcla de "+S.aiMixHours+" hora"+(S.aiMixHours===1?"":"s")+" sigue preparándose en segundo plano.";
+        if(status)status.textContent="✓ Previa real de la mezcla lista. La mezcla de "+S.aiMixMinutes+" minutos sigue preparándose en segundo plano.";
       }
       if(job.status==="succeeded"){
         S.music=job.result;
-        if(status)status.textContent="✓ Mezcla completa de "+S.aiMixHours+" hora"+(S.aiMixHours===1?"":"s")+" lista. Ya puedes escucharla y usarla en el vídeo.";
+        if(status)status.textContent="✓ Mezcla completa de "+S.aiMixMinutes+" minutos lista. Ya puedes escucharla y usarla en el vídeo.";
         renderAICreator();update();picker();
         break;
       }
@@ -309,7 +309,7 @@ function renderAICreator(){
       mx.innerHTML='<div class="mixer-selected-head"><div><b>🎚️ Sonidos seleccionados</b><small>'+S.selectedExternalMusic.length+'/6 · Puedes quitar cualquiera antes de mezclar.</small></div></div>'+S.selectedExternalMusic.map((x,i)=>'<div class="mixer-item"><span>'+String(i+1).padStart(2,"0")+'</span><div><b>'+escapeHtml(x.name)+'</b><small>Freesound · '+escapeHtml(x.username||"")+'</small></div><button type="button" class="ghost" data-remove-mix="'+x.id+'">Quitar</button></div>').join("")+'<div class="mixer-duration"><label>Duración de la mezcla (minutos) <input id="aiMixMinutes" type="number" min="1" max="1440" value="60" style="width:110px;margin-left:8px"></label><small>La mezcla tendrá exactamente la duración indicada.</small></div><button type="button" id="createSelectedFreesoundMix" class="primary mixer-create" '+(S.selectedExternalMusic.length<2?"disabled":"")+'>🎚️ Crear mezcla de los sonidos seleccionados</button>'+((S.music?.isFreesoundMix||S.music?.isFreesoundPreview)?'<div class="mixer-preview"><b>▶ Previa de la mezcla · '+(S.music.durationMinutes||S.aiMixMinutes)+' h</b><audio controls preload="metadata" src="'+S.music.url+'"></audio><small>Puedes escucharla completa, pausarla y mover el cursor por cualquier parte de la mezcla.</small></div>':'');
       $$("#aiMixer [data-remove-mix]").forEach(b=>b.onclick=()=>{S.selectedExternalMusic=S.selectedExternalMusic.filter(v=>String(v.id)!==String(b.dataset.removeMix));renderAICreator()});
       const dm=$("#aiMixMinutes"); if(dm)dm.oninput=()=>{const v=Math.max(1,Math.min(1440,Math.round(Number(dm.value)||1)));S.aiMixMinutes=v;const out=$("#aiSelectedDuration");if(out)out.textContent=v+" min";};
-      if(dh)dh.onchange=()=>{S.aiMixHours=Number(dh.value)===2?2:1};
+      
       const mb=$("#createSelectedFreesoundMix");
       if(mb)mb.onclick=createSelectedFreesoundMix;
     }else{
