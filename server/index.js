@@ -1630,6 +1630,43 @@ app.post("/api/generate-selected-long-music", async (req,res)=>{
     fs.rmSync(work,{recursive:true,force:true});
   }
 });
+app.post("/api/preview-video", async (req,res)=>{
+  const {image,music}=req.body||{};
+  if(!image||!music) return res.status(400).json({error:"Selecciona una imagen y un audio."});
+  const seconds=30, stamp=Date.now();
+  const workDir=path.join(VIDEO_DIR,"preview-"+stamp);
+  const outName="relaxscape-preview-"+stamp+".mp4";
+  const out=path.join(VIDEO_DIR,outName);
+  fs.mkdirSync(workDir,{recursive:true});
+  try{
+    const imageName=decodeURIComponent(String(image).split("/").pop());
+    let imagePath=path.join(IMAGE_DIR,imageName);
+    if(!fs.existsSync(imagePath)&&/^https?:\/\//i.test(image)){
+      const rr=await fetchWithTimeout(image,{headers:{Accept:"image/*"}},90000);
+      if(!rr.ok) throw new Error("No se pudo descargar la imagen seleccionada.");
+      imagePath=path.join(workDir,"image.jpg");
+      fs.writeFileSync(imagePath,Buffer.from(await rr.arrayBuffer()));
+    }
+    const musicName=decodeURIComponent(String(music).split("/").pop());
+    const musicPath=path.join(MUSIC_DIR,musicName);
+    if(!fs.existsSync(imagePath)||!fs.existsSync(musicPath)) return res.status(404).json({error:"No se encontró la imagen o el audio seleccionado."});
+    await runFfmpeg([
+      "-y","-loop","1","-framerate","5","-i",imagePath,
+      "-stream_loop","-1","-i",musicPath,"-t",String(seconds),
+      "-map","0:v:0","-map","1:a:0",
+      "-vf","scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
+      "-r","5","-c:v","libx264","-preset","ultrafast","-tune","stillimage","-crf","23","-threads","2",
+      "-pix_fmt","yuv420p","-c:a","aac","-b:a","128k","-ar","48000","-ac","2",
+      "-movflags","+faststart",out
+    ]);
+    const sizeMB=fs.statSync(out).size/1048576;
+    res.json({url:"/media/videos/"+encodeURIComponent(outName),name:outName,durationSeconds:seconds,sizeMB:Number(sizeMB.toFixed(1))});
+  }catch(e){
+    console.error("[Image+Audio 30s] ERROR",e.stack||e.message||e);
+    res.status(500).json({error:"No se pudo crear la preview de imagen + audio: "+(e.message||e)});
+  }finally{fs.rmSync(workDir,{recursive:true,force:true});}
+});
+
 app.post("/api/generate-video", async (req, res) => {
   const { image, music, durationHours = 1, durationMinutes } = req.body || {};
   if (!image || !music) return res.status(400).json({ error: "Selecciona una imagen y una pista de música." });
