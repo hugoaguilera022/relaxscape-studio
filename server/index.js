@@ -116,7 +116,7 @@ function makeCompositionWav(track, wavPath, durationMs=18000){
   // 5) renderiza esos eventos con el timbre solicitado.
   // IMPORTANTE: este bloque es exclusivamente de MÚSICA. La generación de imágenes
   // no se toca.
-  const sr=24000, dur=Math.max(18,Math.min(600,Number(durationMs||18000)/1000)), n=Math.round(sr*dur), samples=new Float32Array(n*2);
+  const sr=48000, dur=Math.max(18,Math.min(600,Number(durationMs||18000)/1000)), n=Math.round(sr*dur), samples=new Float32Array(n*2);
   const variant=((Number(track.variant||1)-1)%4+4)%4;
   const rawBrief=String(track.userSearch||track.originalMusicPrompt||"relaxscape");
   const brief=rawBrief.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
@@ -593,7 +593,7 @@ async function generateAIMusicFile(track, outPath, durationMs=18000){
   // Generamos WAV temporal y lo convertimos a MP3 real para que el navegador lo reproduzca.
   const wavPath=outPath.replace(/\.mp3$/i,".wav");
   makeCompositionWav(track, wavPath, durationMs);
-  await runFfmpeg(["-y","-i",wavPath,"-c:a","libmp3lame","-b:a","192k","-ar","48000",outPath]);
+  await runFfmpeg(["-y","-i",wavPath,"-c:a","libmp3lame","-b:a","320k","-ar","48000","-ac","2",outPath]);
   fs.rmSync(wavPath,{force:true});
   const stat=fs.statSync(outPath);
   if(!stat.size) throw new Error("El motor musical local no generó audio.");
@@ -1045,8 +1045,8 @@ async function generateLocalMotionVideo({imagePath,musicPath,outputPath,duration
     "-filter_complex",
     "[0:v]scale="+Math.round(width*1.15)+":"+Math.round(height*1.15)+":force_original_aspect_ratio=increase,crop="+Math.round(width*1.15)+":"+Math.round(height*1.15)+",zoompan="+zoom+":"+direction+":"+y+":d="+frames+":s="+width+"x"+height+":fps="+fps+",format=yuv420p[v]",
     "-map","[v]","-map","1:a:0","-t",String(duration),
-    "-c:v","libx264","-preset","ultrafast","-crf",width>=1280?"26":"30","-threads","1",
-    "-c:a","aac","-b:a",width>=1280?"128k":"48k","-movflags","+faststart",outputPath
+    "-c:v","libx264","-preset","fast","-crf",width>=1280?"18":"22","-threads","1",
+    "-c:a","aac","-b:a",width>=1280?"256k":"128k","-ar","48000","-ac","2","-movflags","+faststart",outputPath
   ]);
 }
 
