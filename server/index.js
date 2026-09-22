@@ -1032,6 +1032,24 @@ function hashString(value=""){
   return h>>>0;
 }
 
+async function generateLocalMotionVideo({imagePath,musicPath,outputPath,durationSeconds=60,width=480,height=270,variant=1}){
+  const duration=Math.max(5,Number(durationSeconds)||60);
+  const fps=15;
+  const frames=Math.ceil(duration*fps);
+  const v=Math.min(3,Math.max(1,Number(variant)||1));
+  const direction=v%2===0 ? "x='iw/2-(iw/zoom/2)*(0.5+0.5*sin(on/90))'" : "x='iw/2-(iw/zoom/2)*(0.5+0.5*cos(on/110))'";
+  const y=v===3 ? "y='ih/2-(ih/zoom/2)*(0.5+0.5*sin(on/100))'" : "y='ih/2-(ih/zoom/2)'";
+  const zoom=v===2 ? "z='min(zoom+0.00035,1.12)'" : "z='min(zoom+0.00028,1.10)'";
+  await runFfmpeg([
+    "-y","-loop","1","-i",imagePath,"-stream_loop","-1","-i",musicPath,
+    "-filter_complex",
+    "[0:v]scale="+Math.round(width*1.15)+":"+Math.round(height*1.15)+":force_original_aspect_ratio=increase,crop="+Math.round(width*1.15)+":"+Math.round(height*1.15)+",zoompan="+zoom+":"+direction+":"+y+":d="+frames+":s="+width+"x"+height+":fps="+fps+",format=yuv420p[v]",
+    "-map","[v]","-map","1:a:0","-t",String(duration),
+    "-c:v","libx264","-preset","ultrafast","-crf",width>=1280?"26":"30","-threads","1",
+    "-c:a","aac","-b:a",width>=1280?"128k":"48k","-movflags","+faststart",outputPath
+  ]);
+}
+
 async function muxExternalVideoWithMusic(videoPath,musicPath,outPath){
   // El vídeo externo dura unos segundos. Se repite por stream-copy hasta 60 s:
   // no se vuelve a comprimir la imagen, solo se codifica el audio AAC.
@@ -1130,15 +1148,15 @@ app.post("/api/video-preview-options",(req,res)=>{
           // mantenemos el flujo funcional sin tocar la generación de imágenes.
           console.warn("[Video previews] Pollinations fallback:",externalErr.message);
           job.stage="local-video-"+track.variant;
-          await runFfmpeg([
-            "-y","-loop","1","-i",imagePath,"-stream_loop","-1","-i",musicPath,
-            "-t",String(YOUTUBE_PREVIEW_SECONDS),
-            "-r","1",
-            "-vf","scale=480:270:force_original_aspect_ratio=decrease,pad=480:270:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
-            "-map","0:v:0","-map","1:a:0",
-            "-c:v","libx264","-preset","ultrafast","-tune","stillimage","-crf","35","-threads","1",
-            "-c:a","aac","-b:a","48k","-movflags","+faststart",out
-          ]);
+          await generateLocalMotionVideo({
+            imagePath,
+            musicPath,
+            outputPath:out,
+            durationSeconds:YOUTUBE_PREVIEW_SECONDS,
+            width:480,
+            height:270,
+            variant:track.variant
+          });
         }
         results.push({
           name:videoName,
@@ -1204,11 +1222,23 @@ app.post("/api/video-preview-final",async(req,res)=>{
     fs.writeFileSync(list,segments.map(x=>"file '"+x.replace(/'/g,"'\\''")+"'").join("\n"));
     const base=path.join(work,"base.mp3");
     await runFfmpeg(["-y","-f","concat","-safe","0","-i",list,"-c:a","libmp3lame","-b:a","192k","-ar","48000",base]);
+    // Creamos un tramo corto con movimiento real y después lo repetimos sin
+    // volver a renderizar horas de vídeo: rápido, gratis y estable en Render.
+    const motionSegment=path.join(work,"motion-segment.mp4");
+    await generateLocalMotionVideo({
+      imagePath,
+      musicPath:base,
+      outputPath:motionSegment,
+      durationSeconds:60,
+      width:1280,
+      height:720,
+      variant
+    });
     await runFfmpeg([
-      "-y","-loop","1","-i",imagePath,"-stream_loop","-1","-i",base,
+      "-y","-stream_loop","-1","-i",motionSegment,"-stream_loop","-1","-i",base,
       "-t",String(hours*3600),
-      "-vf","scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
-      "-c:v","libx264","-preset","veryfast","-crf","23","-c:a","aac","-b:a","160k","-shortest",out
+      "-map","0:v:0","-map","1:a:0",
+      "-c:v","copy","-c:a","aac","-b:a","160k","-movflags","+faststart",out
     ]);
     res.json({name:finalName,url:"/media/videos/"+encodeURIComponent(finalName),hours,variant,generatedFromSearch:true,originalMusicPrompt:prompt});
   }catch(e){
