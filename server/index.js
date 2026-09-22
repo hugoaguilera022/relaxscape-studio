@@ -796,57 +796,9 @@ async function generatePollinationsLandscape(prompt, index=0) {
     "dramatic but natural lighting, detailed subject, realistic materials, strong depth, polished cinematic framing",
     "premium cinematic visual, rich fine details, balanced composition, varied perspective, realistic light and texture"
   ];
-  const finalPrompt = [
-    userPrompt,
-    variations[index % variations.length],
-    "high quality detailed image, professional visual composition, realistic materials and lighting",
-    "16:9 composition",
-    "no watermark, no logo, no unwanted text"
-  ].join(", ");
-
-  const seed = Date.now() + index * 7919;
-  const encodedPrompt = encodeURIComponent(finalPrompt);
-  const key = String(process.env.POLLINATIONS_API_KEY || "").trim();
-
-  // Pollinations puede rechazar parámetros nuevos en el gateway gen.*.
-  // Usamos el endpoint de imagen compatible y estable con solo parámetros básicos.
-  const publicUrl =
-    "https://image.pollinations.ai/prompt/" + encodedPrompt +
-    "?width=1280&height=720&seed=" + seed + "&nologo=true";
-
-  // Con API key intentamos además el gateway actual. Si falla, mantenemos la URL
-  // pública compatible para que el navegador del usuario pueda cargarla directamente.
-  const attempts = key ? [
-    "https://gen.pollinations.ai/image/" + encodedPrompt +
-      "?width=1280&height=720&seed=" + seed + "&nologo=true",
-    publicUrl
-  ] : [publicUrl];
-
-  let lastError = null;
-  for (const url of attempts) {
-    try {
-      const headers = { Accept: "image/*" };
-      if (key && url.startsWith("https://gen.pollinations.ai/")) {
-        headers.Authorization = "Bearer " + key;
-      }
-
-      // No descargamos la imagen en Render. Así la cola/límite de Pollinations
-      // se aplica al navegador del usuario y no a la IP compartida de Render.
-      return {
-        name: "pollinations-" + seed + ".jpg",
-        url,
-        ai: true,
-        provider: "Pollinations AI · FLUX",
-        fallback: false,
-        remote: true,
-        label: "Imagen IA " + (index + 1)
-      };
-    } catch (error) {
-      lastError = error;
-    }
-  }
-
-  throw lastError || new Error("No se pudo preparar la imagen IA.");
+  const finalPrompt = [userPrompt, variations[index % variations.length], "high quality detailed image, professional visual composition, realistic materials and lighting", "16:9 composition", "no watermark, no logo, no unwanted text"].join(", ");
+  const url = "https://image.pollinations.ai/prompt/" + encodeURIComponent(finalPrompt);
+  return {name:"pollinations-"+Date.now()+"-"+index+".jpg",url,ai:true,provider:"Pollinations AI · FLUX",fallback:false,remote:true,label:"Imagen IA "+(index+1)};
 }
 
 app.post("/api/generate-image", async (req, res) => {
