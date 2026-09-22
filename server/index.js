@@ -649,10 +649,12 @@ app.get("/api/youtube-info", async (req,res)=>{
   const raw=String(req.query.url||"").trim();
   if(!raw) return res.status(400).json({error:"Pega un enlace de YouTube."});
   try{
-    const url=new URL(raw);
+    // Aceptamos también enlaces pegados sin protocolo (youtube.com/..., youtu.be/...).
+    const normalizedRaw=/^https?:\/\//i.test(raw) ? raw : "https://"+raw;
+    const url=new URL(normalizedRaw);
     const host=url.hostname.toLowerCase().replace(/^www\./,"");
     const isYouTubeHost=["youtube.com","m.youtube.com","music.youtube.com","youtube-nocookie.com","youtu.be"].includes(host);
-    if(!isYouTubeHost) return res.status(400).json({error:"El enlace no pertenece a YouTube."});
+    if(!isYouTubeHost) return res.status(400).json({error:"El enlace no pertenece a YouTube. Usa un enlace youtube.com, youtu.be o youtube.com/shorts/... ."});
 
     let videoId="";
     if(host==="youtu.be"){
@@ -664,9 +666,9 @@ app.get("/api/youtube-info", async (req,res)=>{
         videoId=m?.[1]||"";
       }
     }
-    videoId=String(videoId).trim();
-    if(!/^[A-Za-z0-9_-]{6,20}$/.test(videoId)){
-      throw new Error("No se encontró un identificador de vídeo válido en el enlace.");
+    videoId=decodeURIComponent(String(videoId||"").trim()).split(/[?&#]/)[0];
+    if(!/^[A-Za-z0-9_-]{11}$/.test(videoId)){
+      throw new Error("No se encontró un identificador de vídeo válido. Pega la URL completa de YouTube (por ejemplo youtube.com/watch?v=ID o youtu.be/ID).");
     }
 
     // Normalizamos cualquier variante válida a una URL watch estándar para que
