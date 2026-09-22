@@ -75,22 +75,16 @@ function runCmd(bin,args,opts={}){
 }
 async function youtubeMetaAndSample(url,work){
   const bin=await ensureYtDlp();
-  const clients=[
-    "android_vr",
-    "web_embedded",
-    "tv_embedded",
-    "mweb",
-    "web_safari"
-  ];
-
-  // Primero obtenemos únicamente los metadatos. No se descarga el vídeo completo.
+  const videoId=(String(url).match(/(?:v=|youtu\.be\/|shorts\/|embed\/|live\/)([A-Za-z0-9_-]{11})/)||[])[1];
+  const clients=["android_vr","web_embedded","tv_embedded","mweb","web_safari"];
   let info=null, metaError=null;
+
+  // 1) Intento normal con yt-dlp, pero SOLO desde el servidor.
   for(const client of clients){
     try{
       const meta=await runCmd(bin,[
         "--dump-single-json","--skip-download","--no-warnings",
-        "--extractor-args","youtube:player_client="+client,
-        url
+        "--extractor-args","youtube:player_client="+client,url
       ]);
       info=JSON.parse(meta.out);
       if(info?.id) break;
@@ -99,49 +93,95 @@ async function youtubeMetaAndSample(url,work){
       console.warn("[YouTube metadata] cliente "+client+" falló:",e.message);
     }
   }
+
+  // 2) Fallback: API de una instancia pública de Invidious.
+  // Esto evita depender exclusivamente de la IP de Render frente al bloqueo de YouTube.
+  let streamInfo=null;
+  if(!info?.id && videoId){
+    const instances=[
+      "https://inv.nadeko.net",
+      "https://invidious.nerdvpn.de",
+      "https://yt.chocolatemoo53.com",
+      "https://invidious.tiekoetter.com",
+      "https://invidious.f5.si"
+    ];
+    for(const base of instances){
+      try{
+        const ac=new AbortController(),timer=setTimeout(()=>ac.abort(),12000);
+        const rr=await fetch(base+"/api/v1/videos/"+videoId+"?hl=es",{
+          headers:{Accept:"application/json","User-Agent":"Mozilla/5.0"},
+          signal:ac.signal
+        });
+        clearTimeout(timer);
+        if(!rr.ok) continue;
+        const d=await rr.json();
+        if(d?.videoId){
+          streamInfo=d;
+          info={
+            id:d.videoId,title:d.title,author:d.author,uploader:d.author,
+            channel:d.author,duration:d.lengthSeconds,thumbnail:d.videoThumbnails?.find(x=>x.quality==="maxres")?.url||d.videoThumbnails?.at(-1)?.url,
+            description:d.description,keywords:d.keywords||[],tags:d.keywords||[]
+          };
+          console.log("[YouTube] fallback Invidious:",base);
+          break;
+        }
+      }catch(e){
+        console.warn("[Invidious fallback]",base,e.message);
+      }
+    }
+  }
+
   if(!info?.id){
-    throw Error("YouTube no permitió acceder al vídeo desde el servidor. Se probaron varios clientes automáticamente. Detalle: "+(metaError?.message||"acceso rechazado"));
+    throw Error("YouTube está bloqueando el acceso desde Render. Se probaron varios clientes y un fallback por instancias públicas. "+(metaError?.message||""));
   }
 
   const duration=Math.max(1,Number(info.duration||60));
-  // Solo descargamos pequeñas muestras temporales en el servidor.
-  // El usuario nunca tiene que descargar ni subir el vídeo.
   const marks=[0,Math.max(0,duration*.25-15),Math.max(0,duration*.5-15),Math.max(0,duration*.75-15)];
   const clips=[];
   let lastError=null;
 
-  for(let i=0;i<marks.length;i++){
-    const start=Math.floor(marks[i]),end=Math.min(duration,start+15);
-    const out=path.join(work,"sample-"+i+".mp4");
+  // Si Invidious devolvió una URL de stream, FFmpeg toma solo el fragmento necesario.
+  if(streamInfo){
+    const formats=(streamInfo.formatStreams||[])
+      .filter(x=>x?.url && x.container==="mp4")
+      .sort((a,b)=>Number(a.height||9999)-Number(b.height||9999));
+    const fmt=formats.find(x=>Number(x.height||0)<=480)||formats[0];
+    if(!fmt?.url) throw Error("La instancia de respaldo encontró el vídeo pero no proporcionó un stream MP4 reproducible.");
 
-    for(const client of clients){
+    for(let i=0;i<marks.length;i++){
+      const startSec=Math.floor(marks[i]);
+      const out=path.join(work,"sample-"+i+".mp4");
       try{
-        if(fs.existsSync(out)) fs.rmSync(out,{force:true});
-        await runCmd(bin,[
-          "--no-warnings","--no-playlist",
-          "--extractor-args","youtube:player_client="+client,
-          "-f","worst[ext=mp4]/worst",
-          "--download-sections","*"+start+"-"+end,
-          "--force-keyframes-at-cuts",
-          "-o",out,
-          url
-        ]);
-        if(fs.existsSync(out)&&fs.statSync(out).size>5000){
-          clips.push(out);
-          lastError=null;
-          break;
-        }
-      }catch(e){
-        lastError=e;
-        console.warn("[YouTube sample] cliente "+client+" muestra "+i+" falló:",e.message);
+        await ff(["-y","-ss",String(startSec),"-i",fmt.url,"-t","15","-c","copy","-movflags","+faststart",out]);
+        if(fs.existsSync(out)&&fs.statSync(out).size>5000) clips.push(out);
+      }catch(e){lastError=e;console.warn("[YouTube Invidious sample]",i,e.message)}
+    }
+  }
+
+  // Último intento con yt-dlp para las muestras si el fallback anterior no produjo clips.
+  if(!clips.length){
+    for(let i=0;i<marks.length;i++){
+      const startSec=Math.floor(marks[i]),endSec=Math.min(duration,startSec+15);
+      const out=path.join(work,"sample-"+i+".mp4");
+      for(const client of clients){
+        try{
+          if(fs.existsSync(out)) fs.rmSync(out,{force:true});
+          await runCmd(bin,[
+            "--no-warnings","--no-playlist",
+            "--extractor-args","youtube:player_client="+client,
+            "-f","worst[ext=mp4]/worst",
+            "--download-sections","*"+startSec+"-"+endSec",
+            "--force-keyframes-at-cuts","-o",out,url
+          ]);
+          if(fs.existsSync(out)&&fs.statSync(out).size>5000){clips.push(out);lastError=null;break}
+        }catch(e){lastError=e}
       }
     }
   }
 
   if(!clips.length){
-    throw Error("No se pudo obtener ninguna muestra del vídeo de YouTube. El servidor probó varios métodos de acceso, pero YouTube rechazó la reproducción. "+(lastError?.message||""));
+    throw Error("Se encontró el vídeo pero no fue posible obtener muestras reproducibles. "+(lastError?.message||""));
   }
-
   return {info,duration,clips};
 }
 
