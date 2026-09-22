@@ -762,10 +762,54 @@ async function generateHuggingFaceLandscape(prompt, index=0) {
   };
 }
 
+async function generatePollinationsLandscape(prompt, index=0) {
+  const userPrompt = String(prompt || "peaceful nature landscape").trim().slice(0, 700);
+  const variations = [
+    "wide cinematic establishing shot, peaceful composition, realistic natural light, strong foreground depth",
+    "wide cinematic landscape, atmospheric perspective, natural color, realistic professional photography, different camera angle",
+    "wide cinematic landscape, subtle mist, detailed foreground, soft realistic lighting, photorealistic",
+    "wide cinematic landscape, tranquil premium travel photography, realistic textures, natural depth and light"
+  ];
+  const finalPrompt = [
+    userPrompt,
+    variations[index % variations.length],
+    "photorealistic landscape photography",
+    "cinematic natural lighting",
+    "wide 16:9 composition",
+    "no people, no buildings, no text, no logo"
+  ].join(", ");
+  const url = "https://image.pollinations.ai/prompt/" + encodeURIComponent(finalPrompt)
+    + "?width=1920&height=1080&nologo=true&seed=" + (Date.now() + index * 7919);
+  const r = await fetchWithTimeout(url, { headers: { Accept: "image/*" } }, 120000);
+  if (!r.ok) throw new Error("Pollinations HTTP " + r.status);
+  const buffer = Buffer.from(await r.arrayBuffer());
+  if (!buffer.length) throw new Error("Pollinations devolvió una imagen vacía.");
+  const filename = "ai-landscape-pollinations-" + Date.now() + "-" + index + ".jpg";
+  fs.writeFileSync(path.join(IMAGE_DIR, filename), buffer);
+  return {
+    name: filename,
+    url: "/media/images/" + encodeURIComponent(filename),
+    ai: true,
+    provider: "Pollinations AI · FLUX",
+    fallback: true,
+    label: "Paisaje IA " + (index + 1)
+  };
+}
+
 app.post("/api/generate-image", async (req, res) => {
   const prompt = String(req.body.prompt || "Ultra-realistic cinematic peaceful landscape, natural light, no people, no text, photorealistic");
   try {
-    res.json(await generateHuggingFaceLandscape(prompt, 0));
+    // Mantiene intacta la configuración actual de Hugging Face.
+    // Solo si HF rechaza la petición por créditos/cuota usamos el motor externo gratuito.
+    try {
+      return res.json(await generateHuggingFaceLandscape(prompt, 0));
+    } catch (hfError) {
+      const msg = String(hfError?.message || hfError);
+      const quota = /credit|quota|deplet|included|balance|rate.?limit/i.test(msg);
+      if (!quota) throw hfError;
+      console.warn("[AI Image] Hugging Face sin créditos; usando Pollinations:", msg);
+      return res.json(await generatePollinationsLandscape(prompt, 0));
+    }
   } catch (e) {
     res.status(502).json({ error: "Error de generación IA: " + e.message });
   }
@@ -823,31 +867,65 @@ async function generateAIImage(prompt, index=0) {
 app.post("/api/ai-images", async (req, res) => {
   const theme = String(req.body?.theme || "peaceful nature landscape").trim().slice(0, 700);
   const token = String(process.env.HF_TOKEN || "").trim();
-  if (!token) {
-    return res.status(503).json({
-      error: "Falta HF_TOKEN en Render.",
-      hint: "La búsqueda/generación de paisajes IA usa Hugging Face FLUX.1-schnell."
-    });
-  }
 
   try {
-    // Volvemos al flujo IA original: cada resultado se genera desde CERO
-    // usando la búsqueda del usuario como prompt. Las cuatro imágenes se
-    // generan en paralelo para no esperar una por una.
-    const jobs = Array.from({ length: 4 }, (_, index) =>
-      Promise.race([
-        generateHuggingFaceLandscape(theme, index),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("La generación IA superó los 120 segundos.")), 120000)
-        )
-      ])
-      .then(image => ({ ok: true, image }))
-      .catch(error => ({ ok: false, error }))
-    );
+    // El flujo HF/FLUX existente permanece intacto cuando tiene cuota.
+    // Si la cuota mensual está agotada, cada una de las 4 opciones pasa
+    // automáticamente al generador externo gratuito Pollinations.
+    if (token) {
+      const jobs = Array.from({ length: 4 }, (_, index) =>
+        Promise.race([
+          generateHuggingFaceLandscape(theme, index),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("La generación IA superó los 120 segundos.")), 120000)
+          )
+        ])
+        .then(image => ({ ok: true, image }))
+        .catch(error => ({ ok: false, error }))
+      );
+      const results = await Promise.all(jobs);
+      const images = results.filter(x => x.ok).map(x => x.image);
+      const errors = results.filter(x => !x.ok).map(x => x.error?.message || "Error desconocido");
 
+      if (images.length) {
+        return res.json({
+          images,
+          provider: "Hugging Face Inference Providers · FLUX.1-schnell",
+          fallbackUsed: false,
+          errors
+        });
+      }
+
+      const quotaOnly = errors.length > 0 && errors.every(msg => /credit|quota|deplet|included|balance|rate.?limit/i.test(String(msg)));
+      if (!quotaOnly) {
+        return res.status(502).json({
+          error: "No se pudo generar ningún paisaje IA.",
+          imageErrors: errors
+        });
+      }
+      console.warn("[AI Images] Hugging Face sin créditos; usando Pollinations.");
+    }
+
+    const jobs = Array.from({ length: 4 }, (_, index) =>
+      generatePollinationsLandscape(theme, index)
+        .then(image => ({ ok: true, image }))
+        .catch(error => ({ ok: false, error }))
+    );
     const results = await Promise.all(jobs);
     const images = results.filter(x => x.ok).map(x => x.image);
     const errors = results.filter(x => !x.ok).map(x => x.error?.message || "Error desconocido");
+    if (!images.length) {
+      return res.status(502).json({
+        error: "No se pudo generar ningún paisaje IA con el motor gratuito externo.",
+        imageErrors: errors
+      });
+    }
+    return res.json({
+      images,
+      provider: "Pollinations AI · FLUX",
+      fallbackUsed: true,
+      errors
+    });
 
     if (!images.length) {
       throw new Error(errors.join(" | ") || "Hugging Face no generó ninguna imagen.");
