@@ -2349,7 +2349,7 @@ async function buildSelectedFreesoundMixJob(jobId,tracks,durationMinutes){
         "lowpass=f=18000",
         "volume="+baseGain.toFixed(3),
         "afade=t=in:st=0:d=2",
-        "afade=t=out:st="+Math.max(2,durationMinutes*60-3)+":d=3",
+        "afade=t=out:st="+Math.max(2,Math.min(300,durationMinutes*60-3))+":d=3",
         "["+label+"]"
       ].join(",");
       filters.push(filter);
