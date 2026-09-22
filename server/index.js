@@ -2103,6 +2103,35 @@ async function runFreesoundSearchJob(jobId,input){
     // que la interfaz parezca congelada en las mismas cuatro pistas.
     chosen.sort(()=>Math.random()-0.5);
 
+    // Fuentes adicionales: Openverse y Wikimedia Commons. Se consultan en paralelo
+    // y sus resultados se mezclan con Freesound para ampliar variedad.
+    const [openverseResults,wikimediaResults]=await Promise.all([
+      searchOpenverseAudio(input,queries),
+      searchWikimediaAudio(input,queries)
+    ]);
+    const externalPool=[...chosen,...openverseResults,...wikimediaResults];
+    const dedupeKey=x=>String(x.preview||"").toLowerCase().replace(/\\?.*$/,"");
+    const externalUnique=[]; const externalSeen=new Set();
+    for(const x of externalPool){
+      const key=String(x.id||dedupeKey(x));
+      if(externalSeen.has(key))continue;
+      externalSeen.add(key); externalUnique.push(x);
+    }
+    // Mezcla por proveedor y familia para no mostrar siempre la misma fuente.
+    externalUnique.sort(()=>Math.random()-0.5);
+    const mixedExternal=[];
+    const providers=new Set();
+    for(const x of externalUnique){
+      if(!providers.has(x.provider)){
+        mixedExternal.push(x); providers.add(x.provider);
+      }
+      if(mixedExternal.length>=24)break;
+    }
+    for(const x of externalUnique){
+      if(mixedExternal.length>=30)break;
+      if(!mixedExternal.some(y=>y.id===x.id))mixedExternal.push(x);
+    }
+
     // Además de Freesound, generamos 6 interpretaciones originales. Cada ejecución recibe
     // una semilla nueva, por lo que no reutiliza el mismo material.
     const aiTracks=aiTracksForBackground(input,Date.now()+Math.floor(Math.random()*1000000),6);
@@ -2136,11 +2165,14 @@ async function runFreesoundSearchJob(jobId,input){
     job.result={
       provider:"Freesound + RelaxScape AI",
       query:input,
-      results:[...aiResults,...chosen],
+      // Los clips IA de 12 s no se muestran como resultados de búsqueda:
+      // el usuario pidió pistas/loops más largos de las fuentes externas.
+      results:mixedExternal,
       relaxingMode:true,
-      aiGenerated:aiResults.length,
+      aiGenerated:0,
       searchQueries:requestPlan.length,
-      foundBeforeFiltering:all.length
+      foundBeforeFiltering:all.length+openverseResults.length+wikimediaResults.length,
+      providers:[...new Set(mixedExternal.map(x=>x.provider))]
     };
   }catch(e){
     console.error("[Freesound Search] ERROR",e.stack||e.message||e);
