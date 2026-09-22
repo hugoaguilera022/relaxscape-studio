@@ -1656,7 +1656,7 @@ app.post("/api/generate-selected-long-music", async (req,res)=>{
   }
 });
 app.post("/api/generate-video", async (req, res) => {
-  const { image, music, durationHours = 1 } = req.body || {};
+  const { image, music, durationHours = 1, durationMinutes } = req.body || {};
   if (!image || !music) return res.status(400).json({ error: "Selecciona una imagen y una pista de música." });
   const imageName = decodeURIComponent(image.split("/").pop());
   const musicName = decodeURIComponent(music.split("/").pop());
@@ -1670,11 +1670,12 @@ app.post("/api/generate-video", async (req, res) => {
   }
   const musicPath = path.join(MUSIC_DIR, musicName);
   if (!fs.existsSync(imagePath) || !fs.existsSync(musicPath)) return res.status(404).json({ error: "No se encontró el archivo seleccionado." });
-  const hours = Number(durationHours);
-  if (hours !== 1) return res.status(400).json({ error: "RelaxScape genera vídeos de 1 hora." });
+  const minutes = durationMinutes != null ? Number(durationMinutes) : Number(durationHours)*60;
+  if (!Number.isFinite(minutes) || minutes < 1 || minutes > 1440) return res.status(400).json({ error: "La duración debe estar entre 1 y 1440 minutos." });
+  const durationSeconds = Math.round(minutes*60);
 
   const stamp=Date.now();
-  const filename = `relaxscape-${stamp}-1h.mp4`;
+  const filename = `relaxscape-${stamp}-${minutes}min.mp4`;
   const out = path.join(VIDEO_DIR, filename);
   const workDir=path.join(VIDEO_DIR,"fast-video-"+stamp);
   const segment=path.join(workDir,"segment.mp4");
@@ -1695,13 +1696,13 @@ app.post("/api/generate-video", async (req, res) => {
 
     await runFfmpeg([
       "-y","-stream_loop","-1","-i",segment,
-      "-t","3600","-map","0:v:0","-map","0:a:0",
+      "-t",String(durationSeconds),"-map","0:v:0","-map","0:a:0",
       "-c","copy","-movflags","+faststart",out
     ]);
 
-    res.json({ url: `/media/videos/${filename}`, name: filename, durationHours:1, fastLoop:true, segmentSeconds:15 });
+    res.json({ url: `/media/videos/${filename}`, name: filename, durationMinutes:minutes, fastLoop:true, segmentSeconds:15 });
   } catch (e) {
-    console.error("[Fast 1h video] ERROR",e.stack||e.message);
+    console.error("[Fast video] ERROR",e.stack||e.message);
     res.status(500).json({ error: "No se pudo generar el vídeo: " + e.message });
   } finally {
     fs.rmSync(workDir,{recursive:true,force:true});
@@ -2125,7 +2126,7 @@ function createFreesoundAiJob(query){
 // -------------------- FREESOUND SELECTED MIX --------------------
 const selectedMixJobs=new Map();
 
-async function buildSelectedFreesoundMixJob(jobId,tracks,durationHours){
+async function buildSelectedFreesoundMixJob(jobId,tracks,durationMinutes){
   const job=selectedMixJobs.get(jobId);
   if(!job)return;
   const work=path.join(MUSIC_DIR,"selected-mix-"+jobId);
@@ -2155,7 +2156,7 @@ async function buildSelectedFreesoundMixJob(jobId,tracks,durationHours){
     filters.push("[mix]alimiter=limit=0.96:attack=5:release=50[out]");
 
     // Short preview first: this is the actual selected mix, not a generic sample.
-    const previewName="selected-freesound-preview-"+durationHours+"h-"+Date.now()+".mp3";
+    const previewName="selected-freesound-preview-"+durationMinutes+"min-"+Date.now()+".mp3";
     const previewPath=path.join(MUSIC_DIR,previewName);
     await runFfmpeg(["-y",...inputs,"-filter_complex",filters.join(";"),"-map","[out]","-t","90","-c:a","libmp3lame","-b:a","192k","-ar","48000",previewPath]);
     job.preview={
@@ -2167,9 +2168,9 @@ async function buildSelectedFreesoundMixJob(jobId,tracks,durationHours){
     job.status="preview-ready";
 
     // Build the requested 1 or 2 hour file in the background.
-    const finalName="selected-freesound-mix-"+durationHours+"h-"+Date.now()+".mp3";
+    const finalName="selected-freesound-mix-"+durationMinutes+"min-"+Date.now()+".mp3";
     const finalPath=path.join(MUSIC_DIR,finalName);
-    await runFfmpeg(["-y",...inputs,"-filter_complex",filters.join(";"),"-map","[out]","-t",String(durationHours*3600),"-c:a","libmp3lame","-b:a","192k","-ar","48000",finalPath]);
+    await runFfmpeg(["-y",...inputs,"-filter_complex",filters.join(";"),"-map","[out]","-t",String(durationMinutes*60),"-c:a","libmp3lame","-b:a","192k","-ar","48000",finalPath]);
     job.progress=100;
     job.status="succeeded";
     job.result={
@@ -2180,7 +2181,7 @@ async function buildSelectedFreesoundMixJob(jobId,tracks,durationHours){
       source:"Freesound",
       isFreesoundMix:true,
       generatedFromSearch:false,
-      durationHours,
+      durationMinutes,
       tracks:tracks.map(t=>({id:t.id,name:t.name,sourceUrl:t.sourceUrl,username:t.username,license:t.license}))
     };
   }catch(e){
@@ -2196,12 +2197,12 @@ async function buildSelectedFreesoundMixJob(jobId,tracks,durationHours){
 app.post("/api/mix-selected-freesound", async (req,res)=>{
   const tracks=Array.isArray(req.body?.tracks)?req.body.tracks.slice(0,6):[];
   if(tracks.length<2) return res.status(400).json({error:"Selecciona al menos 2 sonidos para crear la mezcla."});
-  const durationHours=Number(req.body?.durationHours||1);
-  if(![1,2].includes(durationHours)) return res.status(400).json({error:"La duración de la mezcla debe ser de 1 o 2 horas."});
+  const durationMinutes=Number(req.body?.durationMinutes ?? (Number(req.body?.durationHours||1)*60));
+  if(!Number.isFinite(durationMinutes) || durationMinutes<1 || durationMinutes>1440) return res.status(400).json({error:"La duración de la mezcla debe estar entre 1 y 1440 minutos."});
   const jobId="selected-"+Date.now()+"-"+Math.random().toString(36).slice(2,8);
   selectedMixJobs.set(jobId,{status:"running",progress:0,preview:null,result:null,error:null});
-  buildSelectedFreesoundMixJob(jobId,tracks,durationHours);
-  res.json({jobId,durationHours});
+  buildSelectedFreesoundMixJob(jobId,tracks,Math.round(durationMinutes));
+  res.json({jobId,durationMinutes:Math.round(durationMinutes)});
 });
 
 app.get("/api/mix-selected-freesound-status", (req,res)=>{
