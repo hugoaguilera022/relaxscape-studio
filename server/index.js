@@ -959,8 +959,9 @@ async function generatePollinationsVideoPreview({prompt,imageUrl,outputPath,vari
   // Pollinations genera el movimiento; después solo sustituimos su audio por
   // nuestra música IA. Así evitamos codificar 60 s de vídeo desde cero en Render.
   const qs=new URLSearchParams({
-    model:String(process.env.POLLINATIONS_VIDEO_MODEL||"bytedance/seedance-2.0-fast"),
+    model:String(process.env.POLLINATIONS_VIDEO_MODEL||"ltx-2"),
     duration:"5",
+    audio:"false",
     aspectRatio:"16:9",
     image,
     seed:String(Math.abs(hashString(cleanPrompt+"|"+variant))%2147483647)
