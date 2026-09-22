@@ -78,9 +78,9 @@ async function generateAIOptions(){
       await new Promise(r=>setTimeout(r,1000));
     }
     if(!d||d.status!=="succeeded")throw Error("La búsqueda de sonidos está tardando demasiado.");
-    S.externalMusic=d.results||[];
-    if(!S.externalMusic.length)throw Error("No se encontraron sonidos. Prueba con otro instrumento o ambiente.");
-    if(status)status.textContent="✓ 4 paisajes y "+S.externalMusic.length+" sonidos listos. Selecciona varios para crear tu mezcla.";
+    S.externalMusic=(d.results||[]).map(x=>({...x,loop:true}));
+    if(!S.externalMusic.length)throw Error("No se encontraron loops. Prueba con otro instrumento o ambiente.");
+    if(status)status.textContent="✓ 4 paisajes y "+S.externalMusic.length+" loops listos. Selecciona exactamente 2 para crear tu mezcla.";
     renderAICreator();
   }catch(e){
     if(status)status.textContent="❌ "+(e.message||"No se pudieron generar las opciones.");
@@ -133,9 +133,9 @@ async function generateAIMusicOnly(){
       await new Promise(r=>setTimeout(r,1000));
     }
     if(!d||d.status!=="succeeded")throw Error("La búsqueda está tardando demasiado.");
-    S.externalMusic=d.results||[];
-    if(!S.externalMusic.length)throw Error("No se encontraron sonidos para esa búsqueda.");
-    if(status)status.textContent="✓ "+S.externalMusic.length+" sonidos encontrados. Selecciona varios para mezclarlos.";
+    S.externalMusic=(d.results||[]).map(x=>({...x,loop:true}));
+    if(!S.externalMusic.length)throw Error("No se encontraron loops para esa búsqueda.");
+    if(status)status.textContent="✓ "+S.externalMusic.length+" loops encontrados. Selecciona exactamente 2 para mezclarlos.";
     renderAICreator();
   }catch(e){
     if(status)status.textContent="❌ "+e.message;
@@ -189,9 +189,9 @@ async function addExternalMusicToMix(x){
   if(S.selectedExternalMusic.some(v=>String(v.id)===String(x.id))){
     S.selectedExternalMusic=S.selectedExternalMusic.filter(v=>String(v.id)!==String(x.id));
   }else{
-    if(S.selectedExternalMusic.length>=6){
+    if(S.selectedExternalMusic.length>=2){
       const status=$("#aiSelectionStatus");
-      if(status)status.textContent="Puedes seleccionar hasta 6 sonidos para la mezcla.";
+      if(status)status.textContent="Selecciona exactamente 2 loops para crear la mezcla.";
       return;
     }
     S.selectedExternalMusic.push(x);
@@ -201,8 +201,8 @@ async function addExternalMusicToMix(x){
 async function createSelectedFreesoundMix(){
   const status=$("#aiSelectionStatus");
   const selected=S.selectedExternalMusic||[];
-  if(selected.length<2){
-    if(status)status.textContent="Selecciona al menos 2 sonidos en la búsqueda para crear una mezcla.";
+  if(selected.length!==2){
+    if(status)status.textContent="Selecciona exactamente 2 loops en la búsqueda para crear la mezcla.";
     return;
   }
   const btn=$("#createSelectedFreesoundMix");
@@ -283,7 +283,7 @@ function renderAICreator(){
     }else if(S.externalMusic.length){
       mg.innerHTML=S.externalMusic.map((x,i)=>{
         const selected=S.selectedExternalMusic.some(v=>String(v.id)===String(x.id));
-        return '<div class="ai-track '+(selected?"selected":"")+'" data-external-id="'+x.id+'"><div><b>♫ '+escapeHtml(x.name)+'</b><small>Freesound · '+escapeHtml(x.username||"")+' · '+escapeHtml(x.license||"")+' · '+formatDuration(x.duration)+'</small></div><div class="ai-track-actions"><audio controls preload="metadata" src="'+x.preview+'"></audio><button type="button" class="mix-select '+(selected?"selected":"")+'" data-select-external="'+x.id+'">'+(selected?"✓ En la mezcla":"＋ Añadir a mezcla")+'</button><button type="button" class="preview-download" data-download-external="'+x.id+'">↓ Descargar previa</button><a class="preview-download" href="'+x.sourceUrl+'" target="_blank" rel="noopener">↗ Ver fuente</a></div></div>';
+        return '<div class="ai-track '+(selected?"selected":"")+'" data-external-id="'+x.id+'"><div><b>🔁 '+escapeHtml(x.name)+'</b><small>LOOP · Freesound · '+escapeHtml(x.username||"")+' · '+escapeHtml(x.license||"")+' · '+formatDuration(x.duration)+'</small></div><div class="ai-track-actions"><audio controls preload="metadata" src="'+x.preview+'"></audio><button type="button" class="mix-select '+(selected?"selected":"")+'" data-select-external="'+x.id+'">'+(selected?"✓ En la mezcla":"＋ Añadir a mezcla")+'</button><button type="button" class="preview-download" data-download-external="'+x.id+'">↓ Descargar previa</button><a class="preview-download" href="'+x.sourceUrl+'" target="_blank" rel="noopener">↗ Ver fuente</a></div></div>';
       }).join("");
       $$("#aiMusicList .ai-track").forEach(e=>e.onclick=ev=>{
         if(ev.target.tagName==="AUDIO" || ev.target.tagName==="A" || ev.target.closest("[data-download-external]") || ev.target.closest("[data-select-external]"))return;
@@ -306,19 +306,19 @@ function renderAICreator(){
   }
   if(mx){
     if(S.selectedExternalMusic.length){
-      mx.innerHTML='<div class="mixer-selected-head"><div><b>🎚️ Sonidos seleccionados</b><small>'+S.selectedExternalMusic.length+'/6 · Puedes quitar cualquiera antes de mezclar.</small></div></div>'+S.selectedExternalMusic.map((x,i)=>'<div class="mixer-item"><span>'+String(i+1).padStart(2,"0")+'</span><div><b>'+escapeHtml(x.name)+'</b><small>Freesound · '+escapeHtml(x.username||"")+'</small></div><button type="button" class="ghost" data-remove-mix="'+x.id+'">Quitar</button></div>').join("")+'<div class="mixer-duration"><label>Duración de la mezcla (minutos) <input id="aiMixMinutes" type="number" min="1" max="1440" value="60" style="width:110px;margin-left:8px"></label><small>La mezcla tendrá exactamente la duración indicada.</small></div><button type="button" id="createSelectedFreesoundMix" class="primary mixer-create" '+(S.selectedExternalMusic.length<2?"disabled":"")+'>🎚️ Crear mezcla de los sonidos seleccionados</button>'+((S.music?.isFreesoundMix||S.music?.isFreesoundPreview)?'<div class="mixer-preview"><b>▶ Previa de la mezcla · '+(S.music.durationMinutes||S.aiMixMinutes)+' h</b><audio controls preload="metadata" src="'+S.music.url+'"></audio><small>Puedes escucharla completa, pausarla y mover el cursor por cualquier parte de la mezcla.</small></div>':'');
+      mx.innerHTML='<div class="mixer-selected-head"><div><b>🎚️ Sonidos seleccionados</b><small>'+S.selectedExternalMusic.length+'/2 · Elige exactamente 2 loops para la mezcla.</small></div></div>'+S.selectedExternalMusic.map((x,i)=>'<div class="mixer-item"><span>'+String(i+1).padStart(2,"0")+'</span><div><b>'+escapeHtml(x.name)+'</b><small>Freesound · '+escapeHtml(x.username||"")+'</small></div><button type="button" class="ghost" data-remove-mix="'+x.id+'">Quitar</button></div>').join("")+'<div class="mixer-duration"><label>Duración de la mezcla (minutos) <input id="aiMixMinutes" type="number" min="1" max="1440" value="60" style="width:110px;margin-left:8px"></label><small>La mezcla tendrá exactamente la duración indicada.</small></div><button type="button" id="createSelectedFreesoundMix" class="primary mixer-create" '+(S.selectedExternalMusic.length!==2?"disabled":"")+'>🎚️ Crear mezcla de los sonidos seleccionados</button>'+((S.music?.isFreesoundMix||S.music?.isFreesoundPreview)?'<div class="mixer-preview"><b>▶ Previa de la mezcla · '+(S.music.durationMinutes||S.aiMixMinutes)+' min</b><audio controls preload="metadata" src="'+S.music.url+'"></audio><small>Puedes escucharla completa, pausarla y mover el cursor por cualquier parte de la mezcla.</small></div>':'');
       $$("#aiMixer [data-remove-mix]").forEach(b=>b.onclick=()=>{S.selectedExternalMusic=S.selectedExternalMusic.filter(v=>String(v.id)!==String(b.dataset.removeMix));renderAICreator()});
       const dm=$("#aiMixMinutes"); if(dm)dm.oninput=()=>{const v=Math.max(1,Math.min(1440,Math.round(Number(dm.value)||1)));S.aiMixMinutes=v;const out=$("#aiSelectedDuration");if(out)out.textContent=v+" min";};
       
       const mb=$("#createSelectedFreesoundMix");
       if(mb)mb.onclick=createSelectedFreesoundMix;
     }else{
-      mx.innerHTML='<div class="empty">Añade al menos 2 sonidos desde la búsqueda y aquí aparecerán juntos para crear la mezcla.</div>';
+      mx.innerHTML='<div class="empty">Busca un ambiente, elige exactamente 2 loops (por ejemplo, flauta + chorro de agua) y aquí aparecerán juntos para crear la mezcla.</div>';
     }
   }
   if($("#aiSelectedPhoto"))$("#aiSelectedPhoto").textContent=S.image?prettyImageName(S.image.name):"Sin foto";
   if($("#aiSelectedMusic"))$("#aiSelectedMusic").textContent=S.music?prettyMusicName(S.music.name):"Sin música";
-  if($("#aiSelectionStatus")&&!S.aiLoading)$("#aiSelectionStatus").textContent=S.image&&S.music?"Todo listo. Elige la combinación que quieras y crea tu vídeo de 1 hora.":"Selecciona una foto y una música para continuar.";
+  if($("#aiSelectionStatus")&&!S.aiLoading)$("#aiSelectionStatus").textContent=S.image&&S.music?"Todo listo. Has elegido paisaje + mezcla de loops. Crea el vídeo con la duración indicada.":"Selecciona una foto y una música para continuar.";
 }
 function prettyImageName(name){return name?.replace(/\.(jpg|jpeg|png|webp)$/i,"").replace(/^pexels-\d+-/,"").replace(/^ai-/,"Imagen IA").replace(/[-_]/g," ")||"Foto";}
 function renderImages(){const el=$("#imageGrid");el.innerHTML=S.images.length?S.images.map(x=>`<div class="media ${S.image?.url===x.url?"selected":""}" data-url="${x.url}" data-name="${x.name}"><img src="${x.url}"></div>`).join(""):'<div class="empty">No hay paisajes. Sube uno o créalo con IA.</div>';$$(".media").forEach(e=>e.onclick=()=>{S.image={url:e.dataset.url,name:e.dataset.name};render()})}
