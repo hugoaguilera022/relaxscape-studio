@@ -1657,15 +1657,15 @@ app.post("/api/generate-video", async (req, res) => {
   fs.mkdirSync(workDir,{recursive:true});
 
   try {
-    // Solo se codifican 15 segundos a 1080p. La hora completa usa stream copy.
+    // Solo se codifican 5 segundos a 1080p. La duración completa usa stream copy para acelerar al máximo.
     await runFfmpeg([
-      "-y","-loop","1","-framerate","10","-i",imagePath,
+      "-y","-loop","1","-framerate","5","-i",imagePath,
       "-stream_loop","-1","-i",musicPath,
-      "-t","15",
+      "-t","5",
       "-map","0:v:0","-map","1:a:0",
       "-vf","scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
-      "-r","10","-c:v","libx264","-preset","ultrafast","-crf","20","-threads","2",
-      "-pix_fmt","yuv420p","-c:a","aac","-b:a","256k","-ar","48000","-ac","2",
+      "-r","5","-c:v","libx264","-preset","ultrafast","-tune","stillimage","-crf","23","-threads","2",
+      "-pix_fmt","yuv420p","-c:a","aac","-b:a","128k","-ar","48000","-ac","2",
       "-movflags","+faststart",segment
     ]);
 
@@ -1675,7 +1675,7 @@ app.post("/api/generate-video", async (req, res) => {
       "-c","copy","-movflags","+faststart",out
     ]);
 
-    res.json({ url: `/media/videos/${filename}`, name: filename, durationMinutes:minutes, fastLoop:true, segmentSeconds:15 });
+    res.json({ url: `/media/videos/${filename}`, name: filename, durationMinutes:minutes, fastLoop:true, segmentSeconds:5 });
   } catch (e) {
     console.error("[Fast video] ERROR",e.stack||e.message);
     res.status(500).json({ error: "No se pudo generar el vídeo: " + e.message });
