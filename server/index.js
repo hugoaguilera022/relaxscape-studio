@@ -778,21 +778,57 @@ async function generatePollinationsLandscape(prompt, index=0) {
     "wide 16:9 composition",
     "no people, no buildings, no text, no logo"
   ].join(", ");
-  const url = "https://image.pollinations.ai/prompt/" + encodeURIComponent(finalPrompt)
-    + "?width=1920&height=1080&nologo=true&seed=" + (Date.now() + index * 7919);
-  const r = await fetchWithTimeout(url, { headers: { Accept: "image/*" } }, 120000);
-  if (!r.ok) throw new Error("Pollinations HTTP " + r.status);
-  const buffer = Buffer.from(await r.arrayBuffer());
-  if (!buffer.length) throw new Error("Pollinations devolvió una imagen vacía.");
+
   const filename = "ai-landscape-pollinations-" + Date.now() + "-" + index + ".jpg";
-  fs.writeFileSync(path.join(IMAGE_DIR, filename), buffer);
+  const key = String(process.env.POLLINATIONS_API_KEY || "").trim();
+
+  // Pollinations cambió su gateway: usamos el endpoint unificado actual primero.
+  // Si no hay saldo o el proveedor falla, NO rompemos Crear IA/YouTube:
+  // devolvemos un paisaje local válido como último recurso.
+  const attempts = [
+    "https://gen.pollinations.ai/image/" + encodeURIComponent(finalPrompt) +
+      "?model=flux&width=1920&height=1080&nologo=true&seed=" + (Date.now() + index * 7919),
+    "https://image.pollinations.ai/prompt/" + encodeURIComponent(finalPrompt) +
+      "?width=1920&height=1080&nologo=true&seed=" + (Date.now() + index * 7919)
+  ];
+
+  let lastError = null;
+  for (const url of attempts) {
+    try {
+      const headers = { Accept: "image/*" };
+      if (key && url.startsWith("https://gen.pollinations.ai/")) {
+        headers.Authorization = "Bearer " + key;
+      }
+      const r = await fetchWithTimeout(url, { headers }, 120000);
+      if (!r.ok) {
+        const body = await r.text().catch(() => "");
+        throw new Error("Pollinations HTTP " + r.status + (body ? " · " + body.slice(0, 180) : ""));
+      }
+      const buffer = Buffer.from(await r.arrayBuffer());
+      if (!buffer.length) throw new Error("Pollinations devolvió una imagen vacía.");
+      fs.writeFileSync(path.join(IMAGE_DIR, filename), buffer);
+      return {
+        name: filename,
+        url: "/media/images/" + encodeURIComponent(filename),
+        ai: true,
+        provider: "Pollinations AI · FLUX",
+        fallback: true,
+        label: "Paisaje IA " + (index + 1)
+      };
+    } catch (error) {
+      lastError = error;
+      console.warn("[Pollinations Image] intento fallido:", error.message);
+    }
+  }
+
+  // Último recurso gratuito y local: nunca dejamos la generación sin imagen.
+  const fallback = makeFallbackLandscape(filename, userPrompt);
   return {
-    name: filename,
-    url: "/media/images/" + encodeURIComponent(filename),
-    ai: true,
-    provider: "Pollinations AI · FLUX",
+    ...fallback,
+    ai: false,
     fallback: true,
-    label: "Paisaje IA " + (index + 1)
+    provider: "RelaxScape local fallback (Pollinations no disponible)",
+    label: "Paisaje generado"
   };
 }
 
