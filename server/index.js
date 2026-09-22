@@ -1035,20 +1035,55 @@ function hashString(value=""){
 async function generateLocalMotionVideo({imagePath,musicPath,outputPath,durationSeconds=60,width=480,height=270,variant=1}){
   const duration=Math.max(5,Number(durationSeconds)||60);
   const v=Math.min(3,Math.max(1,Number(variant)||1));
-  // Render-stable path: keep the three versions distinct through their own
-  // images and music, while avoiding expensive per-frame motion filters.
-  // This is deliberately conservative for Render's CPU environment.
-  const filter="[0:v]scale="+Math.round(width*1.08)+":"+Math.round(height*1.08)+":force_original_aspect_ratio=increase,crop="+width+":"+height+",format=yuv420p[v]";
-  await runFfmpeg([
+  if(!fs.existsSync(imagePath)) throw new Error("No existe la imagen del vídeo: "+imagePath);
+  if(!fs.existsSync(musicPath)) throw new Error("No existe la música del vídeo: "+musicPath);
+  const imageSize=fs.statSync(imagePath).size;
+  const musicSize=fs.statSync(musicPath).size;
+  if(!imageSize) throw new Error("La imagen del vídeo está vacía.");
+  if(!musicSize) throw new Error("La música del vídeo está vacía.");
+
+  // Render estable para Render: una sola imagen en bucle + una pista en bucle.
+  // Las tres versiones siguen siendo distintas porque reciben su propia imagen
+  // y su propia composición musical. Evitamos filter_complex/zoompan para
+  // reducir puntos de fallo en el encoder.
+  const videoFilter=
+    "scale="+Math.round(width*1.08)+":"+Math.round(height*1.08)+
+    ":force_original_aspect_ratio=increase,crop="+width+":"+height+
+    ",format=yuv420p";
+
+  const args=[
     "-y",
-    "-loop","1","-framerate","15","-i",imagePath,
-    "-stream_loop","-1","-i",musicPath,
-    "-filter_complex",filter,
-    "-map","[v]","-map","1:a:0","-t",String(duration),
-    "-c:v","libx264","-preset","veryfast","-crf",width>=1280?"18":"22","-threads","2",
-    "-c:a","aac","-b:a",width>=1280?"256k":"128k","-ar","48000","-ac","2",
-    "-movflags","+faststart",outputPath
-  ]);
+    "-loop","1",
+    "-framerate","15",
+    "-i",imagePath,
+    "-stream_loop","-1",
+    "-i",musicPath,
+    "-t",String(duration),
+    "-map","0:v:0",
+    "-map","1:a:0",
+    "-vf",videoFilter,
+    "-r","15",
+    "-c:v","libx264",
+    "-preset","veryfast",
+    "-crf",width>=1280?"18":"22",
+    "-threads","2",
+    "-pix_fmt","yuv420p",
+    "-c:a","aac",
+    "-b:a",width>=1280?"256k":"128k",
+    "-ar","48000",
+    "-ac","2",
+    "-movflags","+faststart",
+    outputPath
+  ];
+
+  console.log("[YouTube 3 versiones] Render local",{
+    variant:v,duration,width,height,imagePath,imageSize,musicPath,musicSize,outputPath
+  });
+  await runFfmpeg(args);
+  if(!fs.existsSync(outputPath) || !fs.statSync(outputPath).size){
+    throw new Error("FFmpeg terminó sin crear el vídeo de la versión "+v+".");
+  }
+  console.log("[YouTube 3 versiones] MP4 verificado",v,fs.statSync(outputPath).size,"bytes");
 }
 
 async function muxExternalVideoWithMusic(videoPath,musicPath,outPath){
