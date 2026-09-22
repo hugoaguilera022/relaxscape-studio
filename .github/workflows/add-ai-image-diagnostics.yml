@@ -1,0 +1,87 @@
+name: Add AI image diagnostics
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Add diagnostics
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+
+          const patch = (file, replacements) => {
+            let s = fs.readFileSync(file, 'utf8');
+            for (const [oldText, newText] of replacements) {
+              if (s.includes(oldText) && !s.includes(newText)) s = s.replace(oldText, newText);
+            }
+            fs.writeFileSync(file, s);
+          };
+
+          patch('public/app.js', [
+            [
+              'function loadAIImagesSequentially(){\n  const next=()=>{',
+              'function loadAIImagesSequentially(){\n  console.groupCollapsed("[RelaxScape AI] Carga de 4 imágenes");\n  console.log("[AI Images] Tarjetas esperadas:", document.querySelectorAll("#aiImageGrid .ai-photo").length);\n  const next=()=>{'
+            ],
+            [
+              '    const src=img?.dataset?.src;\n    if(!src){',
+              '    const src=img?.dataset?.src;\n    console.log("[AI Images] Cargando", (index+1)+"/"+cards.length, {url:src,name:card.dataset.name});\n    if(!src){'
+            ],
+            [
+              '      finished=true;\n      img.dataset.loaded="1";\n      setTimeout(next,800);',
+              '      finished=true;\n      img.dataset.loaded="1";\n      console.log("[AI Images] ✓ Cargada", (index+1)+"/"+cards.length, img.currentSrc || img.src);\n      if(index===cards.length-1) console.log("[AI Images] ✓ RESUMEN: 4/4 terminadas");\n      setTimeout(next,800);'
+            ],
+            [
+              '    const retry=()=>{\n      if(finished)return;\n      attempts++;',
+              '    const retry=()=>{\n      if(finished)return;\n      attempts++;\n      console.warn("[AI Images] ⚠ Error", (index+1)+"/"+cards.length, "intento", attempts, {url:src,naturalWidth:img.naturalWidth,naturalHeight:img.naturalHeight});'
+            ],
+            [
+              '      setTimeout(advance,300);\n    };\n    img.onload=advance;',
+              '      console.error("[AI Images] ✗ Fallo definitivo", (index+1)+"/"+cards.length, src);\n      setTimeout(advance,300);\n    };\n    img.onload=advance;'
+            ],
+            [
+              '    img.src=src;\n    setTimeout(()=>{if(!finished&&!img.complete)retry()},70000);',
+              '    img.src=src;\n    console.log("[AI Images] → Request", (index+1)+"/"+cards.length, src);\n    setTimeout(()=>{if(!finished&&!img.complete){console.warn("[AI Images] ⏱ Timeout", (index+1)+"/"+cards.length);retry()}},70000);'
+            ]
+          ]);
+
+          patch('server/index.js', [
+            [
+              '    const results = [];\n    for(let index=0; index<requestedCount; index++){',
+              '    const results = [];\n    console.log("[AI Images] Solicitud:", {theme,requestedCount});\n    for(let index=0; index<requestedCount; index++){'
+            ],
+            [
+              '        const image=await generatePollinationsLandscape(theme,index);\n        results.push({ok:true,image});',
+              '        const image=await generatePollinationsLandscape(theme,index);\n        console.log("[AI Images] URL", (index+1)+"/"+requestedCount, image.url);\n        results.push({ok:true,image});'
+            ],
+            [
+              '      }catch(error){\n        results.push({ok:false,error});',
+              '      }catch(error){\n        console.error("[AI Images] ERROR", (index+1)+"/"+requestedCount, error?.stack || error?.message || error);\n        results.push({ok:false,error});'
+            ],
+            [
+              '    return res.json({\n      images,\n      provider:',
+              '    console.log("[AI Images] Respuesta:", images.map((x,i)=>({index:i+1,provider:x.provider,remote:x.remote,url:x.url})));\n    return res.json({\n      images,\n      provider:'
+            ]
+          ]);
+          NODE
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/app.js server/index.js
+          if git diff --cached --quiet; then
+            echo "No changes needed"
+          else
+            git commit -m "Add detailed AI image diagnostics"
+            git push
+          fi
