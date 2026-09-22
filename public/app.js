@@ -270,55 +270,41 @@ async function waitForAIMusic(){
 function escapeHtml(v){return String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]))}
 function formatDuration(sec){const s=Math.max(0,Math.round(Number(sec)||0));return Math.floor(s/60)+":"+String(s%60).padStart(2,"0")}
 function loadAIImagesSequentially(){
-  console.groupCollapsed("[RelaxScape AI] Carga de 4 imágenes");
-  console.log("[AI Images] Tarjetas esperadas:", document.querySelectorAll("#aiImageGrid .ai-photo").length);
-  const next=()=>{
-    const cards=Array.from(document.querySelectorAll("#aiImageGrid .ai-photo"));
-    const index=cards.findIndex(card=>{
-      const img=card && card.querySelector ? card.querySelector("img") : null;
-      return img && !img.dataset.loaded;
-    });
-    if(index<0)return;
-    const card=cards[index];
-    const img=card.querySelector("img");
-    const src=img?.dataset?.src;
-    console.log("[AI Images] Cargando", (index+1)+"/"+cards.length, {url:src,name:card.dataset.name});
-    if(!src){
-      img.dataset.loaded="1";
-      setTimeout(next,100);
-      return;
-    }
-    let attempts=0, finished=false;
-    const advance=()=>{
-      if(finished)return;
-      finished=true;
-      img.dataset.loaded="1";
-      console.log("[AI Images] ✓ Cargada", (index+1)+"/"+cards.length, img.currentSrc || img.src);
-      if(index===cards.length-1) console.log("[AI Images] ✓ RESUMEN: 4/4 terminadas");
-      setTimeout(next,800);
-    };
-    const retry=()=>{
-      if(finished)return;
+  const cards=Array.from(document.querySelectorAll("#aiImageGrid .ai-photo"));
+  if(!cards.length)return;
+  console.log("[AI Images] Carga paralela optimizada:",cards.length);
+  const queue=cards.map((card,index)=>({card,index}));
+  let cursor=0, active=0, done=0;
+  const finish=(item)=>{done++;active--;const img=item.card.querySelector("img");if(img)img.dataset.loaded="1";if(done===queue.length)console.log("[AI Images] ✓ 4/4 terminadas");pump();};
+  const loadOne=(item)=>{
+    const img=item.card.querySelector("img"), src=img?.dataset?.src;
+    if(!img||!src){finish(item);return}
+    let attempts=0, settled=false;
+    const complete=()=>{if(settled)return;settled=true;console.log("[AI Images] ✓",item.index+1+"/4");finish(item)};
+    const fail=()=>{
+      if(settled)return;
       attempts++;
-      console.warn("[AI Images] ⚠ Error", (index+1)+"/"+cards.length, "intento", attempts, {url:src,naturalWidth:img.naturalWidth,naturalHeight:img.naturalHeight});
-      if(attempts<4){
-        img.src=src+(src.includes("?")?"&":"?")+"retry="+attempts+"-"+Date.now();
+      if(attempts<=2){
+        const retry=src+(src.includes("?")?"&":"?")+"retry="+attempts+"-"+Date.now();
+        console.warn("[AI Images] Reintento",item.index+1,attempts);
+        img.src=retry;
         return;
       }
-      // Nunca dejamos una tarjeta vacía: si el proveedor falla, mostramos una imagen local.
-      img.src="data:image/svg+xml;charset=UTF-8,"+encodeURIComponent(
-        "<svg xmlns='http://www.w3.org/2000/svg' width='1280' height='720'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop stop-color='%230b1220'/><stop offset='1' stop-color='%231b4d63'/></linearGradient></defs><rect width='100%' height='100%' fill='url(%23g)'/><circle cx='70%' cy='35%' r='130' fill='%2348a9a6' opacity='.28'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='white' font-size='34' font-family='Arial'>RelaxScape AI</text></svg>"
-      );
-      console.error("[AI Images] ✗ Fallo definitivo", (index+1)+"/"+cards.length, src);
-      setTimeout(advance,300);
+      settled=true;
+      img.src="data:image/svg+xml;charset=UTF-8,"+encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' width='1280' height='720'><rect width='100%' height='100%' fill='#10202b'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='white' font-size='34' font-family='Arial'>RelaxScape AI</text></svg>");
+      console.error("[AI Images] ✗ Fallo",item.index+1,src);
+      finish(item);
     };
-    img.onload=advance;
-    img.onerror=retry;
+    img.onload=complete; img.onerror=fail;
     img.src=src;
-    console.log("[AI Images] → Request", (index+1)+"/"+cards.length, src);
-    setTimeout(()=>{if(!finished&&!img.complete){console.warn("[AI Images] ⏱ Timeout", (index+1)+"/"+cards.length);retry()}},70000);
+    setTimeout(()=>{if(!settled){console.warn("[AI Images] Timeout rápido",item.index+1);fail()}},30000);
   };
-  next();
+  const pump=()=>{
+    while(active<2 && cursor<queue.length){
+      const item=queue[cursor++]; active++; loadOne(item);
+    }
+  };
+  pump();
 }
 
 function renderAICreator(){
