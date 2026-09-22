@@ -949,6 +949,65 @@ const videoPreviewJobs=new Map();
 // El objetivo aquí es validar música + paisaje + duración, no renderizar el máster final.
 const YOUTUBE_PREVIEW_SECONDS = 60;
 
+
+async function generatePollinationsVideoPreview({prompt,imageUrl,outputPath,variant=1}){
+  const cleanPrompt=String(prompt||"").trim().slice(0,700);
+  const image=String(imageUrl||"").trim();
+  if(!cleanPrompt) throw new Error("Falta el prompt para el vídeo externo.");
+  if(!/^https?:\/\//i.test(image)) throw new Error("El paisaje debe tener una URL pública para el vídeo externo.");
+
+  // Pollinations genera el movimiento; después solo sustituimos su audio por
+  // nuestra música IA. Así evitamos codificar 60 s de vídeo desde cero en Render.
+  const qs=new URLSearchParams({
+    model:String(process.env.POLLINATIONS_VIDEO_MODEL||"bytedance/seedance-2.0-fast"),
+    duration:"8",
+    aspectRatio:"16:9",
+    image,
+    seed:String(Math.abs(hashString(cleanPrompt+"|"+variant))%2147483647)
+  });
+  const url="https://gen.pollinations.ai/video/"+encodeURIComponent(
+    cleanPrompt+"; cinematic relaxing landscape, slow subtle camera movement, seamless calm motion, no people, no text"
+  )+"?"+qs.toString();
+  const headers={Accept:"video/mp4"};
+  const key=String(process.env.POLLINATIONS_API_KEY||"").trim();
+  if(key) headers.Authorization="Bearer "+key;
+
+  const r=await fetchWithTimeout(url,{headers},120000);
+  if(!r.ok) {
+    const body=await r.text().catch(()=> "");
+    throw new Error("Pollinations Video HTTP "+r.status+(body?" · "+body.slice(0,180):""));
+  }
+  const data=Buffer.from(await r.arrayBuffer());
+  if(!data.length) throw new Error("Pollinations Video devolvió un MP4 vacío.");
+  fs.writeFileSync(outputPath,data);
+  return outputPath;
+}
+
+function hashString(value=""){
+  let h=2166136261>>>0;
+  for(const ch of String(value)){
+    h^=ch.charCodeAt(0);
+    h=Math.imul(h,16777619)>>>0;
+  }
+  return h>>>0;
+}
+
+async function muxExternalVideoWithMusic(videoPath,musicPath,outPath){
+  // El vídeo externo dura unos segundos. Se repite por stream-copy hasta 60 s:
+  // no se vuelve a comprimir la imagen, solo se codifica el audio AAC.
+  await runFfmpeg([
+    "-y",
+    "-stream_loop","-1","-i",videoPath,
+    "-stream_loop","-1","-i",musicPath,
+    "-t",String(YOUTUBE_PREVIEW_SECONDS),
+    "-map","0:v:0","-map","1:a:0",
+    "-c:v","copy",
+    "-c:a","aac","-b:a","64k",
+    "-movflags","+faststart",
+    outPath
+  ]);
+}
+
 app.post("/api/video-preview-options",(req,res)=>{
   const prompt=String(req.body?.musicPrompt||"").trim().slice(0,700);
   const image=String(req.body?.image||"").trim();
@@ -962,7 +1021,7 @@ app.post("/api/video-preview-options",(req,res)=>{
     variant,generationSeed:jobId+"-"+variant,
     file:"video-preview-"+jobId+"-"+variant+".mp3"
   }));
-  videoPreviewJobs.set(jobId,{status:"running",progress:0,results:[],error:null});
+  videoPreviewJobs.set(jobId,{status:"running",progress:0,stage:"starting",results:[],error:null});
   (async()=>{
     const job=videoPreviewJobs.get(jobId);
     const work=path.join(VIDEO_DIR,jobId);
@@ -978,21 +1037,44 @@ app.post("/api/video-preview-options",(req,res)=>{
       }
       if(!fs.existsSync(imagePath))throw new Error("No se encontró el paisaje seleccionado.");
       const results=[];
+      const publicImageUrl=image.startsWith("http://")||image.startsWith("https://")
+        ? image
+        : "https://relaxscape-studio.onrender.com/media/images/"+encodeURIComponent(imageName);
+
       for(let i=0;i<variants.length;i++){
         const track=variants[i];
         const musicPath=path.join(work,track.file);
         await generateAIMusicFile(track,musicPath,18000);
         const videoName="video-preview-"+jobId+"-"+track.variant+".mp4";
         const out=path.join(VIDEO_DIR,videoName);
-        await runFfmpeg([
-          "-y","-loop","1","-i",imagePath,"-stream_loop","-1","-i",musicPath,
-          "-t",String(YOUTUBE_PREVIEW_SECONDS),
-          "-r","2",
-          "-vf","scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
-          "-map","0:v:0","-map","1:a:0",
-          "-c:v","libx264","-preset","ultrafast","-tune","stillimage","-crf","32","-threads","1",
-          "-c:a","aac","-b:a","64k","-movflags","+faststart",out
-        ]);
+        const externalVideo=path.join(work,"external-"+track.variant+".mp4");
+
+        job.stage="ai-video-"+track.variant;
+        try{
+          await generatePollinationsVideoPreview({
+            prompt:track.originalMusicPrompt,
+            imageUrl:publicImageUrl,
+            outputPath:externalVideo,
+            variant:track.variant
+          });
+          job.stage="mix-"+track.variant;
+          await muxExternalVideoWithMusic(externalVideo,musicPath,out);
+          console.log("[Video previews] Pollinations OK:",track.variant);
+        }catch(externalErr){
+          // Fallback local: si el proveedor externo está sin cuota/modelo,
+          // mantenemos el flujo funcional sin tocar la generación de imágenes.
+          console.warn("[Video previews] Pollinations fallback:",externalErr.message);
+          job.stage="local-video-"+track.variant;
+          await runFfmpeg([
+            "-y","-loop","1","-i",imagePath,"-stream_loop","-1","-i",musicPath,
+            "-t",String(YOUTUBE_PREVIEW_SECONDS),
+            "-r","1",
+            "-vf","scale=480:270:force_original_aspect_ratio=decrease,pad=480:270:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
+            "-map","0:v:0","-map","1:a:0",
+            "-c:v","libx264","-preset","ultrafast","-tune","stillimage","-crf","35","-threads","1",
+            "-c:a","aac","-b:a","48k","-movflags","+faststart",out
+          ]);
+        }
         results.push({
           name:videoName,
           url:"/media/videos/"+encodeURIComponent(videoName),
@@ -1023,7 +1105,7 @@ app.post("/api/video-preview-options",(req,res)=>{
 app.get("/api/video-preview-options-status",(req,res)=>{
   const job=videoPreviewJobs.get(String(req.query.jobId||""));
   if(!job)return res.status(404).json({error:"No se encontró la generación de vídeos."});
-  res.json({status:job.status,progress:job.progress||0,results:job.results||[],error:job.error||null});
+  res.json({status:job.status,progress:job.progress||0,stage:job.stage||"running",results:job.results||[],error:job.error||null});
 });
 
 app.post("/api/video-preview-final",async(req,res)=>{
