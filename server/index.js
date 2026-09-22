@@ -958,7 +958,7 @@ app.post("/api/ai-images", async (req, res) => {
     // Si la cuota mensual está agotada, cada una de las 4 opciones pasa
     // automáticamente al generador externo gratuito Pollinations.
     if (token) {
-      const requestedCount = Math.min(1, Math.max(1, Number(req.body?.count || 1)));
+      const requestedCount = Math.min(1, Math.max(1, Number(req.body?.count || 4)));
       const jobs = Array.from({ length: requestedCount }, (_, index) =>
         Promise.race([
           generateHuggingFaceLandscape(theme, index),
@@ -992,7 +992,7 @@ app.post("/api/ai-images", async (req, res) => {
       console.warn("[AI Images] Hugging Face sin créditos; usando Pollinations.");
     }
 
-    const requestedCount = Math.min(1, Math.max(1, Number(req.body?.count || 1)));
+    const requestedCount = Math.min(1, Math.max(1, Number(req.body?.count || 4)));
     const jobs = Array.from({ length: requestedCount }, (_, index) =>
       generatePollinationsLandscape(theme, index)
         .then(image => ({ ok: true, image }))
@@ -1547,7 +1547,8 @@ function aiTracksForBackground(prompt="", generationId=0, count=4){
 
 app.get("/api/ai-options-status", (_,res)=>{
   const music=getAIMusicOptions();
-  res.json({music,musicReady:music.length>=4,musicPreparing:aiMusicPreparing,musicErrors:aiMusicErrors,generationId:aiMusicGenerationId});
+  const expected=Math.max(1,aiMusicTracks.length||4);
+  res.json({music,musicReady:music.length>=expected,musicPreparing:aiMusicPreparing,musicErrors:aiMusicErrors,generationId:aiMusicGenerationId,count:expected});
 });
 
 function runFfmpeg(args) {
