@@ -19,8 +19,8 @@ async function load(){
   }
 }
 async function loadPexels(){
-  const q=($("#prompt")?.value||"peaceful nature landscape").trim();
-  $("#builderStatus").textContent="Buscando 8 paisajes Full HD de Pexels…";
+  const q=($("#prompt")?.value||"cinematic relaxing visual").trim();
+  $("#builderStatus").textContent="Buscando 8 imágenes Full HD de Pexels…";
   try{
     const d=await api("/api/pexels-landscapes?query="+encodeURIComponent(q));
     S.images=[...d.images,...S.images];
@@ -33,31 +33,31 @@ function render(){renderImages();renderMusic();renderVideos();renderAICreator();
 async function ensureAIOptions(){ return; }
 
 async function generateAIImagesOnly(){
-  const prompt=(($("#aiImagePrompt").value||"").trim()||"peaceful nature landscape");
+  const prompt=(($("#aiImagePrompt").value||"").trim()||"cinematic relaxing visual");
   S.aiLoading=true; S.aiImages=[]; S.image=null;
   const status=$("#aiSelectionStatus"), ig=$("#aiImageGrid");
-  if(status)status.textContent="🤖 Generando 4 paisajes con IA…";
-  if(ig)ig.innerHTML='<div class="empty">🤖 Generando 4 paisajes diferentes…</div>';
+  if(status)status.textContent="🤖 Generando 4 imágenes con IA…";
+  if(ig)ig.innerHTML='<div class="empty">🤖 Generando 4 imágenes diferentes…</div>';
   try{
     const d=await api("/api/ai-images",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({theme:prompt,count:4})});
     S.aiImages=d.images||[];
-    if(!S.aiImages.length)throw Error("No se pudo generar ningún paisaje IA.");
+    if(!S.aiImages.length)throw Error("No se pudo generar ningún imagen IA.");
     S.image=S.aiImages[0];
     renderAICreator();
-    if(status)status.textContent="✓ "+S.aiImages.length+" paisajes IA listos. Ahora puedes generar la música.";
+    if(status)status.textContent="✓ "+S.aiImages.length+" imágenes IA listos. Ahora puedes generar la música.";
   }catch(e){
     if(status)status.textContent="❌ "+(e.message||"Error generando paisajes.");
-    if(ig)ig.innerHTML='<div class="empty">No se pudieron generar los paisajes IA.<br><small>'+escapeHtml(e.message||"Error desconocido")+'</small></div>';
+    if(ig)ig.innerHTML='<div class="empty">No se pudieron generar los imágenes IA.<br><small>'+escapeHtml(e.message||"Error desconocido")+'</small></div>';
   }finally{S.aiLoading=false;renderAICreator()}
 }
 
 async function generateAIOptions(){
-  const prompt=(($("#aiImagePrompt").value||"").trim()||"peaceful nature landscape");
+  const prompt=(($("#aiImagePrompt").value||"").trim()||"cinematic relaxing visual");
   const soundPrompt=(($("#aiMusicPrompt").value||"").trim()||"piano relaxing ambient");
   S.aiLoading=true; S.aiImages=[]; S.aiMusic=[]; S.externalMusic=[]; S.selectedExternalMusic=[]; S.image=null; S.music=null;
   const status=$("#aiSelectionStatus"), ig=$("#aiImageGrid"), mg=$("#aiMusicList");
-  if(status)status.textContent="✨ Generando 4 paisajes IA y buscando sonidos para tu mezcla…";
-  if(ig)ig.innerHTML='<div class="empty">🤖 Generando 4 paisajes diferentes…</div>';
+  if(status)status.textContent="✨ Generando 4 imágenes IA y buscando sonidos para tu mezcla…";
+  if(ig)ig.innerHTML='<div class="empty">🤖 Generando 4 imágenes diferentes…</div>';
   if(mg)mg.innerHTML='<div class="empty">🔎 Buscando varios sonidos y músicas relacionados…</div>';
   try{
     const [imageResult,searchStart]=await Promise.all([
@@ -65,10 +65,10 @@ async function generateAIOptions(){
       api("/api/external-music-search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({q:soundPrompt})})
     ]);
     S.aiImages=imageResult.images||[];
-    if(!S.aiImages.length)throw Error("No se pudieron generar los 4 paisajes IA.");
+    if(!S.aiImages.length)throw Error("No se pudieron generar los 4 imágenes IA.");
     S.image=S.aiImages[0];
     renderAICreator();
-    if(status)status.textContent="✓ 4 paisajes listos. 🔎 Terminando la búsqueda de sonidos…";
+    if(status)status.textContent="✓ 4 imágenes listos. 🔎 Terminando la búsqueda de sonidos…";
 
     let d=null;
     for(let n=0;n<90;n++){
@@ -80,7 +80,7 @@ async function generateAIOptions(){
     if(!d||d.status!=="succeeded")throw Error("La búsqueda de sonidos está tardando demasiado.");
     S.externalMusic=(d.results||[]).map(x=>({...x,relaxing:true,generatedByAI:x.provider==="RelaxScape AI"}));
     if(!S.externalMusic.length)throw Error("No se encontraron pistas relajantes. Prueba con otra descripción.");
-    if(status)status.textContent="✓ 4 paisajes y "+S.externalMusic.length+" loops listos. Selecciona exactamente 2 pistas relajantes para crear tu mezcla.";
+    if(status)status.textContent="✓ 4 imágenes y "+S.externalMusic.length+" loops listos. Selecciona exactamente 2 pistas relajantes para crear tu mezcla.";
     renderAICreator();
   }catch(e){
     if(status)status.textContent="❌ "+(e.message||"No se pudieron generar las opciones.");
@@ -313,7 +313,7 @@ function renderAICreator(){
       const mb=$("#createSelectedFreesoundMix");
       if(mb)mb.onclick=createSelectedFreesoundMix;
     }else{
-      mx.innerHTML='<div class="empty">Busca un ambiente, elige exactamente 2 pistas relajantes (por ejemplo, flauta + chorro de agua) y aquí aparecerán juntos para crear la mezcla.</div>';
+      mx.innerHTML='<div class="empty">Busca una descripción visual y elige exactamente 2 pistas relajantes (por ejemplo, flauta + chorro de agua) y aquí aparecerán juntos para crear la mezcla.</div>';
     }
   }
   if($("#aiSelectedPhoto"))$("#aiSelectedPhoto").textContent=S.image?prettyImageName(S.image.name):"Sin foto";
@@ -321,7 +321,7 @@ function renderAICreator(){
   if($("#aiSelectionStatus")&&!S.aiLoading)$("#aiSelectionStatus").textContent=S.image&&S.music?"Todo listo. Has elegido paisaje + mezcla de loops. Crea el vídeo con la duración indicada.":"Selecciona una foto y una música para continuar.";
 }
 function prettyImageName(name){return name?.replace(/\.(jpg|jpeg|png|webp)$/i,"").replace(/^pexels-\d+-/,"").replace(/^ai-/,"Imagen IA").replace(/[-_]/g," ")||"Foto";}
-function renderImages(){const el=$("#imageGrid");el.innerHTML=S.images.length?S.images.map(x=>`<div class="media ${S.image?.url===x.url?"selected":""}" data-url="${x.url}" data-name="${x.name}"><img src="${x.url}"></div>`).join(""):'<div class="empty">No hay paisajes. Sube uno o créalo con IA.</div>';$$(".media").forEach(e=>e.onclick=()=>{S.image={url:e.dataset.url,name:e.dataset.name};render()})}
+function renderImages(){const el=$("#imageGrid");el.innerHTML=S.images.length?S.images.map(x=>`<div class="media ${S.image?.url===x.url?"selected":""}" data-url="${x.url}" data-name="${x.name}"><img src="${x.url}"></div>`).join(""):'<div class="empty">No hay imágenes. Sube una o créala con IA.</div>';$$(".media").forEach(e=>e.onclick=()=>{S.image={url:e.dataset.url,name:e.dataset.name};render()})}
 function prettyMusicName(name){name=String(name||"");const map={"relax-piano.mp3":"Piano nocturno","relax-ocean.mp3":"Ondas del océano","relax-meditation.mp3":"Meditación profunda","relax-dream.mp3":"Sueño tranquilo","relax-rain.mp3":"Lluvia suave","relax-forest.mp3":"Bosque sereno","relax-mountains.mp3":"Montañas al amanecer","relax-sunset.mp3":"Atardecer cálido","relax-night.mp3":"Noche estrellada","relax-deep-sleep.mp3":"Sueño profundo","relax-spa.mp3":"Spa y bienestar","relax-yoga.mp3":"Yoga tranquilo","relax-focus.mp3":"Concentración","relax-calm.mp3":"Calma absoluta","relax-fireplace.mp3":"Chimenea acogedora","relax-river.mp3":"Río tranquilo","relax-piano-rain.mp3":"Piano y lluvia","relax-ocean-night.mp3":"Océano nocturno","relax-zen.mp3":"Zen oriental","relax-breathing.mp3":"Respiración y calma","relax-clouds.mp3":"Nubes suaves","relax-waterfall.mp3":"Cascada relajante","relax-cafe.mp3":"Café tranquilo","relax-study.mp3":"Estudio profundo"};return map[name]||name.replace(/\.mp3$/i,"").replace(/[-_]/g," ")}
 function musicCategory(name){const map={"relax-piano.mp3":"Sueño","relax-ocean.mp3":"Naturaleza","relax-meditation.mp3":"Meditación","relax-dream.mp3":"Sueño","relax-rain.mp3":"Naturaleza","relax-forest.mp3":"Naturaleza","relax-mountains.mp3":"Naturaleza","relax-sunset.mp3":"Relax","relax-night.mp3":"Sueño","relax-deep-sleep.mp3":"Sueño","relax-spa.mp3":"Relax","relax-yoga.mp3":"Meditación","relax-focus.mp3":"Concentración","relax-calm.mp3":"Relax","relax-fireplace.mp3":"Relax","relax-river.mp3":"Naturaleza","relax-piano-rain.mp3":"Sueño","relax-ocean-night.mp3":"Sueño","relax-zen.mp3":"Meditación","relax-breathing.mp3":"Meditación","relax-clouds.mp3":"Relax","relax-waterfall.mp3":"Naturaleza","relax-cafe.mp3":"Relax","relax-study.mp3":"Concentración"};return map[name]||"Relax"}
 function renderMusic(){const el=$("#musicList");const libraryTracks=Array.isArray(S.music)?S.music:[];const tracks=S.musicCategory==="Todas"?libraryTracks:libraryTracks.filter(x=>musicCategory(x.name)===S.musicCategory);el.innerHTML=tracks.length?tracks.map(x=>`<div class="track ${S.music?.url===x.url?"selected":""}" data-url="${x.url}" data-name="${x.name}"><b>♫ ${prettyMusicName(x.name)}</b><small>${musicCategory(x.name)}</small><audio controls src="${x.url}"></audio></div>`).join(""):'<div class="empty">No hay pistas en esta categoría.</div>';$$(".track").forEach(e=>e.onclick=ev=>{if(ev.target.tagName==="AUDIO")return;S.music={url:e.dataset.url,name:e.dataset.name};render()})}
@@ -341,7 +341,7 @@ $$(".nav").forEach(b=>b.onclick=async()=>{
 });
 $("#imageInput").onchange=async e=>{if(!e.target.files[0])return;const fd=new FormData();fd.append("image",e.target.files[0]);$("#builderStatus").textContent="Subiendo imagen…";try{S.image=await api("/api/upload/image",{method:"POST",body:fd});await load()}catch(x){$("#builderStatus").textContent=x.message}};
 $("#musicInput").onchange=async e=>{if(!e.target.files[0])return;const fd=new FormData();fd.append("music",e.target.files[0]);$("#builderStatus").textContent="Subiendo música…";try{S.music=await api("/api/upload/music",{method:"POST",body:fd});await load()}catch(x){$("#builderStatus").textContent=x.message}};
-$("#aiImage").onclick=async()=>{const p=$("#prompt").value||"Ultra-realistic cinematic peaceful landscape, natural light, no people, no text, photorealistic";$("#builderStatus").textContent="Generando paisaje IA…";try{S.image=await api("/api/generate-image",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt:p})});await load()}catch(x){$("#builderStatus").textContent=x.message}};
+$("#aiImage").onclick=async()=>{const p=$("#prompt").value||"Ultra-realistic cinematic peaceful landscape, natural light, no people, no text, photorealistic";$("#builderStatus").textContent="Generando imagen IA…";try{S.image=await api("/api/generate-image",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt:p})});await load()}catch(x){$("#builderStatus").textContent=x.message}};
 $("#generate").onclick=async()=>{if(!S.image||!S.music){$("#builderStatus").textContent="Selecciona un paisaje y una pista.";return}$("#generate").disabled=true;$("#builderStatus").textContent="Generando vídeo…";try{const d=await api("/api/generate-video",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image:S.image.url,music:S.music.url,durationMinutes:Math.max(1,Math.min(1440,Math.round(Number($("#mainDurationMinutes")?.value)||60)))})});$("#video").src=d.url;$("#download").href=d.url;$("#download").setAttribute("download",d.name||"relaxscape-video.mp4");$("#result").classList.remove("hidden");$("#builderStatus").textContent="Vídeo terminado.";await load();}catch(x){$("#builderStatus").textContent=x.message}finally{$("#generate").disabled=false}};
 $("#aiGoMusic").onclick=()=>{$$(".nav").forEach(x=>x.classList.remove("active"));$(".tab").forEach(x=>x.classList.remove("active"));document.querySelector('[data-tab="music"]').classList.add("active");$("#music").classList.add("active");};
 $("#aiCreateHour").onclick=async()=>{
