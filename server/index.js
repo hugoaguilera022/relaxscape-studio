@@ -117,7 +117,7 @@ async function makeCompositionWav(track, wavPath, durationMs=18000){
   // 5) renderiza esos eventos con el timbre solicitado.
   // IMPORTANTE: este bloque es exclusivamente de MÚSICA. La generación de imágenes
   // no se toca.
-  const sr=48000, dur=Math.max(18,Math.min(600,Number(durationMs||18000)/1000)), n=Math.round(sr*dur), samples=new Float32Array(n*2);
+  const sr=48000, dur=Math.max(8,Math.min(600,Number(durationMs||8000)/1000)), n=Math.round(sr*dur), samples=new Float32Array(n*2);
   const variant=((Number(track.variant||1)-1)%4+4)%4;
   const rawBrief=String(track.userSearch||track.originalMusicPrompt||"relaxscape");
   const brief=rawBrief.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
@@ -595,7 +595,7 @@ async function makeCompositionWav(track, wavPath, durationMs=18000){
   for(let i=0;i<samples.length;i++)samples[i]*=gain;
   writeWav(wavPath,samples,sr,2);
 }
-async function generateAIMusicFile(track, outPath, durationMs=18000){
+async function generateAIMusicFile(track, outPath, durationMs=8000){
   // Motor local gratuito: la búsqueda del usuario controla directamente la composición.
   // Generamos WAV temporal y lo convertimos a MP3 real para que el navegador lo reproduzca.
   const wavPath=outPath.replace(/\.mp3$/i,".wav");
