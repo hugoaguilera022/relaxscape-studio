@@ -938,7 +938,7 @@ app.post("/api/ai-images", async (req, res) => {
     // Si la cuota mensual está agotada, cada una de las 4 opciones pasa
     // automáticamente al generador externo gratuito Pollinations.
     if (token) {
-      const requestedCount = Math.min(1, Math.max(1, Number(req.body?.count || 4)));
+      const requestedCount = Math.min(4, Math.max(1, Number(req.body?.count || 4)));
       const jobs = Array.from({ length: requestedCount }, (_, index) =>
         Promise.race([
           generateHuggingFaceLandscape(theme, index),
