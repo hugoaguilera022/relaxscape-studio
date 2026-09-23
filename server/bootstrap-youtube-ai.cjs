@@ -520,4 +520,6 @@ const server=app.listen(PORT,"0.0.0.0",()=>{
 });
 server.keepAliveTimeout=120000;
 server.headersTimeout=125000;
-server.on('error',(err)=>{console.error('[Wrapper] error de servidor:',err);process.exit(1)});
+server.on('error',(err)=>console.error('[Wrapper] error de servidor:',err));
+process.on('uncaughtException',(err)=>console.error('[Wrapper] uncaughtException:',err.stack||err.message));
+process.on('unhandledRejection',(err)=>console.error('[Wrapper] unhandledRejection:',err));
