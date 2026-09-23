@@ -458,11 +458,35 @@ app.post("/api/youtube-ai-final",async(req,res)=>{
   finally{await fsp.rm(w,{recursive:true,force:true})}
 });
 
-const child=spawn(process.execPath,[path.join(ROOT,"server/index.js")],{
-  env:{...process.env,PORT:String(INTERNAL_PORT)},
-  stdio:"inherit"
-});
-child.on("exit",(code,signal)=>{console.error("[RelaxScape core] exited",code,signal);process.exit(code||1)});
+let child=null;
+let restarting=false;
+function startCore(){
+  if(restarting)return;
+  restarting=true;
+  try{
+    child=spawn(process.execPath,[path.join(ROOT,"server/index.js")],{
+      env:{...process.env,PORT:String(INTERNAL_PORT)},
+      stdio:"inherit"
+    });
+    child.once("spawn",()=>{restarting=false});
+    child.on("error",e=>{
+      console.error("[RelaxScape core] spawn error:",e.message);
+      restarting=false;
+      setTimeout(startCore,3000);
+    });
+    child.on("exit",(code,signal)=>{
+      console.error("[RelaxScape core] exited",code,signal);
+      child=null;
+      restarting=false;
+      setTimeout(startCore,2000);
+    });
+  }catch(e){
+    console.error("[RelaxScape core] start error:",e.message);
+    restarting=false;
+    setTimeout(startCore,3000);
+  }
+}
+startCore();
 
 function proxyToCore(req,res){
   const headers={...req.headers,host:"127.0.0.1:"+INTERNAL_PORT};
@@ -489,5 +513,4 @@ require("./daily-routes.cjs")(app);
 try{require("./youtube-publish.cjs")(app)}catch(e){console.error("[YouTube publish] rutas no cargadas:",e.message)}
 
 app.use(proxyToCore);
-require('./daily-routes.cjs')(app);
 app.listen(PORT,"0.0.0.0",()=>console.log("RelaxScape YouTube AI wrapper activo en http://0.0.0.0:"+PORT));
