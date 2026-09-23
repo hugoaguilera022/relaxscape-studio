@@ -1,25 +1,18 @@
 async function refreshYouTubePublishStatus(){
- const s=document.querySelector("#ytConnectionStatus"),b=document.querySelector("#ytConnectionBadge"),c=document.querySelector("#ytConnect"),d=document.querySelector("#ytDisconnect"),p=document.querySelector("#ytPublishNow");
+ const s=document.querySelector("#ytConnectionStatus"),b=document.querySelector("#ytConnectionBadge"),c=document.querySelector("#ytConnect"),d=document.querySelector("#ytDisconnect"),p=document.querySelector("#ytPublishNow"),g=document.querySelector("#ytGeneratePreview"),info=document.querySelector("#ytAccountInfo");
  if(!s)return;
- try{
-  const r=await fetch("/api/youtube/status"),x=await r.json();
-  if(!x.configured){s.textContent="Faltan las credenciales OAuth de Google en Render.";b.textContent="No configurado";c.disabled=true;p.disabled=true;return}
-  if(x.connected){s.textContent="✓ Canal conectado: "+(x.channel?.title||"YouTube");b.textContent="Conectado";c.classList.add("hidden");d.classList.remove("hidden");p.disabled=false}
-  else{s.textContent=x.error||"No hay ningún canal conectado.";b.textContent="Sin vincular";c.classList.remove("hidden");d.classList.add("hidden");p.disabled=true}
+ try{const r=await fetch("/api/youtube/status",{credentials:"same-origin",cache:"no-store"}),x=await r.json();
+  if(!x.configured){s.textContent="Faltan las credenciales OAuth de Google en Render.";b.textContent="No configurado";c.disabled=true;g.disabled=true;p.disabled=true;return}
+  if(x.connected){s.textContent="✓ Canal conectado: "+(x.channel?.title||"YouTube");b.textContent="Conectado";c.classList.add("hidden");d.classList.remove("hidden");g.disabled=false;p.disabled=true;if(info)info.textContent=window.RelaxScapeUser?.email?("Sesión web activa: "+window.RelaxScapeUser.email):"Cuenta de YouTube vinculada a tu sesión de RelaxScape."}
+  else{s.textContent="Inicia sesión con Google para vincular tu canal.";b.textContent="Sin vincular";c.classList.remove("hidden");d.classList.add("hidden");g.disabled=true;p.disabled=true;if(info)info.textContent=window.RelaxScapeUser?.email?("Sesión de RelaxScape: "+window.RelaxScapeUser.email+". Pulsa «Iniciar sesión con YouTube» para autorizar el canal."):"Primero inicia sesión en RelaxScape."}
  }catch(e){s.textContent="No se pudo comprobar YouTube: "+e.message}
 }
 document.addEventListener("DOMContentLoaded",()=>{
- const c=document.querySelector("#ytConnect"),d=document.querySelector("#ytDisconnect"),p=document.querySelector("#ytPublishNow"),s=document.querySelector("#ytPublishStatus");
+ const c=document.querySelector("#ytConnect"),d=document.querySelector("#ytDisconnect"),p=document.querySelector("#ytPublishNow"),g=document.querySelector("#ytGeneratePreview"),s=document.querySelector("#ytPublishStatus"),previewBox=document.querySelector("#ytPreviewBox"),video=document.querySelector("#ytPreviewVideo");
  if(c)c.onclick=()=>{window.location.href="/api/youtube/connect"};
- if(d)d.onclick=async()=>{await fetch("/api/youtube/disconnect",{method:"POST"});refreshYouTubePublishStatus()};
- if(p)p.onclick=async()=>{
-  p.disabled=true;s.textContent="🟡 Generando el vídeo y subiéndolo a YouTube…";
-  try{
-   const r=await fetch("/api/youtube/daily-publish",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({durationMinutes:Number(document.querySelector("#ytDailyDuration")?.value||60)})});
-   const x=await r.json();if(!r.ok)throw Error(x.error||"No se pudo publicar");
-   s.innerHTML='🟢 Publicado en YouTube: <a href="'+x.result.url+'" target="_blank" rel="noopener">Abrir vídeo</a>';
-  }catch(e){s.textContent="🔴 "+e.message}finally{p.disabled=false}
- };
+ if(d)d.onclick=async()=>{await fetch("/api/youtube/disconnect",{method:"POST",credentials:"same-origin"});location.reload()};
+ if(g)g.onclick=async()=>{g.disabled=true;s.textContent="🟡 Generando vídeo…";previewBox?.classList.add("hidden");p?.classList.add("hidden");try{const r=await fetch("/api/youtube/daily-generate",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify({durationMinutes:Number(document.querySelector("#ytDailyDuration")?.value||60)})});const x=await r.json();if(!r.ok)throw Error(x.error||"No se pudo generar");if(video){video.src=x.result.url+"?v="+Date.now();video.load()}previewBox?.classList.remove("hidden");p?.classList.remove("hidden");s.textContent="🟢 Vídeo generado. Revísalo antes de publicarlo.";window.__ytPendingVideo=x.result.name}catch(e){s.textContent="🔴 "+e.message}finally{g.disabled=false}};
+ if(p)p.onclick=async()=>{p.disabled=true;s.textContent="🟡 Publicando el vídeo revisado en YouTube…";try{const r=await fetch("/api/youtube/publish-existing",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify({name:window.__ytPendingVideo})});const x=await r.json();if(!r.ok)throw Error(x.error||"No se pudo publicar");s.innerHTML='🟢 Publicado en YouTube: <a href="'+x.result.url+'" target="_blank" rel="noopener">Abrir vídeo</a>';p.classList.add("hidden");}catch(e){s.textContent="🔴 "+e.message}finally{p.disabled=false}};
  refreshYouTubePublishStatus();
- if(new URLSearchParams(location.search).get("youtube")==="connected"){history.replaceState({},document.title,location.pathname);setTimeout(refreshYouTubePublishStatus,500)}
+ if(new URLSearchParams(location.search).get("login")==="connected"){history.replaceState({},document.title,location.pathname);setTimeout(refreshYouTubePublishStatus,500)}
 });
