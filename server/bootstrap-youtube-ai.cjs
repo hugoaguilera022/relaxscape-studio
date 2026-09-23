@@ -458,11 +458,24 @@ app.post("/api/youtube-ai-final",async(req,res)=>{
   finally{await fsp.rm(w,{recursive:true,force:true})}
 });
 
-const child=spawn(process.execPath,[path.join(ROOT,"server/index.js")],{
-  env:{...process.env,PORT:String(INTERNAL_PORT)},
-  stdio:"inherit"
-});
-child.on("exit",(code,signal)=>{console.error("[RelaxScape core] exited",code,signal);process.exit(code||1)});
+let coreChild=null;
+let coreRestartTimer=null;
+function startCore(){
+  if(coreChild) return;
+  coreChild=spawn(process.execPath,[path.join(ROOT,"server/index.js")],{
+    env:{...process.env,PORT:String(INTERNAL_PORT)},
+    stdio:"inherit"
+  });
+  coreChild.on("error",(err)=>console.error("[RelaxScape core] spawn error:",err.message));
+  coreChild.on("exit",(code,signal)=>{
+    console.error("[RelaxScape core] exited",code,signal);
+    coreChild=null;
+    if(!coreRestartTimer){
+      coreRestartTimer=setTimeout(()=>{coreRestartTimer=null;startCore()},1000);
+    }
+  });
+}
+startCore();
 
 async function waitForCore(maxAttempts=12){
   for(let i=0;i<maxAttempts;i++){
