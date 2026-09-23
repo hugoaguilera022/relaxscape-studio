@@ -117,8 +117,7 @@ module.exports=function registerDailyRoutes(app){
    const stream=await fetch(base+'/gradio_api/call/infer/'+eventId,{signal:AbortSignal.timeout(30000)});
    if(!stream.ok)return null;
    const text=await stream.text();
-    const m=text.match(/data:\s*(\[[\s\S]*?\])\s*(?:
-|$)/);
+    const m=text.match(/data:\s*(\[[\s\S]*?\])\s*(?:\r?\n|$)/);
    if(!m)return null;
    const data=JSON.parse(m[1]);
    const file=data?.[0];
@@ -605,8 +604,7 @@ module.exports=function registerDailyRoutes(app){
    }
    const audio=path.join(work,'music-long.wav');
    const alist=path.join(work,'audio.txt');
-   fs.writeFileSync(alist,audioSegments.map(x=>"file '"+x.replace(/'/g,"'\\''")+"'").join("
-"));
+   fs.writeFileSync(alist,audioSegments.map(x=>"file '"+x.replace(/'/g,"'\\''")+"'").join("\n"));
    if(audioSegments.length>1)await ff(['-y','-f','concat','-safe','0','-i',alist,'-c:a','pcm_s16le',audio]);
    else fs.copyFileSync(audioSegments[0],audio);
    progress(76,'Montando escenas con movimiento y transiciones…');
@@ -617,8 +615,7 @@ module.exports=function registerDailyRoutes(app){
     const zoom=i%2===0?'zoompan=z=min(zoom+0.0008,1.10):x=iw/2-(iw/zoom/2):y=ih/2-(ih/zoom/2):d=1:s=1920x1080:fps=10':'zoompan=z=max(zoom-0.0006,1.0):x=iw/2-(iw/zoom/2):y=ih/2-(ih/zoom/2):d=1:s=1920x1080:fps=10';
     await ff(['-y','-loop','1','-i',scenes[i],'-t',String(sceneSeconds),'-vf',zoom+',format=yuv420p','-r','10','-c:v','libx264','-preset','ultrafast','-crf','24','-pix_fmt','yuv420p',seg]);
    }
-   const list=path.join(work,'videos.txt');fs.writeFileSync(list,segs.map(x=>"file '"+x.replace(/'/g,"'\\''")+"'").join("
-"));
+   const list=path.join(work,'videos.txt');fs.writeFileSync(list,segs.map(x=>"file '"+x.replace(/'/g,"'\\''")+"'").join("\n"));
    const visual=path.join(work,'visual.mp4');
    await ff(['-y','-f','concat','-safe','0','-i',list,'-c','copy',visual]);
    const audioDuration=seconds;
