@@ -306,7 +306,7 @@ module.exports=function registerDailyRoutes(app){
   try{
    jobs.set(id,{status:'running',progress:25,message:'Generando paisaje IA gratuito...'});
    jobs.set(id,{status:'running',progress:55,message:'Creando audio relajante local...'});
-   const result=await makeVideo({durationMinutes:req.body?.durationMinutes||60,seed:id});
+   const result=await makeVideo({durationMinutes:req.body?.durationMinutes||60,seed:id,youtubeMode:req.body?.youtubeMode===true});
    jobs.set(id,{status:'succeeded',progress:100,message:'Vídeo terminado',result});
   }catch(e){console.error('[Daily free]',e);jobs.set(id,{status:'failed',progress:0,error:e.message||String(e)});}
  });
