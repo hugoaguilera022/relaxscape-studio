@@ -458,68 +458,23 @@ app.post("/api/youtube-ai-final",async(req,res)=>{
   finally{await fsp.rm(w,{recursive:true,force:true})}
 });
 
-let coreChild=null;
-let coreRestartTimer=null;
-function startCore(){
-  if(coreChild) return;
-  coreChild=spawn(process.execPath,[path.join(ROOT,"server/index.js")],{
-    env:{...process.env,PORT:String(INTERNAL_PORT)},
-    stdio:"inherit"
-  });
-  coreChild.on("error",(err)=>console.error("[RelaxScape core] spawn error:",err.message));
-  coreChild.on("exit",(code,signal)=>{
-    console.error("[RelaxScape core] exited",code,signal);
-    coreChild=null;
-    if(!coreRestartTimer){
-      coreRestartTimer=setTimeout(()=>{coreRestartTimer=null;startCore()},1000);
-    }
-  });
-}
-async function waitForCore(maxAttempts=12){
-  for(let i=0;i<maxAttempts;i++){
-    try{
-      const r=await fetch("http://127.0.0.1:"+INTERNAL_PORT+"/health",{signal:AbortSignal.timeout(1500)});
-      if(r.ok)return true;
-    }catch{}
-    await new Promise(resolve=>setTimeout(resolve,750));
-  }
-  return false;
-}
-function proxyToCore(req,res){
-  const headers={...req.headers,host:"127.0.0.1:"+INTERNAL_PORT};
-  delete headers["content-length"];
-  const chunks=[];
-  req.on("data",c=>chunks.push(c));
-  req.on("end",async()=>{
-    try{
-      const ready=await waitForCore();
-      if(!ready) return res.status(503).json({error:"El servidor interno todavía está arrancando. Vuelve a intentarlo en unos segundos."});
-      const body=chunks.length?Buffer.concat(chunks):undefined;
-      const r=await fetch("http://127.0.0.1:"+INTERNAL_PORT+req.originalUrl,{method:req.method,headers,body,signal:AbortSignal.timeout(120000)});
-      res.status(r.status);
-      r.headers.forEach((v,k)=>{if(k.toLowerCase()!=="transfer-encoding")res.setHeader(k,v)});
-      const ab=await r.arrayBuffer();res.end(Buffer.from(ab));
-    }catch(e){console.error("[Proxy core]",e.message);res.status(503).json({error:"Servidor principal no disponible temporalmente."})}
-  });
-}
-// Registramos primero las rutas públicas para que no queden atrapadas por el proxy.
-// El proxy debe ser el último middleware: actúa solo como fallback para las rutas del core.
-require('./musicoterapia-routes.cjs')(app);
-require('./daily-routes.cjs')(app);
-require('./youtube-publish.cjs')(app);
+process.env.RELAXSCAPE_EMBEDDED="1";
 
-app.get('/health',(req,res)=>res.status(200).json({ok:true,service:'RelaxScape',port:PORT,corePort:INTERNAL_PORT}));
-app.get('/healthz',(req,res)=>res.status(200).json({ok:true,service:'RelaxScape',port:PORT,corePort:INTERNAL_PORT}));
-app.get('/',(req,res)=>res.sendFile(path.join(ROOT,'public','index.html')));
+import("./index.js").then(({default:coreApp})=>{
+  // Un único proceso Node escucha el PORT público de Render.
+  // El core se monta en el wrapper sin un segundo puerto ni proxy HTTP interno.
+  app.use(coreApp);
 
-app.use(proxyToCore);
-
-const server=app.listen(PORT,"0.0.0.0",()=>{
-  console.log("RelaxScape YouTube AI wrapper activo en http://0.0.0.0:"+PORT);
-  startCore();
+  const server=app.listen(PORT,"0.0.0.0",()=>{
+    console.log("RelaxScape Studio listo en http://0.0.0.0:"+PORT);
+  });
+  server.keepAliveTimeout=120000;
+  server.headersTimeout=125000;
+  server.on("error",(err)=>console.error("[Wrapper] error de servidor:",err));
+}).catch(err=>{
+  console.error("[RelaxScape] No se pudo cargar el core:",err.stack||err.message);
+  process.exitCode=1;
 });
-server.keepAliveTimeout=120000;
-server.headersTimeout=125000;
-server.on('error',(err)=>console.error('[Wrapper] error de servidor:',err));
-process.on('uncaughtException',(err)=>console.error('[Wrapper] uncaughtException:',err.stack||err.message));
-process.on('unhandledRejection',(err)=>console.error('[Wrapper] unhandledRejection:',err));
+
+process.on("uncaughtException",(err)=>console.error("[RelaxScape] uncaughtException:",err.stack||err.message));
+process.on("unhandledRejection",(err)=>console.error("[RelaxScape] unhandledRejection:",err));
