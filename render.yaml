@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: relaxscape-studio
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DAILY_VIDEO_HOUR
+        value: "03:00"
