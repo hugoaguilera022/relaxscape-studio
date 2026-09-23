@@ -336,11 +336,21 @@ module.exports=function registerDailyRoutes(app){
   fs.writeFileSync(out,b);
  }
 
- async function createYouTubeThumbnail(image,out,title){
-  const safe=String(title||'RelaxScape').replace(/[^a-zA-Z0-9À-ÿ .·&()\-]/g,'').slice(0,80);
-  const safe2=safe.replace(/:/g,'\\:').replace(/,/g,'\\,').replace(/'/g,"\\\\'");
+ async function createYouTubeThumbnail(image,out,title,profileKey){
+  const labels={
+   'zen-piano':['MÚSICA ZEN RELAJANTE','CALMA · MEDITACIÓN · ANTI ESTRÉS'],
+   'ocean-meditation':['MÚSICA PARA MEDITAR','OCÉANO · CALMA · RELAJACIÓN'],
+   'focus-piano':['MÚSICA PARA ESTUDIAR','CONCENTRACIÓN · TRABAJO · ESTUDIO'],
+   'celtic-flute':['MÚSICA CELTA RELAJANTE','FLAUTA · NATURALEZA · RELAJACIÓN'],
+   'deep-sleep':['MÚSICA PARA DORMIR','SUEÑO PROFUNDO · CALMA · DESCANSO'],
+   'spa-water':['MÚSICA RELAJANTE SPA','YOGA · MEDITACIÓN · BIENESTAR']
+  };
+  const pair=labels[profileKey]||labels['zen-piano'];
+  const safe=String(pair[0]||title||'RelaxScape').replace(/[^a-zA-Z0-9À-ÿ .·&()\-]/g,'').slice(0,44);
+  const sub=String(pair[1]).replace(/[^a-zA-Z0-9À-ÿ .·&()\-]/g,'').slice(0,54);
+  const esc=v=>v.replace(/:/g,'\\:').replace(/,/g,'\\,').replace(/'/g,"\\\\'");
   await ff(['-y','-i',image,'-vf',
-   "scale=1280:720:force_original_aspect_ratio=increase:flags=lanczos,crop=1280:720,eq=saturation=1.12:contrast=1.06,drawbox=x=0:y=0:w=1280:h=720:color=black@0.10:t=fill,drawbox=x=0:y=470:w=1280:h=250:color=black@0.55:t=fill,drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='RELAXSCAPE':fontcolor=white@0.9:fontsize=26:x=48:y=42,drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='"+safe2+"':fontcolor=white:fontsize=48:x=48:y=525:shadowcolor=black@0.9:shadowx=2:shadowy=2",
+   "scale=1280:720:force_original_aspect_ratio=increase:flags=lanczos,crop=1280:720,eq=saturation=1.12:contrast=1.06,drawbox=x=0:y=0:w=1280:h=720:color=black@0.10:t=fill,drawbox=x=0:y=455:w=1280:h=265:color=black@0.58:t=fill,drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='RELAXSCAPE':fontcolor=white@0.92:fontsize=25:x=48:y=40,drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='"+esc(safe)+"':fontcolor=white:fontsize=46:x=48:y=505:shadowcolor=black@0.9:shadowx=2:shadowy=2,drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='"+esc(sub)+"':fontcolor=white@0.92:fontsize=22:x=48:y=575:shadowcolor=black@0.8:shadowx=1:shadowy=1",
    '-frames:v','1','-q:v','2',out]);
   return out;
  }
@@ -389,7 +399,7 @@ module.exports=function registerDailyRoutes(app){
    const titleOptions=(youtubeMode?youtubeTitles[theme.key]:titles[theme.key])||titles.zen;
    const thumbnailName='thumb-'+path.basename(out,'.mp4')+'.jpg';
    const thumbnail=path.join(VIDEO_DIR,thumbnailName);
-   if(youtubeMode)await createYouTubeThumbnail(image,thumbnail,titleOptions[0]);
+   if(youtubeMode)await createYouTubeThumbnail(image,thumbnail,titleOptions[0],theme.key);
    const descriptions={
     'zen-piano':'Música zen relajante para calmar la mente y reducir el estrés. Un paisaje de montaña y lago acompañado de piano suave y armonías ambientales para meditación, descanso, yoga y momentos de tranquilidad. 🌿\\n\\n🎧 Escucha con auriculares para disfrutar de la atmósfera completa.\\n\\nEste vídeo ha sido creado originalmente por RelaxScape Studio mediante generación audiovisual y no utiliza grabaciones del canal Musicoterapia.',
     'ocean-meditation':'Música relajante para meditación, yoga y descanso, inspirada en la calma del mar. Piano delicado, flauta suave y una atmósfera lenta acompañan un paisaje natural de agua y amanecer. 🌊\\n\\nIdeal para relajación, respiración, meditación, yoga, ansiedad y descanso.\\n\\nContenido original creado por RelaxScape Studio.',
