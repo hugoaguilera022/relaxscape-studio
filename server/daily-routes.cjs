@@ -348,10 +348,10 @@ module.exports=function registerDailyRoutes(app){
    if(!imageInfo)imageInfo=await downloadLandscape(image,seed);
    const segmentSeconds=Math.min(seconds,300);
    let audioInfo=null;
-   if(youtubeMode)audioInfo=await generateMusicGen(aud,seed,segmentSeconds);
+   if(youtubeMode)audioInfo=await generateAceStep(aud,seed,segmentSeconds);
    if(!audioInfo){if(youtubeMode)writeYouTubeWav(aud,segmentSeconds,seed);else writeWav(aud,segmentSeconds,seed);}
-   // El segmento de audio ahora dura hasta 5 minutos completos. Se repite ese bloque,
-   // nunca un bloque de 10 s, y el WAV está construido para cerrar el loop suavemente.
+   // El motor YouTube genera un bloque musical largo y coherente que se repite solo
+   // después de varios minutos, evitando bucles cortos y artificiales.
    const segment=path.join(TEMP_DIR,'segment-'+stamp+'.mp4');
    try{
     await ff(['-y','-loop','1','-framerate','10','-i',image,'-i',aud,'-t',String(segmentSeconds),
