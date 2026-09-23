@@ -46,7 +46,7 @@ module.exports=function registerDailyRoutes(app){
   try{
    submit=await fetch(base+'/gradio_api/call/infer',{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(payload),signal:AbortSignal.timeout(30000)
+    body:JSON.stringify(payload),signal:AbortSignal.timeout(12000)
    });
   }catch(e){return null;}
   if(!submit.ok)return null;
@@ -55,7 +55,7 @@ module.exports=function registerDailyRoutes(app){
   if(!eventId)return null;
 
   try{
-   const stream=await fetch(base+'/gradio_api/call/infer/'+eventId,{signal:AbortSignal.timeout(180000)});
+   const stream=await fetch(base+'/gradio_api/call/infer/'+eventId,{signal:AbortSignal.timeout(30000)});
    if(!stream.ok)return null;
    const text=await stream.text();
    const m=text.match(/data:\s*(\[[\s\S]*?\])\s*(?:\n\n|$)/);
@@ -124,7 +124,7 @@ module.exports=function registerDailyRoutes(app){
    // Así 60 minutos no obligan a FFmpeg a codificar 36.000 fotogramas.
    const segment=path.join(TEMP_DIR,'segment-'+stamp+'.mp4');
    try{
-    await ff(['-y','-loop','1','-framerate','10','-i',image,'-stream_loop','-1','-i',aud,'-t','10',
+    await ff(['-y','-loop','1','-framerate','10','-i',image,'-stream_loop','-1','-i',aud,'-t','10','-shortest',
       '-map','0:v:0','-map','1:a:0','-vf','scale=1920:1080:force_original_aspect_ratio=increase:flags=lanczos,crop=1920:1080,unsharp=5:5:0.35:5:5:0.15,format=yuv420p',
       '-r','10','-c:v','libx264','-preset','ultrafast','-crf','24','-threads','2','-pix_fmt','yuv420p',
       '-c:a','aac','-b:a','128k','-ar','44100','-ac','1','-movflags','+faststart',segment]);
