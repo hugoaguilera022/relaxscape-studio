@@ -481,5 +481,15 @@ function proxyToCore(req,res){
 }
 app.use(proxyToCore);
 
+// Todas las rutas se registran directamente en el proceso público de Render.
+// Así evitamos el compilador dinámico del launcher y registros duplicados.
+require('./musicoterapia-routes.cjs')(app);
 require('./daily-routes.cjs')(app);
-app.listen(PORT,"0.0.0.0",()=>console.log("RelaxScape YouTube AI wrapper activo en http://0.0.0.0:"+PORT));
+require('./youtube-publish.cjs')(app);
+
+app.get('/healthz',(req,res)=>res.status(200).json({ok:true,service:'RelaxScape',port:PORT}));
+
+const server=app.listen(PORT,"0.0.0.0",()=>console.log("RelaxScape YouTube AI wrapper activo en http://0.0.0.0:"+PORT));
+server.keepAliveTimeout=120000;
+server.headersTimeout=125000;
+server.on('error',(err)=>{console.error('[Wrapper] error de servidor:',err);process.exit(1)});
