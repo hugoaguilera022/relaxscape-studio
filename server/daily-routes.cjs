@@ -58,9 +58,7 @@ module.exports=function registerDailyRoutes(app){
    const stream=await fetch(base+'/gradio_api/call/infer/'+eventId,{signal:AbortSignal.timeout(30000)});
    if(!stream.ok)return null;
    const text=await stream.text();
-   const m=text.match(/data:\s*(\[[\s\S]*?\])\s*(?:
-
-|$)/);
+   const m=text.match(/data:\s*(\[[\s\S]*?\])\s*(?:\\n|$)/);
    if(!m)return null;
    const data=JSON.parse(m[1]);
    const file=data?.[0];
