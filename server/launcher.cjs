@@ -9,6 +9,7 @@ const at=source.indexOf(marker);
 if(at<0)throw new Error('No se encontró el punto de inserción del proxy.');
 const before=source.slice(0,at),after=source.slice(at);
 const routes=[
+  "require('./musicoterapia-routes.cjs')(app);",
   "require('./daily-routes.cjs')(app);",
   "require('./youtube-publish.cjs')(app);"
 ];
