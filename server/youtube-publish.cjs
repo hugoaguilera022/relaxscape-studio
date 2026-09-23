@@ -118,7 +118,7 @@ module.exports=function(app){
   if(!cron&&!sid)throw Error("Primero inicia sesión en RelaxScape con Google");
   if(!await token(tokenId))throw Error("Primero vincula tu canal de YouTube con Google");
   const port=Number(process.env.PORT||10000);
-  const s=await fetch("http://127.0.0.1:"+port+"/api/daily-video-now",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({durationMinutes:Number(req.body?.durationMinutes||60)})});
+  const s=await fetch("http://127.0.0.1:"+port+"/api/daily-video-now",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({durationMinutes:Number(req.body?.durationMinutes||60),youtubeMode:true})});
   const j=await s.json();
   if(!s.ok||!j.jobId)throw Error(j.error||"No se pudo iniciar el vídeo");
   return {jobId:j.jobId,durationMinutes:Number(req.body?.durationMinutes||60)};
