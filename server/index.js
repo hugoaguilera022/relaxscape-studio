@@ -1681,7 +1681,7 @@ async function buildVideoGenerationJob(jobId, payload) {
     job.stage = "Preparando imagen y música…";
     const imageName = decodeURIComponent(String(image).split("/").pop());
     let imagePath = path.join(IMAGE_DIR, imageName);
-    if (!fs.existsSync(imagePath) && /^https?:\\/\\//i.test(image)) {
+    if (!fs.existsSync(imagePath) && String(image).startsWith("http")) {
       job.progress = 10;
       job.stage = "Descargando paisaje…";
       const downloaded = await fetchWithTimeout(image, { headers: { Accept: "image/*" } }, 90000);
