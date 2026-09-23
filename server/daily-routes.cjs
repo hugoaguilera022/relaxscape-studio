@@ -125,7 +125,7 @@ module.exports=function registerDailyRoutes(app){
    const segment=path.join(TEMP_DIR,'segment-'+stamp+'.mp4');
    try{
     await ff(['-y','-loop','1','-framerate','10','-i',image,'-stream_loop','-1','-i',aud,'-t','10',
-      '-map','0:v:0','-map','1:a:0','-vf','scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,format=yuv420p',
+      '-map','0:v:0','-map','1:a:0','-vf','scale=1920:1080:force_original_aspect_ratio=increase:flags=lanczos,crop=1920:1080,unsharp=5:5:0.35:5:5:0.15,format=yuv420p',
       '-r','10','-c:v','libx264','-preset','ultrafast','-crf','24','-threads','2','-pix_fmt','yuv420p',
       '-c:a','aac','-b:a','128k','-ar','44100','-ac','1','-movflags','+faststart',segment]);
     await ff(['-y','-stream_loop','-1','-i',segment,'-t',String(seconds),
