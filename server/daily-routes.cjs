@@ -366,7 +366,13 @@ module.exports=function registerDailyRoutes(app){
    'focus-piano':['MÚSICA PARA ESTUDIAR','CONCENTRACIÓN · TRABAJO · ESTUDIO'],
    'celtic-flute':['MÚSICA CELTA RELAJANTE','FLAUTA · NATURALEZA · RELAJACIÓN'],
    'deep-sleep':['MÚSICA PARA DORMIR','SUEÑO PROFUNDO · CALMA · DESCANSO'],
-   'spa-water':['MÚSICA RELAJANTE SPA','YOGA · MEDITACIÓN · BIENESTAR']
+   'spa-water':['MÚSICA RELAJANTE SPA','YOGA · MEDITACIÓN · BIENESTAR'],
+   'rain-piano':['MÚSICA PARA RELAJARSE','LLUVIA · PIANO · NATURALEZA'],
+   'forest-flute':['MÚSICA DE BOSQUE','FLAUTA · MEDITACIÓN · NATURALEZA'],
+   'sunset-piano':['PIANO RELAJANTE','ATARDECER · CALMA · NATURALEZA'],
+   'river-meditation':['MÚSICA PARA MEDITAR','RÍO · NATURALEZA · CALMA'],
+   'cabin-rain':['MÚSICA PARA DORMIR','LLUVIA · BOSQUE · DESCANSO'],
+   'desert-calm':['MÚSICA PARA MEDITAR','OASIS · CALMA · RELAJACIÓN']
   };
   const pair=labels[profileKey]||labels['zen-piano'];
   const esc=v=>String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
@@ -414,7 +420,13 @@ module.exports=function registerDailyRoutes(app){
     'focus-piano':['Música para Estudiar, Trabajar y Concentrarse · Piano y Naturaleza','Música Relajante para Concentración · Estudio y Trabajo','Música Ambiental para Estudiar · Piano Suave y Paisaje Natural'],
     'celtic-flute':['Música Celta Relajante · Flauta, Bosque y Montañas','Música Celta Instrumental para Relajarse · Naturaleza y Río','Flauta Celta y Paisajes Naturales · Música para Meditar'],
     'deep-sleep':['Música para Dormir Profundamente · Noche, Lago y Relajación','Música Relajante para Dormir · Sueño Profundo y Naturaleza','Música para Dormir y Descansar · Paisaje Nocturno y Calma'],
-    'spa-water':['Música Relajante para Spa, Yoga y Meditación · Agua y Naturaleza','Música de Spa para Relajarse · Cascada, Bosque y Calma','Meditación Profunda · Música Relajante y Paisaje Natural']
+    'spa-water':['Música Relajante para Spa, Yoga y Meditación · Agua y Naturaleza','Música de Spa para Relajarse · Cascada, Bosque y Calma','Meditación Profunda · Música Relajante y Paisaje Natural'],
+    'rain-piano':['Música Relajante con Lluvia y Piano · Bosque para Dormir','Lluvia en el Bosque · Piano Suave para Relajarse','Música para Dormir con Lluvia · Naturaleza y Calma'],
+    'forest-flute':['Flauta y Bosque · Música Relajante para Meditar','Música de Naturaleza con Flauta · Relajación Profunda','Música para Meditar · Bosque, Flauta y Naturaleza'],
+    'sunset-piano':['Piano Relajante al Atardecer · Música para Calmar la Mente','Música de Piano para Relajarse · Lago y Puesta de Sol','Atardecer en las Montañas · Piano y Naturaleza'],
+    'river-meditation':['Música para Meditar con Río y Naturaleza · Calma Profunda','Meditación y Relajación · Río, Bosque y Música Suave','Música Relajante para Respirar y Meditar · Paisaje Natural'],
+    'cabin-rain':['Música para Dormir con Lluvia · Bosque y Cabaña','Lluvia Nocturna y Piano · Música para Dormir Profundamente','Relajación Profunda · Lluvia, Bosque y Música Suave'],
+    'desert-calm':['Música para Meditar en un Oasis · Calma y Relajación','Meditación Profunda · Oasis, Piano y Naturaleza','Música Relajante para Yoga y Respiración · Paisaje de Oasis']
    };
    const titleOptions=(youtubeMode?youtubeTitles[theme.key]:titles[theme.key])||titles.zen;
    const thumbnailName='thumb-'+path.basename(out,'.mp4')+'.jpg';
