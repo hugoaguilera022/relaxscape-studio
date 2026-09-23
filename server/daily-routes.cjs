@@ -336,6 +336,14 @@ module.exports=function registerDailyRoutes(app){
   fs.writeFileSync(out,b);
  }
 
+ async function createYouTubeThumbnail(image,out,title){
+  const safe=String(title||'RelaxScape').replace(/[\\:\\[\\]\\']/g,'\\\\ async function makeVideo({durationMinutes=60,seed='daily',youtubeMode=false}){').replace(/%/g,'\\\\%').replace(/,/g,'\\\\,');
+  await ff(['-y','-i',image,'-vf',
+   "scale=1280:720:force_original_aspect_ratio=increase:flags=lanczos,crop=1280:720,drawbox=x=0:y=500:w=1280:h=220:color=black@0.48:t=fill,drawtext=text='"+safe+"':fontcolor=white:fontsize=46:font='Sans':x=50:y=560:box=0:shadowcolor=black@0.8:shadowx=2:shadowy=2",
+   '-frames:v','1','-q:v','2',out]);
+  return out;
+ }
+
  async function makeVideo({durationMinutes=60,seed='daily',youtubeMode=false}){
   const minutes=Math.max(1,Math.min(1440,Number(durationMinutes)||60)),seconds=Math.max(60,minutes*60);
   const stamp=new Date().toISOString().replace(/[:.]/g,'-');
@@ -379,11 +387,22 @@ module.exports=function registerDailyRoutes(app){
     'spa-water':['Música Relajante para Spa, Yoga y Meditación · Agua y Naturaleza','Música de Spa para Relajarse · Cascada, Bosque y Calma','Meditación Profunda · Música Relajante y Paisaje Natural']
    };
    const titleOptions=(youtubeMode?youtubeTitles[theme.key]:titles[theme.key])||titles.zen;
-   return {url:'/media/videos/'+path.basename(out),name:path.basename(out),durationMinutes:minutes,
+   const thumbnailName='thumb-'+path.basename(out,'.mp4')+'.jpg';
+   const thumbnail=path.join(VIDEO_DIR,thumbnailName);
+   if(youtubeMode)await createYouTubeThumbnail(image,thumbnail,titleOptions[0]);
+   const descriptions={
+    'zen-piano':'Música zen relajante para calmar la mente y reducir el estrés. Un paisaje de montaña y lago acompañado de piano suave y armonías ambientales para meditación, descanso, yoga y momentos de tranquilidad. 🌿\\n\\n🎧 Escucha con auriculares para disfrutar de la atmósfera completa.\\n\\nEste vídeo ha sido creado originalmente por RelaxScape Studio mediante generación audiovisual y no utiliza grabaciones del canal Musicoterapia.',
+    'ocean-meditation':'Música relajante para meditación, yoga y descanso, inspirada en la calma del mar. Piano delicado, flauta suave y una atmósfera lenta acompañan un paisaje natural de agua y amanecer. 🌊\\n\\nIdeal para relajación, respiración, meditación, yoga, ansiedad y descanso.\\n\\nContenido original creado por RelaxScape Studio.',
+    'focus-piano':'Música ambiental para estudiar, trabajar y concentrarse. Piano suave, armonías continuas y un paisaje natural tranquilo crean un fondo sin distracciones para sesiones de concentración y lectura. 📚\\n\\nIdeal para estudio, trabajo, lectura, escritura y concentración profunda.\\n\\nContenido original creado por RelaxScape Studio.',
+    'celtic-flute':'Música celta instrumental relajante con flauta, cuerdas suaves y paisajes naturales de bosque, río y montaña. Una atmósfera tranquila para meditar, descansar y desconectar. 🍃\\n\\nContenido original creado por RelaxScape Studio.',
+    'deep-sleep':'Música extremadamente suave para dormir profundamente y descansar. Piano delicado, cuerdas ambientales y un paisaje nocturno crean una atmósfera lenta y continua para el sueño. 🌙\\n\\nRecomendado para dormir, relajarse y crear un ambiente tranquilo antes de acostarse.\\n\\nContenido original creado por RelaxScape Studio.',
+    'spa-water':'Música relajante para spa, yoga y meditación con piano, flauta y una atmósfera natural inspirada en agua, cascadas y naturaleza tropical. 💧\\n\\nIdeal para masaje, spa, meditación, yoga, respiración y descanso.\\n\\nContenido original creado por RelaxScape Studio.'
+   };
+   const description=youtubeMode?(descriptions[theme.key]||'Música relajante y paisaje natural creados originalmente por RelaxScape Studio.'):'Vídeo original de RelaxScape Studio con música ambiental y paisaje natural. Ideal para relajación, meditación, estudio o descanso.';
+   return {url:'/media/videos/'+path.basename(out),name:path.basename(out),durationMinutes:minutes,thumbnailUrl:youtubeMode?'/media/videos/'+encodeURIComponent(thumbnailName):null,
     generatedImage:true,imageProvider:imageInfo.provider,reference:youtubeMode?'Musicoterapia · patrones de vídeos más vistos':'@musicoterapiateam',storedInLibrary:false,paidApis:false,
     aiImage:imageInfo.provider.includes('FLUX'),theme:theme.key,title:titleOptions[0],titleOptions,
-    description:'Vídeo original de RelaxScape Studio con música ambiental y paisaje natural. Ideal para relajación, meditación, estudio o descanso.',
-    tags:['música relajante','relajación','meditación','naturaleza','sleep','ambient','calma']};
+    description,tags:['música relajante','relajación','meditación','naturaleza','sleep','ambient','calma']};
   }finally{clean(image);clean(aud);}
  }
 
