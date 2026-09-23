@@ -457,4 +457,5 @@ function proxyToCore(req,res){
 }
 app.use(proxyToCore);
 
+require('./daily-routes.cjs')(app);
 app.listen(PORT,"0.0.0.0",()=>console.log("RelaxScape YouTube AI wrapper activo en http://0.0.0.0:"+PORT));
