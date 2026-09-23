@@ -10,6 +10,64 @@ module.exports=function registerDailyRoutes(app){
  fs.mkdirSync(VIDEO_DIR,{recursive:true});
  fs.mkdirSync(TEMP_DIR,{recursive:true});
  const jobs=new Map();
+ const trendCache={at:0,profiles:null,topVideos:[]};
+
+ function classifyMusicoterapiaTitle(title){
+  const t=String(title||'').toLowerCase();
+  if(/estudi|concentr|memor|ondas alfa|trabaj/.test(t))return 'focus-piano';
+  if(/celta|celtic|flauta|flute/.test(t))return 'celtic-flute';
+  if(/dormir|sueño|sleep|descans/.test(t))return 'deep-sleep';
+  if(/mar|olas|océano|ocean|agua/.test(t))return 'ocean-meditation';
+  if(/lluvia|rain/.test(t))return 'rain-piano';
+  if(/spa|yoga|masaje|wellness/.test(t))return 'spa-water';
+  if(/bosque|forest|naturaleza|naturaleza|río|river/.test(t))return 'forest-flute';
+  return 'zen-piano';
+ }
+
+ async function refreshMusicoterapiaTrends(){
+  const key=process.env.YOUTUBE_API_KEY;
+  if(!key || Date.now()-trendCache.at<6*60*60*1000)return trendCache.profiles;
+  try{
+   const channelRes=await fetch('https://www.googleapis.com/youtube/v3/channels?part=contentDetails&forHandle=%40musicoterapiateam&key='+encodeURIComponent(key),{signal:AbortSignal.timeout(15000)});
+   if(!channelRes.ok)throw Error('YouTube channels HTTP '+channelRes.status);
+   const channel=await channelRes.json();
+   const uploads=channel?.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+   if(!uploads)throw Error('No se encontró la playlist de vídeos de Musicoterapia.');
+   const listRes=await fetch('https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&maxResults=50&playlistId='+encodeURIComponent(uploads)+'&key='+encodeURIComponent(key),{signal:AbortSignal.timeout(15000)});
+   if(!listRes.ok)throw Error('YouTube playlistItems HTTP '+listRes.status);
+   const list=await listRes.json();
+   const ids=(list.items||[]).map(x=>x.contentDetails?.videoId).filter(Boolean);
+   if(!ids.length)throw Error('No se encontraron vídeos de Musicoterapia.');
+   const videoRes=await fetch('https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails&id='+ids.join(',')+'&key='+encodeURIComponent(key),{signal:AbortSignal.timeout(15000)});
+   if(!videoRes.ok)throw Error('YouTube videos HTTP '+videoRes.status);
+   const data=await videoRes.json();
+   const top=(data.items||[]).map(v=>({
+    id:v.id,title:v.snippet?.title||'',views:Number(v.statistics?.viewCount||0),
+    duration:v.contentDetails?.duration||'',profile:classifyMusicoterapiaTitle(v.snippet?.title||'')
+   })).sort((a,b)=>b.views-a.views).slice(0,12);
+   const totals=new Map();
+   for(const v of top)totals.set(v.profile,(totals.get(v.profile)||0)+Math.max(1,v.views));
+   const profiles=[];
+   for(const [keyName,weight] of totals.entries())profiles.push({key:keyName,weight});
+   profiles.sort((a,b)=>b.weight-a.weight);
+   trendCache.at=Date.now();trendCache.profiles=profiles;trendCache.topVideos=top;
+   console.log('[Musicoterapia trends]',top.map(v=>v.views+' · '+v.profile+' · '+v.title).join(' | '));
+   return profiles;
+  }catch(e){
+   console.warn('[Musicoterapia trends] fallback:',e.message||e);
+   trendCache.at=Date.now();
+   trendCache.profiles=null;
+   return null;
+  }
+ }
+
+ function pickWeightedProfile(seed,profiles){
+  if(!Array.isArray(profiles)||!profiles.length)return null;
+  const total=profiles.reduce((n,p)=>n+Math.max(1,p.weight),0);
+  let x=hashSeed(seed)%total;
+  for(const p of profiles){x-=Math.max(1,p.weight);if(x<0)return p.key;}
+  return profiles[0].key;
+ }
 
  async function ff(args){
   const p=(await import('ffmpeg-static')).default;
@@ -181,8 +239,7 @@ module.exports=function registerDailyRoutes(app){
    {key:'cabin-rain',prompt:'Photorealistic cinematic remote mountain cabin surrounded by pine forest during gentle rain, misty valley, warm window glow, cozy sleep and stress-relief atmosphere, elegant realistic photography, wide 16:9'},
    {key:'desert-calm',prompt:'Photorealistic cinematic peaceful desert oasis at golden hour, palm trees, still water, distant mountains, warm amber light, minimalist meditation and deep relaxation atmosphere, premium realistic photography, wide 16:9'}
   ];
-  return profiles[hashSeed(seed)%profiles.length];
- }
+  const selected=pickWeightedProfile(seed,trendCache.profiles);\n  return profiles.find(p=>p.key===selected)||profiles[hashSeed(seed)%profiles.length];\n }
 
  function promptFor(seed){
   // Selección basada en los patrones de los vídeos con más reproducciones del canal:
@@ -386,6 +443,7 @@ module.exports=function registerDailyRoutes(app){
   const image=path.join(TEMP_DIR,'daily-'+stamp+'.img'),aud=path.join(TEMP_DIR,'daily-'+stamp+'.wav');
   const out=path.join(VIDEO_DIR,'daily-'+stamp+'.mp4');
   try{
+   if(youtubeMode)await refreshMusicoterapiaTrends();
    const theme=youtubeMode?youtubeProfileFor(seed):promptFor(seed);
    const prompt=theme.prompt;
    const progress=(p,m)=>{if(typeof onProgress==='function')onProgress(p,m);};
@@ -464,7 +522,7 @@ module.exports=function registerDailyRoutes(app){
  app.get('/api/daily-video-status',async(req,res)=>res.json(jobs.get(String(req.query.jobId))||{status:'unknown'}));
  app.post('/api/daily-video-cron',async(req,res)=>{
   const secret=process.env.DAILY_CRON_SECRET;if(secret&&req.get('x-daily-secret')!==secret)return res.status(401).json({error:'Unauthorized'});
-  try{const result=await makeVideo({durationMinutes:req.body?.durationMinutes||60,seed:new Date().toISOString().slice(0,10)});res.json({ok:true,result});}
+  try{const result=await makeVideo({durationMinutes:req.body?.durationMinutes||60,seed:new Date().toISOString().slice(0,10),youtubeMode:true});res.json({ok:true,result});}
   catch(e){res.status(500).json({ok:false,error:e.message});}
  });
 };
