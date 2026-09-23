@@ -63,8 +63,31 @@ module.exports=function(app){
    return res.json({configured:true,connected:false,error:e.message});
   }
  });
- app.get("/api/youtube/connect",(req,res)=>res.redirect("/api/auth/login"));
- app.get("/api/youtube/callback",(req,res)=>res.redirect("/api/auth/callback?"+new URLSearchParams(req.query).toString()));
+ app.get("/api/youtube/connect",(req,res)=>{
+  try{
+   const sid=sessionSub(req);
+   if(!sid) return res.redirect("/api/auth/login?return=youtube");
+   if(!ready()) return res.status(500).send("Configura YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET y YOUTUBE_REDIRECT_URI en Render.");
+   const c=cfg(),state=makeState(),u=new URL("https://accounts.google.com/o/oauth2/v2/auth");
+   u.searchParams.set("client_id",c.id);u.searchParams.set("redirect_uri",c.redirect);u.searchParams.set("response_type","code");
+   u.searchParams.set("scope","https://www.googleapis.com/auth/youtube.upload");u.searchParams.set("access_type","offline");u.searchParams.set("prompt","consent");u.searchParams.set("state",state);
+   res.redirect(u.toString());
+  }catch(e){res.status(500).send("No se pudo iniciar la conexión con YouTube: "+e.message)}
+ });
+ app.get("/api/youtube/callback",async(req,res)=>{
+  try{
+   const sid=sessionSub(req);
+   if(!sid) return res.redirect("/api/auth/login?return=youtube");
+   if(!validState(String(req.query.state||""))) throw Error("Estado OAuth no válido o caducado");
+   const c=cfg(),r=await fetch("https://oauth2.googleapis.com/token",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({code:String(req.query.code||""),client_id:c.id,client_secret:c.secret,redirect_uri:c.redirect,grant_type:"authorization_code"})}),d=await r.json();
+   if(!r.ok) throw Error(d.error_description||d.error||"Autorización de YouTube rechazada");
+   const old=await token(sid).catch(()=>null);
+   const account={...old,...d,created_at:Date.now(),user:old?.user||{id:sid}};
+   await save(account,sid);
+   await save(account,"default");
+   res.redirect("/?youtube=connected");
+  }catch(e){res.status(500).send("No se pudo vincular YouTube: "+e.message)}
+ });
  app.get("/api/user/preferences",async(req,res)=>{try{const sid=sessionSub(req);if(!sid)return res.status(401).json({error:"Inicia sesión"});const t=await token(sid);res.json({preferences:t?.preferences||{}})}catch(e){res.status(500).json({error:e.message})}});
  app.put("/api/user/preferences",async(req,res)=>{try{const sid=sessionSub(req);if(!sid)return res.status(401).json({error:"Inicia sesión"});const t=await token(sid);if(!t)return res.status(401).json({error:"Inicia sesión"});const preferences=(req.body&&typeof req.body.preferences==="object")?req.body.preferences:{};await save({...t,preferences},sid);res.json({ok:true})}catch(e){res.status(500).json({error:e.message})}});
  app.post("/api/youtube/disconnect",async(req,res)=>{try{const sid=sessionSub(req);if(!sid)throw Error("No has iniciado sesión");await deleteToken(sid);if(sid!=="default")await deleteToken("default");res.json({ok:true})}catch(e){res.status(500).json({error:e.message})}});
