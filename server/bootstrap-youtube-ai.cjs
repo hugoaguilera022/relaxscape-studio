@@ -510,6 +510,7 @@ require('./youtube-publish.cjs')(app);
 
 app.get('/health',(req,res)=>res.status(200).json({ok:true,service:'RelaxScape',port:PORT,corePort:INTERNAL_PORT}));
 app.get('/healthz',(req,res)=>res.status(200).json({ok:true,service:'RelaxScape',port:PORT,corePort:INTERNAL_PORT}));
+app.get('/',(req,res)=>res.sendFile(path.join(ROOT,'public','index.html')));
 
 app.use(proxyToCore);
 
