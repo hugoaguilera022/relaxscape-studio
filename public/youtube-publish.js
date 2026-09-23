@@ -23,9 +23,20 @@ document.addEventListener("DOMContentLoaded",()=>{
   g.disabled=true;s.textContent="🟡 Generando vídeo…";previewBox?.classList.add("hidden");
   try{
    const r=await fetch("/api/youtube/daily-generate",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify({durationMinutes:Number(document.querySelector("#ytDailyDuration")?.value||60)})});
-   const x=await r.json();if(!r.ok)throw Error(x.error||"No se pudo generar");
-   if(video){video.src=x.result.url+"?v="+Date.now();video.load()}
-   previewBox?.classList.remove("hidden");s.textContent="🟢 Vídeo generado. Puedes visualizarlo aquí antes de cualquier publicación.";window.__ytPendingVideo=x.result.name;
+   const x=await r.json();if(!r.ok)throw Error(x.error||"No se pudo iniciar la generación");
+   const jobId=x.result?.jobId;if(!jobId)throw Error("El servidor no devolvió el trabajo de generación.");
+   let done=null;
+   for(let i=0;i<900;i++){
+    const sr=await fetch("/api/youtube/daily-generate-status?jobId="+encodeURIComponent(jobId),{credentials:"same-origin",cache:"no-store"});
+    const sx=await sr.json();
+    if(sx.status==="succeeded"&&sx.result){done=sx.result;break}
+    if(sx.status==="failed")throw Error(sx.error||"La generación del vídeo falló.");
+    s.textContent="🟡 "+(sx.message||"Generando vídeo…")+" "+(sx.progress||0)+"%";
+    await new Promise(resolve=>setTimeout(resolve,2000));
+   }
+   if(!done)throw Error("La generación tardó demasiado.");
+   if(video){video.src=done.url+"?v="+Date.now();video.load()}
+   previewBox?.classList.remove("hidden");s.textContent="🟢 Vídeo generado. Puedes visualizarlo aquí antes de cualquier publicación.";window.__ytPendingVideo=done.name;
   }catch(e){s.textContent="🔴 "+e.message}finally{g.disabled=false}
  };
  refreshYouTubePublishStatus();
