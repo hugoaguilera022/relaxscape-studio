@@ -2814,11 +2814,13 @@ process.on("uncaughtException", e => console.error("[UncaughtException]", e));
 
 app.get("*splat", (_, res) => res.sendFile(path.join(PUBLIC, "index.html")));
 
-const port = Number(process.env.PORT || 3000);
-const server = app.listen(port, "0.0.0.0", () => {
-  console.log(`RelaxScape activo en http://0.0.0.0:${port}`);
-});
-// Render uses a reverse proxy in front of Node. Keep the connection open long
-// enough for the proxy and avoid intermittent 502s on long-running operations.
-server.keepAliveTimeout = 120000;
-server.headersTimeout = 125000;
+export default app;
+
+if (process.env.RELAXSCAPE_EMBEDDED !== "1") {
+  const port = Number(process.env.PORT || 3000);
+  const server = app.listen(port, "0.0.0.0", () => {
+    console.log(`RelaxScape activo en http://0.0.0.0:${port}`);
+  });
+  server.keepAliveTimeout = 120000;
+  server.headersTimeout = 125000;
+}
