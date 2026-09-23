@@ -25,14 +25,18 @@ function makeSession(user){
 function readSession(req){
   const raw=parseCookies(req).rs_session||"";
   const [payload,sig]=raw.split(".");
-  if(!payload||!sig||!crypto.timingSafeEqual(Buffer.from(sig),Buffer.from(sign(payload))))return null;
+  if(!payload||!sig)return null;
+  const expected=sign(payload),a=Buffer.from(sig),bb=Buffer.from(expected);
+  if(a.length!==bb.length||!crypto.timingSafeEqual(a,bb))return null;
   try{
     const x=JSON.parse(Buffer.from(payload,"base64url").toString());
     return x.exp>Date.now()?x.u:null;
   }catch{return null}
 }
-function setCookie(res,name,value,maxAge=604800){
-  res.setHeader("Set-Cookie",name+"="+encodeURIComponent(value)+"; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age="+maxAge);
+function setCookie(res,name,value,maxAge=2592000){
+  const cookie=name+"="+encodeURIComponent(value)+"; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age="+maxAge;
+  const current=res.getHeader("Set-Cookie");
+  res.setHeader("Set-Cookie",current?[...current,cookie]:[cookie]);
 }
 function redirectUri(req){
   return process.env.GOOGLE_REDIRECT_URI||("https://"+String(req.headers.host||"relaxscape-studio.onrender.com").replace(/:\d+$/,"")+"/api/auth/callback");
