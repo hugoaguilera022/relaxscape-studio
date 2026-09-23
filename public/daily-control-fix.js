@@ -5,16 +5,27 @@
   async function runNow(){
     const b=$('#runDailyNow');if(b)b.disabled=true;
     try{
-      status('Preparando el vídeo diario…');
-      const d=await api('/api/library');
-      const image=(d.images||[])[0], music=(d.music||[])[0];
-      if(!image||!music)throw Error('No hay paisaje y música disponibles. Pulsa primero «Buscar nuevos paisajes» y añade una pista de música.');
+      status('Iniciando el creador de MP4…');
+      const d=await api('/api/daily-video-now',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({durationMinutes:Number($('#scheduleDuration')?.value||60)})});
       localStorage.setItem('relaxscape_daily_last_run',new Date().toISOString());
-      const gen=$('#generate');
-      if(!gen)throw Error('No se encontró el generador de vídeo.');
-      status('Recursos encontrados. Iniciando el creador de MP4…');
-      gen.click();
-      setTimeout(()=>status('Generación iniciada. Puedes seguir el progreso en Inicio/Biblioteca.'),1200);
+      if(!d.jobId)throw Error('El servidor no devolvió un trabajo de generación.');
+      status('Vídeo diario en generación. Puedes dejar esta página abierta.');
+      for(let i=0;i<240;i++){
+        await new Promise(r=>setTimeout(r,3000));
+        const j=await api('/api/daily-video-status?jobId='+encodeURIComponent(d.jobId));
+        if(j.status==='succeeded'){
+          status('✓ Vídeo terminado. Abriendo el MP4…');
+          const v=j.result;
+          const video=$('#video'),down=$('#download'),result=$('#result');
+          if(video)video.src=v.url+'?v='+Date.now();
+          if(down){down.href=v.url;down.download=v.name||'relaxscape-daily.mp4'}
+          if(result)result.classList.remove('hidden');
+          return;
+        }
+        if(j.status==='failed')throw Error(j.error||'La generación del MP4 falló.');
+        status(`Generando MP4… ${Math.min(99,Math.round((i+1)/240*100))}%`);
+      }
+      throw Error('La generación está tardando más de lo esperado.');
     }catch(e){status(e.message||'No se pudo iniciar la generación.',true)}finally{if(b)b.disabled=false}
   }
   async function save(){
