@@ -4,7 +4,7 @@ async function refreshYouTubePublishStatus(){
  try{
   const r=await fetch("/api/youtube/status",{credentials:"same-origin",cache:"no-store"}),x=await r.json();
   if(!x.configured){s.textContent="Faltan las credenciales OAuth de Google en Render.";b.textContent="No configurado";if(g)g.disabled=true;if(card)card.classList.add("hidden");return}
-  if(x.connected){
+  if(x.connected && x.channel){
    s.textContent="✓ Canal de YouTube vinculado"; if(card)card.classList.remove("hidden"); if(name)name.textContent=x.channel?.title||"Canal de YouTube"; if(id)id.textContent=x.channel?.id?"ID del canal: "+x.channel.id:"Canal reconocido por Google"; if(avatar){avatar.src=x.channel?.thumbnail||"https://www.gstatic.com/youtube/img/branding/youtubelogo/svg/youtubelogo.svg";avatar.onerror=()=>{avatar.style.display="none"}}
    b.textContent="Conectado";
    if(g)g.disabled=false;
