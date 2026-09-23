@@ -9,9 +9,9 @@ module.exports=function(app){
  const supabaseKey=()=>String(process.env.SUPABASE_SERVICE_ROLE_KEY||"").replace(/\s+/g,"");
  const cookieSecret=()=>crypto.createHash("sha256").update(String(process.env.YOUTUBE_CLIENT_SECRET||"").trim()).digest();
  const sessionCookie="relaxscape_session";
- const sessionValue=sub=>{const raw=Buffer.from(JSON.stringify({sub})).toString("base64url");const sig=crypto.createHmac("sha256",cookieSecret()).update(raw).digest("base64url");return raw+"."+sig};
+ const sessionValue=(sub,email="",name="")=>{const raw=Buffer.from(JSON.stringify({sub,email,name})).toString("base64url");const sig=crypto.createHmac("sha256",cookieSecret()).update(raw).digest("base64url");return raw+"."+sig};
  const sessionSub=req=>{try{const h=String(req.headers.cookie||"");const m=h.match(new RegExp("(?:^|;\\s*)"+sessionCookie+"=([^;]+)"));if(!m)return null;const [raw,sig]=decodeURIComponent(m[1]).split(".");if(!raw||!sig)return null;const a=Buffer.from(sig),b=Buffer.from(crypto.createHmac("sha256",cookieSecret()).update(raw).digest("base64url"));if(a.length!==b.length||!crypto.timingSafeEqual(a,b))return null;return JSON.parse(Buffer.from(raw,"base64url").toString("utf8")).sub||null}catch{return null}};
- const setSession=(res,sub)=>res.setHeader("Set-Cookie",sessionCookie+"="+encodeURIComponent(sessionValue(sub))+"; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000");
+ const setSession=(res,sub,email="",name="")=>res.setHeader("Set-Cookie",sessionCookie+"="+encodeURIComponent(sessionValue(sub,email,name))+"; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000");
  const clearSession=res=>res.setHeader("Set-Cookie",sessionCookie+"=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0");
  const remoteReady=()=>!!(process.env.SUPABASE_URL&&supabaseKey()&&process.env.YOUTUBE_TOKEN_ENCRYPTION_KEY);
  const localToken=()=>{try{return JSON.parse(fs.readFileSync(tokenFile,"utf8"))}catch{return null}};
@@ -35,18 +35,22 @@ module.exports=function(app){
  }
  async function channel(req=null){const a=await access(req);if(!a)return null;const r=await fetch("https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true",{headers:{Authorization:"Bearer "+a}}),d=await r.json();if(!r.ok)throw Error(d.error?.message||"YouTube rechazó la conexión");const x=d.items?.[0];return x&&{id:x.id,title:x.snippet?.title,thumbnail:x.snippet?.thumbnails?.default?.url};}
  app.get("/api/auth/status",async(req,res)=>{
-  try {
-   const sub=sessionSub(req);
-   if(!sub)return res.json({authenticated:false});
-   const t=await token(sub);
-   if(!t)return res.json({authenticated:false});
-   res.json({authenticated:true,user:{id:sub,email:t.user?.email||"",name:t.user?.name||""},youtube:!!t.access_token,storage:remoteReady()?"supabase":"local"});
-  } catch(e) {
-   res.json({authenticated:false,error:e.message});
-  }
+  try{
+   const h=String(req.headers.cookie||"");
+   const m=h.match(new RegExp("(?:^|;\\s*)"+sessionCookie+"=([^;]+)"));
+   if(!m)return res.json({authenticated:false});
+   const [raw,sig]=decodeURIComponent(m[1]).split(".");
+   if(!raw||!sig)return res.json({authenticated:false});
+   const expected=crypto.createHmac("sha256",cookieSecret()).update(raw).digest("base64url");
+   const x=Buffer.from(sig),y=Buffer.from(expected);
+   if(x.length!==y.length||!crypto.timingSafeEqual(x,y))return res.json({authenticated:false});
+   const u=JSON.parse(Buffer.from(raw,"base64url").toString("utf8"));
+   if(!u.sub)return res.json({authenticated:false});
+   res.json({authenticated:true,user:{id:u.sub,email:u.email||"",name:u.name||""},storage:remoteReady()?"supabase":"local"});
+  }catch(e){res.json({authenticated:false,error:e.message})}
  });
  app.get("/api/auth/login",(req,res)=>{if(!ready())return res.status(500).send("Configura YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET y YOUTUBE_REDIRECT_URI en Render.");const c=cfg(),state=makeState(),u=new URL("https://accounts.google.com/o/oauth2/v2/auth");u.searchParams.set("client_id",c.id);u.searchParams.set("redirect_uri",c.redirect);u.searchParams.set("response_type","code");u.searchParams.set("scope","openid email profile https://www.googleapis.com/auth/youtube.upload");u.searchParams.set("access_type","offline");u.searchParams.set("prompt","consent");u.searchParams.set("state",state);res.redirect(u.toString())});
- app.get("/api/auth/callback",async(req,res)=>{try{const state=String(req.query.state||"");if(!validState(state))throw Error("Estado OAuth no válido o caducado");const c=cfg(),r=await fetch("https://oauth2.googleapis.com/token",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({code:String(req.query.code||""),client_id:c.id,client_secret:c.secret,redirect_uri:c.redirect,grant_type:"authorization_code"})}),d=await r.json();if(!r.ok)throw Error(d.error_description||d.error||"Autorización rechazada");const ur=await fetch("https://www.googleapis.com/oauth2/v3/userinfo",{headers:{Authorization:"Bearer "+d.access_token}}),u=await ur.json();if(!ur.ok||!u.sub)throw Error("Google no devolvió la identidad de la cuenta");const old=await token(u.sub).catch(()=>null);const account={...old,...d,created_at:Date.now(),user:{id:u.sub,email:u.email||"",name:u.name||""}};await save(account,u.sub);await save(account,"default");setSession(res,u.sub);res.redirect("/?login=connected")}catch(e){res.status(500).send("No se pudo iniciar sesión: "+e.message)}});
+ app.get("/api/auth/callback",async(req,res)=>{try{const state=String(req.query.state||"");if(!validState(state))throw Error("Estado OAuth no válido o caducado");const c=cfg(),r=await fetch("https://oauth2.googleapis.com/token",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({code:String(req.query.code||""),client_id:c.id,client_secret:c.secret,redirect_uri:c.redirect,grant_type:"authorization_code"})}),d=await r.json();if(!r.ok)throw Error(d.error_description||d.error||"Autorización rechazada");const ur=await fetch("https://www.googleapis.com/oauth2/v3/userinfo",{headers:{Authorization:"Bearer "+d.access_token}}),u=await ur.json();if(!ur.ok||!u.sub)throw Error("Google no devolvió la identidad de la cuenta");const old=await token(u.sub).catch(()=>null);const account={...old,...d,created_at:Date.now(),user:{id:u.sub,email:u.email||"",name:u.name||""}};await save(account,u.sub);await save(account,"default");setSession(res,u.sub,u.email||"",u.name||"");res.redirect("/?login=connected")}catch(e){res.status(500).send("No se pudo iniciar sesión: "+e.message)}});
  app.post("/api/auth/logout",(req,res)=>{clearSession(res);res.json({ok:true})});
  app.get("/api/youtube/status", async (req,res)=>{
   try {
