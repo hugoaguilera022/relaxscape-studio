@@ -9,25 +9,35 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Ensure daily control script is loaded
+      - name: Inject daily backend and frontend
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          # Load frontend fix.
           p=Path('public/index.html')
           s=p.read_text()
-          tag='<script src="/daily-control-fix.js?v=20260923-02"></script>'
+          tag='<script src="/daily-control-fix.js?v=20260923-03"></script>'
           if tag not in s:
               marker='</body>'
-              if marker not in s:
-                  raise SystemExit('index.html has no </body> marker')
+              if marker not in s: raise SystemExit('index.html has no </body>')
               s=s.replace(marker, tag+'\n'+marker, 1)
+              p.write_text(s)
+          # Register backend routes before the server starts listening.
+          p=Path('server/bootstrap-youtube-ai.cjs')
+          s=p.read_text()
+          req="require('./daily-routes.cjs')(app);"
+          if req not in s:
+              marker='app.listen('
+              i=s.find(marker)
+              if i<0: raise SystemExit('bootstrap has no app.listen marker')
+              s=s[:i]+req+'\n'+s[i:]
               p.write_text(s)
           PY
       - name: Commit injection
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add public/index.html
+          git add public/index.html server/bootstrap-youtube-ai.cjs
           git diff --cached --quiet && exit 0
-          git commit -m 'Load reliable daily generation controls'
+          git commit -m 'Fix daily generation backend and controls'
           git push
