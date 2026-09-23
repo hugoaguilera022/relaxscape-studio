@@ -65,12 +65,10 @@ module.exports=function(app){
  });
  app.get("/api/youtube/connect",(req,res)=>{
   try{
-   const sid=sessionSub(req);
-   if(!sid) return res.redirect("/api/auth/login?return=youtube");
    if(!ready()) return res.status(500).send("Configura YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET y YOUTUBE_REDIRECT_URI en Render.");
-   const c=cfg(),state=makeState("yt"),u=new URL("https://accounts.google.com/o/oauth2/v2/auth");
+   const sid=sessionSub(req),c=cfg(),kind=sid?"yt":"ytlogin",state=makeState(kind),u=new URL("https://accounts.google.com/o/oauth2/v2/auth");
    u.searchParams.set("client_id",c.id);u.searchParams.set("redirect_uri",c.redirect);u.searchParams.set("response_type","code");
-   u.searchParams.set("scope","https://www.googleapis.com/auth/youtube.upload");u.searchParams.set("access_type","offline");u.searchParams.set("prompt","consent");u.searchParams.set("state",state);
+   u.searchParams.set("scope",sid?"https://www.googleapis.com/auth/youtube.upload":"openid email profile https://www.googleapis.com/auth/youtube.upload");u.searchParams.set("access_type","offline");u.searchParams.set("prompt","consent");u.searchParams.set("state",state);
    res.redirect(u.toString());
   }catch(e){res.status(500).send("No se pudo iniciar la conexión con YouTube: "+e.message)}
  });
@@ -79,13 +77,14 @@ module.exports=function(app){
    const state=String(req.query.state||"");
    if(!validState(state)) throw Error("Estado OAuth no válido o caducado");
    const raw=state.split(".")[0],kind=raw.split(":")[0];
-   if(kind==="auth"){
+   if(kind==="auth"||kind==="ytlogin"){
     const c=cfg(),r=await fetch("https://oauth2.googleapis.com/token",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({code:String(req.query.code||""),client_id:c.id,client_secret:c.secret,redirect_uri:c.redirect,grant_type:"authorization_code"})}),d=await r.json();
     if(!r.ok) throw Error(d.error_description||d.error||"Autorización de Google rechazada");
     const ur=await fetch("https://www.googleapis.com/oauth2/v3/userinfo",{headers:{Authorization:"Bearer "+d.access_token}}),u=await ur.json();
     if(!ur.ok||!u.sub) throw Error("Google no devolvió la identidad de la cuenta");
-    setSession(res,u.sub,u.email||"",u.name||"");
-    return res.redirect("/api/youtube/connect");
+    const old=await token(u.sub).catch(()=>null),account={...old,...d,created_at:Date.now(),user:{id:u.sub,email:u.email||"",name:u.name||""}};
+    await save(account,u.sub);await save(account,"default");setSession(res,u.sub,u.email||"",u.name||"");
+    return res.redirect(kind==="ytlogin"?"/?youtube=connected":"/?login=connected");
    }
    const sid=sessionSub(req);
    if(!sid) return res.redirect("/api/auth/login?return=youtube");
