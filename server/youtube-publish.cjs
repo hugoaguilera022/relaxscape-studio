@@ -111,7 +111,16 @@ module.exports=function(app){
  async function upload(file,req,meta={}){
   const a=await access(req);if(!a)throw Error("Primero inicia sesión y vincula YouTube");const st=await fsp.stat(file),date=new Date().toLocaleDateString("es-ES",{timeZone:process.env.DAILY_TIMEZONE||"Europe/Madrid"}),title=String(meta.title||"RelaxScape · Naturaleza y relajación · "+date).slice(0,100),description=String(meta.description||"Vídeo original de relajación, naturaleza y sonidos ambientales creado con RelaxScape Studio."),tags=Array.isArray(meta.tags)&&meta.tags.length?meta.tags.slice(0,30).map(String):["relajación","naturaleza","meditación","sleep","relax","ambient"],privacyStatus=["public","private","unlisted"].includes(meta.privacyStatus)?meta.privacyStatus:"public",init=await fetch("https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status",{method:"POST",headers:{Authorization:"Bearer "+a,"Content-Type":"application/json","X-Upload-Content-Length":String(st.size),"X-Upload-Content-Type":"video/mp4"},body:JSON.stringify({snippet:{title,description,tags,categoryId:"22"},status:{privacyStatus,selfDeclaredMadeForKids:false}})});
   const loc=init.headers.get("location");if(!init.ok||!loc){const d=await init.json().catch(()=>({}));throw Error(d.error?.message||"No se pudo iniciar la subida")};
-  const r=await fetch(loc,{method:"PUT",headers:{Authorization:"Bearer "+a,"Content-Type":"video/mp4","Content-Length":String(st.size)},body:fs.createReadStream(file),duplex:"half"}),d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error?.message||"Falló la subida");return {id:d.id,url:"https://www.youtube.com/watch?v="+d.id};
+  const r=await fetch(loc,{method:"PUT",headers:{Authorization:"Bearer "+a,"Content-Type":"video/mp4","Content-Length":String(st.size)},body:fs.createReadStream(file),duplex:"half"}),d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error?.message||"Falló la subida");
+  let thumbnailSet=false;
+  if(meta.thumbnail){
+   try{
+    const th=await fsp.stat(meta.thumbnail);
+    const tr=await fetch("https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId="+encodeURIComponent(d.id),{method:"POST",headers:{Authorization:"Bearer "+a,"Content-Type":"image/jpeg","Content-Length":String(th.size)},body:fs.createReadStream(meta.thumbnail),duplex:"half"});
+    thumbnailSet=tr.ok;
+   }catch(e){console.error("[YouTube thumbnail]",e.message)}
+  }
+  return {id:d.id,url:"https://www.youtube.com/watch?v="+d.id,thumbnailSet};
  }
  async function startYouTubeGeneration(req,cron=false){
   const sid=cron?null:sessionSub(req),tokenId=sid||"default";
@@ -137,12 +146,15 @@ app.get("/api/youtube/daily-generate-status",async(req,res)=>{
     if(q.status==="succeeded"&&q.result){
       const file=path.join(videoDir,q.result.name);
       if(!fs.existsSync(file))throw Error("No se encontró el vídeo generado");
-      return res.json({status:"succeeded",progress:100,message:"Vídeo terminado",result:{file,name:q.result.name,url:"/media/videos/"+encodeURIComponent(q.result.name),durationMinutes:q.result.durationMinutes,title:q.result.title,titleOptions:q.result.titleOptions,description:q.result.description,tags:q.result.tags,theme:q.result.theme}});
+      return res.json({status:"succeeded",progress:100,message:"Vídeo terminado",result:{file,name:q.result.name,url:"/media/videos/"+encodeURIComponent(q.result.name),durationMinutes:q.result.durationMinutes,title:q.result.title,titleOptions:q.result.titleOptions,description:q.result.description,tags:q.result.tags,theme:q.result.theme,thumbnailUrl:q.result.thumbnailUrl}});
     }
     if(q.status==="failed")return res.status(500).json({status:"failed",error:q.error||"Falló la generación"});
     res.json({status:q.status||"running",progress:q.progress||0,message:q.message||"Generando vídeo…"});
   }catch(e){res.status(500).json({status:"failed",error:e.message})}
 });
-app.post("/api/youtube/publish-existing",async(req,res)=>{try{const sid=sessionSub(req);if(!sid)throw Error("Primero inicia sesión en RelaxScape");if(!await token(sid))throw Error("Primero vincula tu canal de YouTube");const name=path.basename(String(req.body?.name||""));if(!name||name!==String(req.body?.name||""))throw Error("Vídeo no válido");const file=path.join(videoDir,name);if(!fs.existsSync(file))throw Error("El vídeo ya no está disponible");res.json({ok:true,result:await upload(file,req,{title:req.body?.title,description:req.body?.description,tags:req.body?.tags,privacyStatus:req.body?.privacyStatus})});}catch(e){res.status(500).json({ok:false,error:e.message})}});
+app.post("/api/youtube/publish-existing",async(req,res)=>{try{const sid=sessionSub(req);if(!sid)throw Error("Primero inicia sesión en RelaxScape");if(!await token(sid))throw Error("Primero vincula tu canal de YouTube");const name=path.basename(String(req.body?.name||""));if(!name||name!==String(req.body?.name||""))throw Error("Vídeo no válido");const file=path.join(videoDir,name);if(!fs.existsSync(file))throw Error("El vídeo ya no está disponible");
+ const thumbnailName=path.basename(String(req.body?.thumbnailName||""));
+ const thumbnail=thumbnailName.startsWith("thumb-")?path.join(videoDir,thumbnailName):null;
+ res.json({ok:true,result:await upload(file,req,{title:req.body?.title,description:req.body?.description,tags:req.body?.tags,privacyStatus:req.body?.privacyStatus,thumbnail:thumbnail&&fs.existsSync(thumbnail)?thumbnail:null})});}catch(e){res.status(500).json({ok:false,error:e.message})}});
 app.post("/api/youtube/daily-publish",async(req,res)=>{try{const secret=String(process.env.YOUTUBE_PUBLISH_SECRET||"");if(!secret||req.get("x-youtube-secret")!==secret)throw Error("No autorizado");if(!await token("default"))throw Error("Primero vincula tu canal de YouTube con Google");const generated=await generateForYouTube(req,true);res.json({ok:true,result:await upload(generated.file,null)});}catch(e){res.status(500).json({ok:false,error:e.message})}});
 };
