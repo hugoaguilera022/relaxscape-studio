@@ -239,7 +239,9 @@ module.exports=function registerDailyRoutes(app){
    {key:'cabin-rain',prompt:'Photorealistic cinematic remote mountain cabin surrounded by pine forest during gentle rain, misty valley, warm window glow, cozy sleep and stress-relief atmosphere, elegant realistic photography, wide 16:9'},
    {key:'desert-calm',prompt:'Photorealistic cinematic peaceful desert oasis at golden hour, palm trees, still water, distant mountains, warm amber light, minimalist meditation and deep relaxation atmosphere, premium realistic photography, wide 16:9'}
   ];
-  const selected=pickWeightedProfile(seed,trendCache.profiles);\n  return profiles.find(p=>p.key===selected)||profiles[hashSeed(seed)%profiles.length];\n }
+  const selected=pickWeightedProfile(seed,trendCache.profiles);
+  return profiles.find(p=>p.key===selected)||profiles[hashSeed(seed)%profiles.length];
+ }
 
  function promptFor(seed){
   // Selección basada en los patrones de los vídeos con más reproducciones del canal:
