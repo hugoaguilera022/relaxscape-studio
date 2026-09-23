@@ -26,7 +26,15 @@ module.exports=function(app){
  const ready=()=>{const c=cfg();return !!(c.id&&c.secret&&c.redirect)};
  async function access(req=null){
   const sid=req?sessionSub(req):null;
-  let t=await token(sid||"default");if(!t)return null;
+  let t=await token(sid||"default");
+  // La sesión web y el canal deben pertenecer a la misma cuenta de Google.
+  // Si el token de la sesión no aparece en Supabase, usamos el token global
+  // únicamente cuando su usuario coincide con la sesión actual.
+  if(!t&&sid){
+   const fallback=await token("default");
+   if(fallback?.user?.id===sid)t=fallback;
+  }
+  if(!t)return null;
   if(t.access_token&&Date.now()-t.created_at<((t.expires_in||3600)-120)*1000)return t.access_token;
   if(!t.refresh_token)return t.access_token;
   const c=cfg(),r=await fetch("https://oauth2.googleapis.com/token",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({client_id:c.id,client_secret:c.secret,refresh_token:t.refresh_token,grant_type:"refresh_token"})}),d=await r.json();
