@@ -83,6 +83,21 @@ module.exports=function registerDailyRoutes(app){
   return {provider:'Unsplash',sourceUrl:url};
  }
 
+ function youtubeProfileFor(seed){
+  // Perfiles originales construidos a partir de patrones descriptivos de los vídeos
+  // con más reproducciones de Musicoterapia: zen/anti-estrés, estudio/concentración,
+  // meditación con mar/agua, piano, flauta celta, sueño y paisajes naturales.
+  const profiles=[
+   {key:'zen-piano',prompt:'Photorealistic cinematic wide landscape for a long-form zen relaxation video: vast turquoise mountain lake, layered pine mountains, soft dawn mist, warm peach and gold sunrise, mirror reflections, elegant tranquil wellness mood, lush natural detail, cinematic depth, no people, no buildings, no text, no logos, original scene'},
+   {key:'ocean-meditation',prompt:'Photorealistic cinematic ocean meditation landscape: quiet turquoise sea meeting a secluded rocky beach, gentle rolling waves, distant cliffs, soft sunrise haze, luminous sky, peaceful premium wellness aesthetic, realistic water reflections, wide 16:9 composition, no people, no buildings, no text, no logos, original scene'},
+   {key:'focus-piano',prompt:'Photorealistic cinematic landscape designed for long study and concentration music: serene Japanese-inspired garden beside a still lake, elegant trees, distant mountains, early morning light, subtle fog, balanced composition, refined calm atmosphere, natural greens and blue tones, wide 16:9, no people, no buildings, no text, no logos, original scene'},
+   {key:'celtic-flute',prompt:'Photorealistic cinematic Celtic-inspired nature panorama: emerald valley, ancient mossy forest, winding river and waterfall, dramatic misty mountains, soft cloudy daylight, rich deep greens, mystical but completely realistic natural scenery, beautiful depth, wide 16:9, no people, no buildings, no text, no logos, original scene'},
+   {key:'deep-sleep',prompt:'Photorealistic cinematic deep-sleep landscape: still mountain lake at blue hour, dark pine forest, moonlight path across the water, faint stars, soft low fog, deep navy and silver tones, extremely peaceful premium relaxation aesthetic, wide 16:9, no people, no buildings, no text, no logos, original scene'},
+   {key:'spa-water',prompt:'Photorealistic cinematic luxury nature spa landscape: clear tropical lagoon, smooth river stones, waterfall, lush rainforest and palms, soft golden morning light, gentle mist, serene meditation and massage atmosphere, realistic textures, wide 16:9, no people, no buildings, no text, no logos, original scene'}
+  ];
+  return profiles[hashSeed(seed)%profiles.length];
+ }
+
  function promptFor(seed){
   // Selección basada en los patrones de los vídeos con más reproducciones del canal:
   // zen/anti-estrés, concentración/estudio, sueño/relajación y estética celta/natural.
@@ -113,6 +128,39 @@ module.exports=function registerDailyRoutes(app){
    }
   ];
   return themes[hashSeed(seed)%themes.length];
+ }
+
+ function writeYouTubeWav(out,seconds,seed){
+  const sr=44100,dur=Math.min(300,Math.max(60,seconds)),n=sr*dur,channels=2;
+  const b=Buffer.alloc(44+n*channels*2);
+  b.write('RIFF',0);b.writeUInt32LE(36+n*channels*2,4);b.write('WAVE',8);
+  b.write('fmt ',12);b.writeUInt32LE(16,16);b.writeUInt16LE(1,20);b.writeUInt16LE(2,22);
+  b.writeUInt32LE(sr,24);b.writeUInt32LE(sr*4,28);b.writeUInt16LE(4,32);b.writeUInt16LE(16,34);
+  b.write('data',36);b.writeUInt32LE(n*4,40);
+  const s=hashSeed(seed),profile=s%6;
+  const roots=[[130.81,164.81,196,261.63],[110,146.83,164.81,220],[130.81,164.81,196,246.94],[146.83,196,220,293.66],[98,123.47,146.83,196],[110,138.59,164.81,220]][profile];
+  const scales=[[0,2,4,7,9,11],[0,2,4,7,9,12],[0,2,4,7,9,11],[0,3,5,7,10,12],[0,2,3,7,9,10],[0,2,4,7,9,11]][profile];
+  for(let i=0;i<n;i++){
+   const t=i/sr;let l=0,r=0;
+   for(let j=0;j<roots.length;j++){
+    const f=roots[j],slow=.65+.35*Math.sin(2*Math.PI*t/(75+j*11));
+    const a=Math.sin(2*Math.PI*f*t),bb=Math.sin(2*Math.PI*f*1.5*t+.7),level=.0105/(j+1)*slow;
+    l+=level*(a+.18*bb);r+=level*(Math.sin(2*Math.PI*f*t+.025)+.16*bb);
+   }
+   const bar=Math.floor(t/12),within=t-bar*12,ni=(bar*2+(s%5))%scales.length,midi=57+scales[ni]+(profile===4?-12:0),nf=440*Math.pow(2,(midi-69)/12);
+   if(within<7.5){
+    const env=Math.exp(-within*.58)*(1-Math.exp(-within*5)),p=Math.sin(2*Math.PI*nf*t)+.27*Math.sin(2*Math.PI*nf*2*t)+.09*Math.sin(2*Math.PI*nf*3*t);
+    l+=.030*env*p;r+=.030*env*(p*.92+Math.sin(2*Math.PI*nf*1.001*t)*.08);
+   }
+   const phrase=Math.sin(2*Math.PI*t/48),ff=roots[(Math.floor(t/48)+profile)%roots.length]*2,fe=.004*(.5+.5*phrase);
+   l+=fe*(Math.sin(2*Math.PI*ff*t)+.11*Math.sin(2*Math.PI*ff*2*t));r+=fe*(Math.sin(2*Math.PI*ff*t+.018)+.10*Math.sin(2*Math.PI*ff*2*t));
+   const wave=.5+.5*Math.sin(2*Math.PI*t/9.5+1.3),rain=.5+.5*Math.sin(2*Math.PI*t/5.7+2.1),water=.0018*wave*wave+.0012*rain*rain,ocean=profile===1?water*2.2:water;
+   l+=ocean*(Math.sin(2*Math.PI*37*t)+.35*Math.sin(2*Math.PI*61*t));r+=ocean*(Math.sin(2*Math.PI*39*t+.4)+.35*Math.sin(2*Math.PI*63*t));
+   const breath=.0018*(.5+.5*Math.sin(2*Math.PI*t/18));l+=breath*Math.sin(2*Math.PI*55*t);r+=breath*Math.sin(2*Math.PI*55*t+.03);
+   l=Math.max(-.38,Math.min(.38,l));r=Math.max(-.38,Math.min(.38,r));
+   const pos=44+i*4;b.writeInt16LE(Math.round(l*32767),pos);b.writeInt16LE(Math.round(r*32767),pos+2);
+  }
+  fs.writeFileSync(out,b);
  }
 
  function writeWav(out,seconds,seed){
@@ -204,18 +252,18 @@ module.exports=function registerDailyRoutes(app){
   fs.writeFileSync(out,b);
  }
 
- async function makeVideo({durationMinutes=60,seed='daily'}){
+ async function makeVideo({durationMinutes=60,seed='daily',youtubeMode=false}){
   const minutes=Math.max(1,Math.min(1440,Number(durationMinutes)||60)),seconds=Math.max(60,minutes*60);
   const stamp=new Date().toISOString().replace(/[:.]/g,'-');
   const image=path.join(TEMP_DIR,'daily-'+stamp+'.img'),aud=path.join(TEMP_DIR,'daily-'+stamp+'.wav');
   const out=path.join(VIDEO_DIR,'daily-'+stamp+'.mp4');
   try{
-   const theme=promptFor(seed);
+   const theme=youtubeMode?youtubeProfileFor(seed):promptFor(seed);
    const prompt=theme.prompt;
    let imageInfo=await generateFreeAIImage(image,prompt,seed);
    if(!imageInfo)imageInfo=await downloadLandscape(image,seed);
    const segmentSeconds=Math.min(seconds,300);
-   writeWav(aud,segmentSeconds,seed);
+   if(youtubeMode)writeYouTubeWav(aud,segmentSeconds,seed);else writeWav(aud,segmentSeconds,seed);
    // El segmento de audio ahora dura hasta 5 minutos completos. Se repite ese bloque,
    // nunca un bloque de 10 s, y el WAV está construido para cerrar el loop suavemente.
    const segment=path.join(TEMP_DIR,'segment-'+stamp+'.mp4');
@@ -236,9 +284,17 @@ module.exports=function registerDailyRoutes(app){
     spa:['Música para Meditación y Spa · Agua, Naturaleza y Relajación','Relajación Profunda · Música de Spa y Paisajes Naturales','Música Relajante para Meditar · Naturaleza y Agua'],
     rain:['Sonidos de Lluvia y Música Relajante · Bosque para Dormir','Lluvia en el Bosque · Música para Dormir y Relajarse','Música Relajante con Lluvia · Calma y Sueño Profundo']
    };
-   const titleOptions=titles[theme.key]||titles.zen;
+   const youtubeTitles={
+    'zen-piano':['Música Zen Relajante para Calmar la Mente · Paisaje de Montaña','Música Relajante de Piano y Naturaleza · Meditación Profunda','Música Zen para Reducir el Estrés · Lago, Montañas y Piano'],
+    'ocean-meditation':['Música Relajante con Olas del Mar · Meditación y Calma','Música para Yoga y Meditación · Mar Tranquilo y Piano','Sonidos del Mar y Música Relajante · Paz, Calma y Descanso'],
+    'focus-piano':['Música para Estudiar, Trabajar y Concentrarse · Piano y Naturaleza','Música Relajante para Concentración · Estudio y Trabajo','Música Ambiental para Estudiar · Piano Suave y Paisaje Natural'],
+    'celtic-flute':['Música Celta Relajante · Flauta, Bosque y Montañas','Música Celta Instrumental para Relajarse · Naturaleza y Río','Flauta Celta y Paisajes Naturales · Música para Meditar'],
+    'deep-sleep':['Música para Dormir Profundamente · Noche, Lago y Relajación','Música Relajante para Dormir · Sueño Profundo y Naturaleza','Música para Dormir y Descansar · Paisaje Nocturno y Calma'],
+    'spa-water':['Música Relajante para Spa, Yoga y Meditación · Agua y Naturaleza','Música de Spa para Relajarse · Cascada, Bosque y Calma','Meditación Profunda · Música Relajante y Paisaje Natural']
+   };
+   const titleOptions=(youtubeMode?youtubeTitles[theme.key]:titles[theme.key])||titles.zen;
    return {url:'/media/videos/'+path.basename(out),name:path.basename(out),durationMinutes:minutes,
-    generatedImage:true,imageProvider:imageInfo.provider,reference:'@musicoterapiateam',storedInLibrary:false,paidApis:false,
+    generatedImage:true,imageProvider:imageInfo.provider,reference:youtubeMode?'Musicoterapia viral patterns':'@musicoterapiateam',storedInLibrary:false,paidApis:false,
     aiImage:imageInfo.provider.includes('FLUX'),theme:theme.key,title:titleOptions[0],titleOptions,
     description:'Vídeo original de RelaxScape Studio con música ambiental y paisaje natural. Ideal para relajación, meditación, estudio o descanso.',
     tags:['música relajante','relajación','meditación','naturaleza','sleep','ambient','calma']};
