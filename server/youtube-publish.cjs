@@ -4,7 +4,7 @@ module.exports=function(app){
  fs.mkdirSync(path.dirname(tokenFile),{recursive:true});fs.mkdirSync(videoDir,{recursive:true});
  const cfg=()=>({id:process.env.YOUTUBE_CLIENT_ID,secret:process.env.YOUTUBE_CLIENT_SECRET,redirect:process.env.YOUTUBE_REDIRECT_URI});
  const signState=s=>crypto.createHmac("sha256",String(process.env.YOUTUBE_CLIENT_SECRET||"").trim()).update(s).digest("hex");
- const makeState=()=>{const s=crypto.randomBytes(20).toString("hex");return s+"."+signState(s)};
+ const makeState=(kind="yt")=>{const s=kind+":"+crypto.randomBytes(20).toString("hex");return s+"."+signState(s)};
  const validState=s=>{const [raw,sig]=String(s||"").split(".");if(!raw||!sig)return false;const a=Buffer.from(sig),b=Buffer.from(signState(raw));return a.length===b.length&&crypto.timingSafeEqual(a,b)};
  const supabaseKey=()=>String(process.env.SUPABASE_SERVICE_ROLE_KEY||"").replace(/\s+/g,"");
  const cookieSecret=()=>crypto.createHash("sha256").update(String(process.env.YOUTUBE_CLIENT_SECRET||"").trim()).digest();
@@ -49,7 +49,7 @@ module.exports=function(app){
    res.json({authenticated:true,user:{id:u.sub,email:u.email||"",name:u.name||""},storage:remoteReady()?"supabase":"local"});
   }catch(e){res.json({authenticated:false,error:e.message})}
  });
- app.get("/api/auth/login",(req,res)=>{if(!ready())return res.status(500).send("Configura YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET y YOUTUBE_REDIRECT_URI en Render.");const returning=String(req.query.return||"")==="youtube";const c=cfg(),state=makeState(),u=new URL("https://accounts.google.com/o/oauth2/v2/auth");if(returning)res.setHeader("Set-Cookie","relaxscape_return=youtube; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600");u.searchParams.set("client_id",c.id);u.searchParams.set("redirect_uri",c.redirect);u.searchParams.set("response_type","code");u.searchParams.set("scope","openid email profile");u.searchParams.set("access_type","offline");u.searchParams.set("prompt","select_account");u.searchParams.set("state",state);res.redirect(u.toString())});
+ app.get("/api/auth/login",(req,res)=>{if(!ready())return res.status(500).send("Configura YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET y YOUTUBE_REDIRECT_URI en Render.");const returning=String(req.query.return||"")==="youtube";const c=cfg(),state=makeState("auth"),u=new URL("https://accounts.google.com/o/oauth2/v2/auth");if(returning)res.setHeader("Set-Cookie","relaxscape_return=youtube; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600");u.searchParams.set("client_id",c.id);u.searchParams.set("redirect_uri",c.redirect);u.searchParams.set("response_type","code");u.searchParams.set("scope","openid email profile");u.searchParams.set("access_type","offline");u.searchParams.set("prompt","select_account");u.searchParams.set("state",state);res.redirect(u.toString())});
  app.get("/api/auth/callback",async(req,res)=>{try{const state=String(req.query.state||"");if(!validState(state))throw Error("Estado OAuth no válido o caducado");const c=cfg(),r=await fetch("https://oauth2.googleapis.com/token",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({code:String(req.query.code||""),client_id:c.id,client_secret:c.secret,redirect_uri:c.redirect,grant_type:"authorization_code"})}),d=await r.json();if(!r.ok)throw Error(d.error_description||d.error||"Autorización rechazada");const ur=await fetch("https://www.googleapis.com/oauth2/v3/userinfo",{headers:{Authorization:"Bearer "+d.access_token}}),u=await ur.json();if(!ur.ok||!u.sub)throw Error("Google no devolvió la identidad de la cuenta");const old=await token(u.sub).catch(()=>null);const account={...old,...d,created_at:Date.now(),user:{id:u.sub,email:u.email||"",name:u.name||""}};await save(account,u.sub);await save(account,"default");setSession(res,u.sub,u.email||"",u.name||"");const rh=String(req.headers.cookie||"");const returning=rh.split(";").some(x=>x.trim().startsWith("relaxscape_return=youtube"));res.setHeader("Set-Cookie",[sessionCookie+"="+encodeURIComponent(sessionValue(u.sub,u.email||"",u.name||""))+"; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000","relaxscape_return=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0"]);res.redirect(returning?"/api/youtube/connect":"/?login=connected")}catch(e){res.status(500).send("No se pudo iniciar sesión: "+e.message)}});
  app.post("/api/auth/logout",(req,res)=>{clearSession(res);res.json({ok:true})});
  app.get("/api/youtube/status", async (req,res)=>{
@@ -68,7 +68,7 @@ module.exports=function(app){
    const sid=sessionSub(req);
    if(!sid) return res.redirect("/api/auth/login?return=youtube");
    if(!ready()) return res.status(500).send("Configura YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET y YOUTUBE_REDIRECT_URI en Render.");
-   const c=cfg(),state=makeState(),u=new URL("https://accounts.google.com/o/oauth2/v2/auth");
+   const c=cfg(),state=makeState("yt"),u=new URL("https://accounts.google.com/o/oauth2/v2/auth");
    u.searchParams.set("client_id",c.id);u.searchParams.set("redirect_uri",c.redirect);u.searchParams.set("response_type","code");
    u.searchParams.set("scope","https://www.googleapis.com/auth/youtube.upload");u.searchParams.set("access_type","offline");u.searchParams.set("prompt","consent");u.searchParams.set("state",state);
    res.redirect(u.toString());
@@ -76,9 +76,19 @@ module.exports=function(app){
  });
  app.get("/api/youtube/callback",async(req,res)=>{
   try{
+   const state=String(req.query.state||"");
+   if(!validState(state)) throw Error("Estado OAuth no válido o caducado");
+   const raw=state.split(".")[0],kind=raw.split(":")[0];
+   if(kind==="auth"){
+    const c=cfg(),r=await fetch("https://oauth2.googleapis.com/token",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({code:String(req.query.code||""),client_id:c.id,client_secret:c.secret,redirect_uri:c.redirect,grant_type:"authorization_code"})}),d=await r.json();
+    if(!r.ok) throw Error(d.error_description||d.error||"Autorización de Google rechazada");
+    const ur=await fetch("https://www.googleapis.com/oauth2/v3/userinfo",{headers:{Authorization:"Bearer "+d.access_token}}),u=await ur.json();
+    if(!ur.ok||!u.sub) throw Error("Google no devolvió la identidad de la cuenta");
+    setSession(res,u.sub,u.email||"",u.name||"");
+    return res.redirect("/api/youtube/connect");
+   }
    const sid=sessionSub(req);
    if(!sid) return res.redirect("/api/auth/login?return=youtube");
-   if(!validState(String(req.query.state||""))) throw Error("Estado OAuth no válido o caducado");
    const c=cfg(),r=await fetch("https://oauth2.googleapis.com/token",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({code:String(req.query.code||""),client_id:c.id,client_secret:c.secret,redirect_uri:c.redirect,grant_type:"authorization_code"})}),d=await r.json();
    if(!r.ok) throw Error(d.error_description||d.error||"Autorización de YouTube rechazada");
    const old=await token(sid).catch(()=>null);
