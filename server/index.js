@@ -10,6 +10,7 @@ import { setImmediate as yieldImmediate } from "timers/promises";
 import cron from "node-cron";
 import ffmpegPath from "ffmpeg-static";
 import { InferenceClient } from "@huggingface/inference";
+import registerDailyRoutes from "./daily-routes.cjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -36,6 +37,8 @@ app.use("/media/music", (req,res,next)=>{
   next();
 }, express.static(MUSIC_DIR, { etag:false, lastModified:false, maxAge:0 }));
 app.use("/media/videos", express.static(VIDEO_DIR));
+// Daily video generator: free route (FLUX public Space + local audio + FFmpeg).
+registerDailyRoutes(app);
 
 const imageUpload = multer({
   storage: multer.diskStorage({
