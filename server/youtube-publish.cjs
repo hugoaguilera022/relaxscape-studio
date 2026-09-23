@@ -38,7 +38,17 @@ module.exports=function(app){
  app.get("/api/auth/login",(req,res)=>{if(!ready())return res.status(500).send("Configura YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET y YOUTUBE_REDIRECT_URI en Render.");const c=cfg(),state=makeState(),u=new URL("https://accounts.google.com/o/oauth2/v2/auth");u.searchParams.set("client_id",c.id);u.searchParams.set("redirect_uri",c.redirect);u.searchParams.set("response_type","code");u.searchParams.set("scope","openid email profile https://www.googleapis.com/auth/youtube.upload");u.searchParams.set("access_type","offline");u.searchParams.set("prompt","consent");u.searchParams.set("state",state);res.redirect(u.toString())});
  app.get("/api/auth/callback",async(req,res)=>{try{const state=String(req.query.state||"");if(!validState(state))throw Error("Estado OAuth no válido o caducado");const c=cfg(),r=await fetch("https://oauth2.googleapis.com/token",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({code:String(req.query.code||""),client_id:c.id,client_secret:c.secret,redirect_uri:c.redirect,grant_type:"authorization_code"})}),d=await r.json();if(!r.ok)throw Error(d.error_description||d.error||"Autorización rechazada");const ur=await fetch("https://www.googleapis.com/oauth2/v3/userinfo",{headers:{Authorization:"Bearer "+d.access_token}}),u=await ur.json();if(!ur.ok||!u.sub)throw Error("Google no devolvió la identidad de la cuenta");const old=await token(u.sub).catch(()=>null);const account={...old,...d,created_at:Date.now(),user:{id:u.sub,email:u.email||"",name:u.name||""}};await save(account,u.sub);await save(account,"default");setSession(res,u.sub);res.redirect("/?login=connected")}catch(e){res.status(500).send("No se pudo iniciar sesión: "+e.message)}});
  app.post("/api/auth/logout",(req,res)=>{clearSession(res);res.json({ok:true})});
- app.get("/api/youtube/status",async(req,res)=>{try{if(!ready())return res.json({configured:false,connected:false});const sid=sessionSub(req);if(!sid)return res.json({configured:true,connected:false,authenticated:false});const c=await channel(req);res.json({configured:true,connected:!!c,authenticated:true,channel:c,storage:remoteReady()?"supabase":"local"});}catch(e){res.json({configured:true,connected:false,error:e.message})}});
+ app.get("/api/youtube/status", async (req,res)=>{
+  try {
+   if(!ready()) return res.json({configured:false,connected:false});
+   const sid=sessionSub(req);
+   if(!sid) return res.json({configured:true,connected:false,authenticated:false});
+   const ch=await channel(req);
+   return res.json({configured:true,connected:!!ch,authenticated:true,channel:ch,storage:remoteReady()?"supabase":"local"});
+  } catch(e) {
+   return res.json({configured:true,connected:false,error:e.message});
+  }
+ });
  app.get("/api/youtube/connect",(req,res)=>res.redirect("/api/auth/login"));
  app.get("/api/youtube/callback",(req,res)=>res.redirect("/api/auth/callback?"+new URLSearchParams(req.query).toString()));
  app.get("/api/user/preferences",async(req,res)=>{try{const sid=sessionSub(req);if(!sid)return res.status(401).json({error:"Inicia sesión"});const t=await token(sid);res.json({preferences:t?.preferences||{}})}catch(e){res.status(500).json({error:e.message})}});
