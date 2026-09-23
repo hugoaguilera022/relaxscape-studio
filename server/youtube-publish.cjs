@@ -106,9 +106,10 @@ module.exports=function(app){
   const loc=init.headers.get("location");if(!init.ok||!loc){const d=await init.json().catch(()=>({}));throw Error(d.error?.message||"No se pudo iniciar la subida")};
   const r=await fetch(loc,{method:"PUT",headers:{Authorization:"Bearer "+a,"Content-Type":"video/mp4","Content-Length":String(st.size)},body:fs.createReadStream(file),duplex:"half"}),d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error?.message||"Falló la subida");return {id:d.id,url:"https://www.youtube.com/watch?v="+d.id};
  }
- async function generateForYouTube(req){
-  const sid=sessionSub(req);if(!sid)throw Error("Primero inicia sesión en RelaxScape con Google");
-  if(!await token(sid))throw Error("Primero vincula tu canal de YouTube con Google");
+ async function generateForYouTube(req,cron=false){
+  const sid=cron?null:sessionSub(req),tokenId=sid||"default";
+  if(!cron&&!sid)throw Error("Primero inicia sesión en RelaxScape con Google");
+  if(!await token(tokenId))throw Error("Primero vincula tu canal de YouTube con Google");
   const port=Number(process.env.PORT||10000);
   const s=await fetch("http://127.0.0.1:"+port+"/api/daily-video-now",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({durationMinutes:Number(req.body?.durationMinutes||60)})});
   const j=await s.json();if(!j.jobId)throw Error(j.error||"No se pudo iniciar el vídeo");
@@ -119,5 +120,5 @@ module.exports=function(app){
 }
 app.post("/api/youtube/daily-generate",async(req,res)=>{try{const result=await generateForYouTube(req);res.json({ok:true,result});}catch(e){res.status(500).json({ok:false,error:e.message})}});
 app.post("/api/youtube/publish-existing",async(req,res)=>{try{const sid=sessionSub(req);if(!sid)throw Error("Primero inicia sesión en RelaxScape");if(!await token(sid))throw Error("Primero vincula tu canal de YouTube");const name=path.basename(String(req.body?.name||""));if(!name||name!==String(req.body?.name||""))throw Error("Vídeo no válido");const file=path.join(videoDir,name);if(!fs.existsSync(file))throw Error("El vídeo ya no está disponible");res.json({ok:true,result:await upload(file,req)});}catch(e){res.status(500).json({ok:false,error:e.message})}});
-app.post("/api/youtube/daily-publish",async(req,res)=>{try{if(process.env.YOUTUBE_PUBLISH_SECRET&&req.get("x-youtube-secret")!==process.env.YOUTUBE_PUBLISH_SECRET)throw Error("No autorizado");const sid=sessionSub(req),tokenId=sid||"default";if(!await token(tokenId))throw Error("Primero inicia sesión con Google");const generated=await generateForYouTube(req);res.json({ok:true,result:await upload(generated.file,req)});}catch(e){res.status(500).json({ok:false,error:e.message})}});
+app.post("/api/youtube/daily-publish",async(req,res)=>{try{const secret=String(process.env.YOUTUBE_PUBLISH_SECRET||"");if(!secret||req.get("x-youtube-secret")!==secret)throw Error("No autorizado");if(!await token("default"))throw Error("Primero vincula tu canal de YouTube con Google");const generated=await generateForYouTube(req,true);res.json({ok:true,result:await upload(generated.file,null)});}catch(e){res.status(500).json({ok:false,error:e.message})}});
 };
