@@ -84,21 +84,41 @@ module.exports=function registerDailyRoutes(app){
  }
 
  function promptFor(seed){
-  const prompts=[
-   'Photorealistic cinematic landscape for a long-form relaxation and meditation video: serene mountain lake at sunrise, soft golden mist, calm water reflections, peaceful natural atmosphere, wide 16:9 composition, no people, no buildings, no text, no logos, original scene',
-   'Photorealistic cinematic landscape for sleep and relaxation: quiet tropical beach at sunset, gentle ocean waves, pastel sky, soft warm light, wide 16:9 composition, no people, no buildings, no text, no logos, original scene',
-   'Photorealistic cinematic nature landscape: deep green forest with a peaceful waterfall and river, soft morning fog, tranquil meditation atmosphere, wide 16:9 composition, no people, no buildings, no text, no logos, original scene',
-   'Photorealistic cinematic alpine landscape: clear mountain lake, pine forest, distant peaks, dawn light, peaceful wellness atmosphere, wide 16:9 composition, no people, no buildings, no text, no logos, original scene',
-   'Photorealistic cinematic night landscape for deep sleep: calm ocean, stars and moon reflection, subtle blue tones, peaceful atmosphere, wide 16:9 composition, no people, no buildings, no text, no logos, original scene',
-   'Photorealistic rainy forest landscape for meditation: soft rain, mist, calm stream, lush green vegetation, cinematic natural light, wide 16:9 composition, no people, no buildings, no text, no logos, original scene'
+  // Selección basada en los patrones de los vídeos con más reproducciones del canal:
+  // zen/anti-estrés, concentración/estudio, sueño/relajación y estética celta/natural.
+  const themes=[
+   {
+    key:'zen',
+    prompt:'Photorealistic cinematic nature scene for a very long-form zen relaxation and meditation video: crystal-clear mountain lake, lush forest, soft sunrise mist, warm golden light, subtle water reflections, peaceful spa and wellness atmosphere, highly detailed natural landscape, wide 16:9 composition, no people, no buildings, no text, no logos, original scene'
+   },
+   {
+    key:'focus',
+    prompt:'Photorealistic cinematic peaceful nature landscape for concentration, studying and working: elegant Japanese-inspired garden beside a quiet lake, gentle morning light, green trees, soft mist, calm water, refined tranquil atmosphere, beautiful depth, wide 16:9 composition, no people, no buildings, no text, no logos, original scene'
+   },
+   {
+    key:'sleep',
+    prompt:'Photorealistic cinematic night nature landscape for deep sleep and relaxation: quiet lake surrounded by dark pine forest, moonlight reflected on still water, soft blue tones, faint mist, stars, dreamy peaceful atmosphere, wide 16:9 composition, no people, no buildings, no text, no logos, original scene'
+   },
+   {
+    key:'celtic',
+    prompt:'Photorealistic cinematic Celtic-inspired natural landscape for relaxing instrumental music: emerald valley, ancient forest, waterfall and river, distant misty mountains, soft overcast light, magical but realistic atmosphere, rich greens, wide 16:9 composition, no people, no buildings, no text, no logos, original scene'
+   },
+   {
+    key:'spa',
+    prompt:'Photorealistic cinematic tropical spa landscape for relaxation and meditation: tranquil turquoise lagoon, smooth stones, lush palms and rainforest, soft sunrise, gentle water movement, warm natural light, luxurious peaceful wellness atmosphere, wide 16:9 composition, no people, no buildings, no text, no logos, original scene'
+   },
+   {
+    key:'rain',
+    prompt:'Photorealistic cinematic rainy forest for sleep and anxiety relief: lush green woodland, slow river, small waterfall, soft rainfall, atmospheric fog, muted natural colors, intimate peaceful mood, realistic water droplets, wide 16:9 composition, no people, no buildings, no text, no logos, original scene'
+   }
   ];
-  return prompts[hashSeed(seed)%prompts.length];
+  return themes[hashSeed(seed)%themes.length];
  }
 
  function writeWav(out,seconds,seed){
-  // Audio original de larga duración inspirado en el lenguaje general de Musicoterapia:
-  // pads cálidos, drones muy suaves, resonancias tipo cuenco y textura ambiental.
-  // Todo está diseñado para repetirse exactamente cada 5 minutos, sin cortes cada 10 s.
+  // Arquitectura sonora inspirada en los patrones observados en los vídeos más vistos:
+  // cama ambiental + piano/arpio sintético muy suave + textura de flauta/cuerdas +
+  // naturaleza abstracta. Es original y no utiliza ni copia las grabaciones del canal.
   const sr=44100, dur=Math.min(300,Math.max(60,seconds)), n=sr*dur;
   const channels=2, bytesPerSample=2;
   const b=Buffer.alloc(44+n*channels*bytesPerSample);
@@ -108,40 +128,58 @@ module.exports=function registerDailyRoutes(app){
   b.writeUInt16LE(channels*bytesPerSample,32);b.writeUInt16LE(16,34);
   b.write('data',36);b.writeUInt32LE(n*channels*bytesPerSample,40);
 
-  const s=hashSeed(seed);
-  const root=[100,110,120,140,160,180][s%6];
-  const chord=[root,root*1.2,root*1.5,root*2];
-  const phases=chord.map((_,i)=>((s+i*97)%1000)/1000*Math.PI*2);
-  const ambience=[
-    [0.0025,7.5],[0.0020,10],[0.0017,12],[0.0014,15],[0.0011,20]
-  ];
+  const s=hashSeed(seed), theme=s%4;
+  const roots=[[110,132,165,220],[100,120,150,200],[90,108,135,180],[120,144,180,240]][theme];
+  const phases=roots.map((_,i)=>((s+i*97)%1000)/1000*Math.PI*2);
+  const scale=theme===3?[0,3,5,7,10,12]:[0,2,4,7,9,11];
+  const ambience=[[.0025,7.5],[.0020,10],[.0017,12],[.0014,15],[.0011,20]];
 
   for(let i=0;i<n;i++){
     const t=i/sr;
     let l=0,r=0;
 
-    // Pad armónico muy lento: no es una melodía, sino una cama continua.
-    for(let j=0;j<chord.length;j++){
-      const f=chord[j];
+    // 1) Cama armónica continua, muy discreta.
+    for(let j=0;j<roots.length;j++){
+      const f=roots[j];
       const swell=.72+.28*Math.sin(2*Math.PI*t/(60+j*12));
       const tone=Math.sin(2*Math.PI*f*t+phases[j]);
-      const harmonic=Math.sin(2*Math.PI*f*0.5*t+phases[j]*.7);
-      const level=.010/(j+1)*swell;
-      l+=level*tone;
-      r+=level*Math.sin(2*Math.PI*f*t+phases[j]+0.035);
-      l+=.003/(j+1)*harmonic;
-      r+=.003/(j+1)*Math.sin(2*Math.PI*f*0.5*t+phases[j]*.7+0.05);
+      const airy=Math.sin(2*Math.PI*f*2*t+phases[j]*.7);
+      const level=.009/(j+1)*swell;
+      l+=level*tone+.0015*airy/(j+1);
+      r+=level*Math.sin(2*Math.PI*f*t+phases[j]+.035)+.0015*Math.sin(2*Math.PI*f*2*t+phases[j]*.7+.05)/(j+1);
     }
 
-    // Resonancias muy espaciadas, similares a un ambiente de meditación.
-    const pulse=Math.pow(Math.max(0,Math.sin(2*Math.PI*t/19)),12);
-    const shimmer=Math.pow(Math.max(0,Math.sin(2*Math.PI*t/37+1.2)),18);
-    l+=.0045*pulse*Math.sin(2*Math.PI*root*2.5*t);
-    r+=.0045*pulse*Math.sin(2*Math.PI*root*2.5*t+0.04);
-    l+=.0025*shimmer*Math.sin(2*Math.PI*root*3.5*t+0.3);
-    r+=.0025*shimmer*Math.sin(2*Math.PI*root*3.5*t+0.36);
+    // 2) "Piano/harpa": pequeñas notas espaciadas, sin convertirse en una canción.
+    // El patrón se repite a los 300 s y cambia según la semilla.
+    const bar=Math.floor(t/12), within=t-bar*12;
+    const noteIndex=(bar+(s%7))%scale.length;
+    const midi=57+scale[noteIndex]+(theme===2? -12:0);
+    const nf=440*Math.pow(2,(midi-69)/12);
+    if(within<4.8){
+      const env=Math.exp(-within*(theme===1?.95:1.25))*(1-Math.exp(-within*8));
+      const pluck=Math.sin(2*Math.PI*nf*t)+.32*Math.sin(2*Math.PI*nf*2*t)+.12*Math.sin(2*Math.PI*nf*3*t);
+      const shimmer=Math.sin(2*Math.PI*nf*1.003*t);
+      l+=.020*env*pluck;
+      r+=.020*env*(pluck*.88+shimmer*.12);
+    }
 
-    // Textura de aire periódica: todos los periodos dividen 300 s, así que el loop es limpio.
+    // 3) Capa sostenida tipo flauta/cuerda, respirando lentamente.
+    const phrase=Math.sin(2*Math.PI*t/36);
+    const fluteF=roots[(Math.floor(t/36)+theme)%roots.length]*2;
+    const fluteEnv=.0045*(.5+.5*phrase);
+    const flute=Math.sin(2*Math.PI*fluteF*t)+.12*Math.sin(2*Math.PI*fluteF*2*t);
+    l+=fluteEnv*flute;
+    r+=fluteEnv*Math.sin(2*Math.PI*fluteF*t+.018)+.0005*Math.sin(2*Math.PI*fluteF*2*t);
+
+    // 4) Campanas/resonancias muy lejanas y poco frecuentes.
+    const pulse=Math.pow(Math.max(0,Math.sin(2*Math.PI*t/19)),14);
+    const shimmer=Math.pow(Math.max(0,Math.sin(2*Math.PI*t/43+1.1)),20);
+    l+=.0038*pulse*Math.sin(2*Math.PI*roots[0]*3*t);
+    r+=.0038*pulse*Math.sin(2*Math.PI*roots[0]*3*t+.04);
+    l+=.0022*shimmer*Math.sin(2*Math.PI*roots[1]*3.5*t);
+    r+=.0022*shimmer*Math.sin(2*Math.PI*roots[1]*3.5*t+.05);
+
+    // 5) Textura de aire/agua abstracta, periódica para que el bloque de 5 min cierre bien.
     for(const [level,period] of ambience){
       const a=Math.sin(2*Math.PI*t/period+phases[0]);
       const b2=Math.sin(2*Math.PI*t/(period*1.5)+phases[1]);
@@ -149,13 +187,12 @@ module.exports=function registerDailyRoutes(app){
       r+=level*(a*.65+b2*.35);
     }
 
-    // Movimiento estéreo extremadamente lento.
+    // Estéreo lento y muy suave.
     const pan=.5+.5*Math.sin(2*Math.PI*t/73);
     const mid=(l+r)*.5, side=(l-r)*.5;
     l=mid+side*(.55+.45*pan);
     r=mid-side*(.55+.45*(1-pan));
 
-    // Nivel conservador para que el vídeo quede agradable a volumen alto.
     l=Math.max(-.35,Math.min(.35,l));
     r=Math.max(-.35,Math.min(.35,r));
     const pos=44+i*4;
@@ -171,7 +208,7 @@ module.exports=function registerDailyRoutes(app){
   const image=path.join(TEMP_DIR,'daily-'+stamp+'.img'),aud=path.join(TEMP_DIR,'daily-'+stamp+'.wav');
   const out=path.join(VIDEO_DIR,'daily-'+stamp+'.mp4');
   try{
-   const prompt=promptFor(seed);
+   const theme=promptFor(seed);\n   const prompt=theme.prompt;
    let imageInfo=await generateFreeAIImage(image,prompt,seed);
    if(!imageInfo)imageInfo=await downloadLandscape(image,seed);
    const segmentSeconds=Math.min(seconds,300);
