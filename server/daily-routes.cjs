@@ -594,7 +594,7 @@ module.exports=function registerDailyRoutes(app){
    progress(40,'Escenas originales preparadas ('+scenes.length+').');
    const audioSegments=[];
    const segmentSeconds=Math.min(600,Math.max(120,Math.min(seconds,600)));
-   for(let i=0;i<2&&i*segmentSeconds<seconds;i++){
+   for(let i=0;i<Math.min(6,Math.ceil(seconds/segmentSeconds));i++){
     const aud=path.join(work,'music-'+i+'.wav');
     const info=await generateBlueprintMusic(aud,blueprint,String(seed)+'-music-'+i,segmentSeconds,(p,m)=>progress(40+Math.round(p*.45),m));
     if(info)audioSegments.push(aud);
@@ -619,11 +619,7 @@ module.exports=function registerDailyRoutes(app){
    const audioDuration=seconds;
    await ff(['-y','-stream_loop','-1','-i',visual,'-stream_loop','-1','-i',audio,'-t',String(audioDuration),'-map','0:v:0','-map','1:a:0','-c:v','copy','-c:a','aac','-b:a','160k','-ar','44100','-ac','2','-shortest','-movflags','+faststart',out]);
    progress(96,'Comprobando vídeo final…');
-   const titleBase=ref?.title?String(ref.title).replace(/[|]/g,''):'RelaxScape original';
-   const titleOptions=[
-    titleBase.replace(/\bMÚSICA\b/ig,'Música original').replace(/\bMUSICA\b/ig,'Música original'),
-    blueprint.subject==='focus and concentration'?'Música original para Estudiar y Concentrarse · Ambiente Profundo':'Música original para Relajarse · '+blueprint.subject
-   ];
+   const titleOptions=blueprint.subject==='focus and concentration' ? ['Música Original para Estudiar y Concentrarse · Ambiente Profundo','Concentración Profunda · Música Original para Estudiar','Música Ambiental Original para Trabajo y Estudio'] : blueprint.subject==='deep sleep' ? ['Música Original para Dormir Profundamente · Calma Nocturna','Sueño Profundo · Música Ambiental Original','Música Original para Relajarse y Dormir'] : blueprint.subject==='celtic instrumental relaxation' ? ['Música Celta Original para Relajarse · Flauta y Atmósfera Profunda','Flauta Celta Original · Música para Meditar','Música Instrumental Celta Original para Calmar la Mente'] : ['Música Original para Relajarse · '+blueprint.subject,'Relajación Profunda · Música Ambiental Original','Calma y Meditación · Música Original de RelaxScape'];
    const thumbnailName='thumb-'+path.basename(out,'.mp4')+'.jpg',thumbnail=path.join(VIDEO_DIR,thumbnailName);
    await createYouTubeThumbnail(scenes[0],thumbnail,titleOptions[0],blueprint.key);
    const description='Recreación audiovisual original de RelaxScape Studio inspirada en tendencias de relajación y en la estructura temática de una referencia pública. Todas las imágenes y la música de este vídeo se generan como material nuevo y no reutilizan la grabación, audio, fotogramas, miniatura ni texto del vídeo de referencia.';
@@ -634,8 +630,8 @@ module.exports=function registerDailyRoutes(app){
  app.post('/api/daily-video-now',async(req,res)=>{
   const id='daily-'+Date.now();jobs.set(id,{status:'running',progress:5,message:'Preparando generación gratuita...'});res.json({jobId:id,status:'running'});
   try{
-   jobs.set(id,{status:'running',progress:25,message:'Generando paisaje IA gratuito...'});
-   const result=await makeVideo({durationMinutes:req.body?.durationMinutes||60,seed:id,youtubeMode:req.body?.youtubeMode===true,onProgress:(progress,message)=>jobs.set(id,{status:'running',progress,message})});
+   jobs.set(id,{status:'running',progress:5,message:'Preparando referencia y generación audiovisual...'});
+   const result=await makeVideo({durationMinutes:req.body?.durationMinutes||60,seed:id,youtubeMode:req.body?.youtubeMode===true,referenceUrl:req.body?.referenceUrl||null,onProgress:(progress,message)=>jobs.set(id,{status:'running',progress,message})});
    jobs.set(id,{status:'succeeded',progress:100,message:'Vídeo terminado',result});
   }catch(e){console.error('[Daily free]',e);jobs.set(id,{status:'failed',progress:0,error:e.message||String(e)});}
  });
