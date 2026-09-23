@@ -6,16 +6,17 @@ module.exports=function(app){
  const signState=s=>crypto.createHmac("sha256",String(process.env.YOUTUBE_CLIENT_SECRET||"").trim()).update(s).digest("hex");
  const makeState=()=>{const s=crypto.randomBytes(20).toString("hex");return s+"."+signState(s)};
  const validState=s=>{const [raw,sig]=String(s||"").split(".");if(!raw||!sig)return false;const a=Buffer.from(sig),b=Buffer.from(signState(raw));return a.length===b.length&&crypto.timingSafeEqual(a,b)};
- const remoteReady=()=>!!(process.env.SUPABASE_URL&&process.env.SUPABASE_SERVICE_ROLE_KEY&&process.env.YOUTUBE_TOKEN_ENCRYPTION_KEY);
+ const supabaseKey=()=>String(process.env.SUPABASE_SERVICE_ROLE_KEY||"").replace(/\s+/g,"");
+ const remoteReady=()=>!!(process.env.SUPABASE_URL&&supabaseKey()&&process.env.YOUTUBE_TOKEN_ENCRYPTION_KEY);
  const localToken=()=>{try{return JSON.parse(fs.readFileSync(tokenFile,"utf8"))}catch{return null}};
  const saveLocal=t=>fs.writeFileSync(tokenFile,JSON.stringify(t,null,2),{mode:0o600});
  const key=()=>crypto.createHash("sha256").update(process.env.YOUTUBE_TOKEN_ENCRYPTION_KEY||"").digest();
  const encrypt=t=>{const iv=crypto.randomBytes(12),c=crypto.createCipheriv("aes-256-gcm",key(),iv),data=Buffer.concat([c.update(JSON.stringify(t),"utf8"),c.final()]);return [iv.toString("base64"),c.getAuthTag().toString("base64"),data.toString("base64")].join(".")};
  const decrypt=s=>{const [iv,tag,data]=String(s).split("."),d=crypto.createDecipheriv("aes-256-gcm",key(),Buffer.from(iv,"base64"));d.setAuthTag(Buffer.from(tag,"base64"));return JSON.parse(Buffer.concat([d.update(Buffer.from(data,"base64")),d.final()]).toString("utf8"))};
  const supa=()=>String(process.env.SUPABASE_URL||"").trim().replace(/\/$/,"")+"/rest/v1/youtube_tokens";
- const token=async()=>{if(!remoteReady())return localToken();const r=await fetch(supa()+"?id=eq.default&select=payload",{headers:{apikey:String(process.env.SUPABASE_SERVICE_ROLE_KEY||"").trim(),Authorization:"Bearer "+String(process.env.SUPABASE_SERVICE_ROLE_KEY||"").trim()}});if(!r.ok)throw Error("No se pudo leer el almacenamiento seguro");const d=await r.json();return d[0]?.payload?decrypt(d[0].payload):null};
- const save=async t=>{if(!remoteReady())return saveLocal(t);const r=await fetch(supa(),{method:"POST",headers:{apikey:String(process.env.SUPABASE_SERVICE_ROLE_KEY||"").trim(),Authorization:"Bearer "+String(process.env.SUPABASE_SERVICE_ROLE_KEY||"").trim(),"Content-Type":"application/json",Prefer:"resolution=merge-duplicates,return=minimal"},body:JSON.stringify({id:"default",payload:encrypt(t)})});if(!r.ok)throw Error("No se pudo guardar el token seguro")};
- const deleteToken=async()=>{if(!remoteReady()){try{if(fs.existsSync(tokenFile))fs.unlinkSync(tokenFile)}catch{}return}const r=await fetch(supa()+"?id=eq.default",{method:"DELETE",headers:{apikey:String(process.env.SUPABASE_SERVICE_ROLE_KEY||"").trim(),Authorization:"Bearer "+String(process.env.SUPABASE_SERVICE_ROLE_KEY||"").trim()}});if(!r.ok)throw Error("No se pudo eliminar la conexión")};
+ const token=async()=>{if(!remoteReady())return localToken();const r=await fetch(supa()+"?id=eq.default&select=payload",{headers:{apikey:supabaseKey(),Authorization:"Bearer "+supabaseKey()}});if(!r.ok)throw Error("No se pudo leer el almacenamiento seguro");const d=await r.json();return d[0]?.payload?decrypt(d[0].payload):null};
+ const save=async t=>{if(!remoteReady())return saveLocal(t);const r=await fetch(supa(),{method:"POST",headers:{apikey:supabaseKey(),Authorization:"Bearer "+supabaseKey(),"Content-Type":"application/json",Prefer:"resolution=merge-duplicates,return=minimal"},body:JSON.stringify({id:"default",payload:encrypt(t)})});if(!r.ok)throw Error("No se pudo guardar el token seguro")};
+ const deleteToken=async()=>{if(!remoteReady()){try{if(fs.existsSync(tokenFile))fs.unlinkSync(tokenFile)}catch{}return}const r=await fetch(supa()+"?id=eq.default",{method:"DELETE",headers:{apikey:supabaseKey(),Authorization:"Bearer "+supabaseKey()}});if(!r.ok)throw Error("No se pudo eliminar la conexión")};
  const ready=()=>{const c=cfg();return !!(c.id&&c.secret&&c.redirect)};
  async function access(){
   let t=await token();if(!t)return null;
