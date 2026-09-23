@@ -4,7 +4,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>RelaxScape Studio</title><link rel="stylesheet" href="/styles.css">
 </head>
-<body>
+<body><div id="authGate" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(7,13,20,.96);align-items:center;justify-content:center;padding:24px"><div style="width:min(460px,100%);background:#101923;border:1px solid rgba(255,255,255,.12);border-radius:24px;padding:36px;text-align:center;box-shadow:0 30px 80px rgba(0,0,0,.45)"><div style="font-size:42px;margin-bottom:12px">🌿</div><div style="font-size:12px;letter-spacing:.16em;opacity:.65">RELAXSCAPE STUDIO</div><h1 style="margin:10px 0 12px;font-size:30px">Inicia sesión para continuar</h1><p style="opacity:.72;line-height:1.6;margin-bottom:24px">Tu cuenta guarda tus configuraciones y permite vincular tu canal de YouTube de forma segura.</p><button id="loginGoogle" class="primary" style="width:100%">Continuar con Google →</button><div id="authError" style="margin-top:14px;color:#ff9b9b;font-size:13px"></div></div></div>
 <header><div class="brand">Relax<span>Scape</span><small> STUDIO</small></div><div class="top-actions"><span id="serverStatus" class="online">● Servidor online</span><button id="refresh" class="ghost">↻</button></div></header>
 <div class="layout">
 <aside>
@@ -101,6 +101,7 @@
 <script src="/app.js?v=20260923-01"></script>
 <script src="/youtube.js?v=20260923-01"></script>
 <script src="/youtube-publish.js?v=20260923-01"></script>
+<script src="/auth.js?v=20260923-01"></script>
 <script>
 document.addEventListener("click",function(e){const b=e.target.closest(".nav");if(!b)return;document.querySelectorAll(".nav").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));const tab=document.getElementById(b.dataset.tab);if(tab)tab.classList.add("active");if(b.dataset.tab==="ai"&&typeof window.ensureAIOptions==="function")window.ensureAIOptions();});
 </script>
