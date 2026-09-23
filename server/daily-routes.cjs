@@ -129,6 +129,8 @@ module.exports=function registerDailyRoutes(app){
   b.write('data',36);b.writeUInt32LE(n*channels*bytesPerSample,40);
 
   const s=hashSeed(seed), theme=s%4;
+  // El perfil musical se selecciona con la misma semilla que el paisaje: imagen y sonido
+  // pertenecen siempre al mismo universo (zen, concentración, sueño o celta).
   const roots=[[110,132,165,220],[100,120,150,200],[90,108,135,180],[120,144,180,240]][theme];
   const phases=roots.map((_,i)=>((s+i*97)%1000)/1000*Math.PI*2);
   const scale=theme===3?[0,3,5,7,10,12]:[0,2,4,7,9,11];
@@ -225,9 +227,20 @@ module.exports=function registerDailyRoutes(app){
     await ff(['-y','-stream_loop','-1','-i',segment,'-t',String(seconds),
       '-map','0:v:0','-map','0:a:0','-c','copy','-movflags','+faststart',out]);
    }finally{clean(segment);}
+   const titles={
+    zen:['Música Zen para Relajarse y Calmar la Mente · Naturaleza y Meditación','Relajación Profunda · Música Zen y Paisajes Naturales','Música Relajante para Reducir el Estrés · Zen y Naturaleza'],
+    focus:['Música para Estudiar y Concentrarse · Paisaje Natural Relajante','Música Relajante para Trabajar, Estudiar y Concentrarse','Concentración Profunda · Música Ambiental y Naturaleza'],
+    sleep:['Música para Dormir Profundamente · Noche Tranquila y Naturaleza','Sueño Profundo · Música Relajante con Paisaje Nocturno','Música Relajante para Dormir · Calma, Noche y Naturaleza'],
+    celtic:['Música Celta Relajante · Flauta, Naturaleza y Montañas','Música Celta para Relajarse · Bosque, Río y Montañas','Música Instrumental Celta · Relajación y Naturaleza'],
+    spa:['Música para Meditación y Spa · Agua, Naturaleza y Relajación','Relajación Profunda · Música de Spa y Paisajes Naturales','Música Relajante para Meditar · Naturaleza y Agua'],
+    rain:['Sonidos de Lluvia y Música Relajante · Bosque para Dormir','Lluvia en el Bosque · Música para Dormir y Relajarse','Música Relajante con Lluvia · Calma y Sueño Profundo']
+   };
+   const titleOptions=titles[theme.key]||titles.zen;
    return {url:'/media/videos/'+path.basename(out),name:path.basename(out),durationMinutes:minutes,
     generatedImage:true,imageProvider:imageInfo.provider,reference:'@musicoterapiateam',storedInLibrary:false,paidApis:false,
-    aiImage:imageInfo.provider.includes('FLUX')};
+    aiImage:imageInfo.provider.includes('FLUX'),theme:theme.key,title:titleOptions[0],titleOptions,
+    description:'Vídeo original de RelaxScape Studio con música ambiental y paisaje natural. Ideal para relajación, meditación, estudio o descanso.',
+    tags:['música relajante','relajación','meditación','naturaleza','sleep','ambient','calma']};
   }finally{clean(image);clean(aud);}
  }
 
