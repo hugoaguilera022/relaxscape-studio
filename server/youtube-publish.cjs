@@ -105,19 +105,36 @@ module.exports=function(app){
   const loc=init.headers.get("location");if(!init.ok||!loc){const d=await init.json().catch(()=>({}));throw Error(d.error?.message||"No se pudo iniciar la subida")};
   const r=await fetch(loc,{method:"PUT",headers:{Authorization:"Bearer "+a,"Content-Type":"video/mp4","Content-Length":String(st.size)},body:fs.createReadStream(file),duplex:"half"}),d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error?.message||"Falló la subida");return {id:d.id,url:"https://www.youtube.com/watch?v="+d.id};
  }
- async function generateForYouTube(req,cron=false){
+ async function startYouTubeGeneration(req,cron=false){
   const sid=cron?null:sessionSub(req),tokenId=sid||"default";
   if(!cron&&!sid)throw Error("Primero inicia sesión en RelaxScape con Google");
   if(!await token(tokenId))throw Error("Primero vincula tu canal de YouTube con Google");
   const port=Number(process.env.PORT||10000);
   const s=await fetch("http://127.0.0.1:"+port+"/api/daily-video-now",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({durationMinutes:Number(req.body?.durationMinutes||60)})});
-  const j=await s.json();if(!j.jobId)throw Error(j.error||"No se pudo iniciar el vídeo");
-  let q;for(let i=0;i<900;i++){await new Promise(r=>setTimeout(r,2000));q=await (await fetch("http://127.0.0.1:"+port+"/api/daily-video-status?jobId="+j.jobId)).json();if(q.status==="succeeded")break;if(q.status==="failed")throw Error(q.error||"Falló la generación")}
-  if(q?.status!=="succeeded")throw Error("La generación tardó demasiado");
-  const file=path.join(videoDir,q.result.name);if(!fs.existsSync(file))throw Error("No se encontró el vídeo generado");
-  return {file,name:q.result.name,url:"/media/videos/"+encodeURIComponent(q.result.name),durationMinutes:Number(req.body?.durationMinutes||60)};
+  const j=await s.json();
+  if(!s.ok||!j.jobId)throw Error(j.error||"No se pudo iniciar el vídeo");
+  return {jobId:j.jobId,durationMinutes:Number(req.body?.durationMinutes||60)};
 }
-app.post("/api/youtube/daily-generate",async(req,res)=>{try{const result=await generateForYouTube(req);res.json({ok:true,result});}catch(e){res.status(500).json({ok:false,error:e.message})}});
+app.post("/api/youtube/daily-generate",async(req,res)=>{
+  try{res.status(202).json({ok:true,result:await startYouTubeGeneration(req)});}
+  catch(e){res.status(500).json({ok:false,error:e.message})}
+});
+app.get("/api/youtube/daily-generate-status",async(req,res)=>{
+  try{
+    const sid=sessionSub(req);if(!sid)throw Error("Primero inicia sesión en RelaxScape con Google");
+    if(!await token(sid))throw Error("Primero vincula tu canal de YouTube con Google");
+    const jobId=String(req.query.jobId||"");if(!jobId)throw Error("Falta el trabajo de generación");
+    const port=Number(process.env.PORT||10000);
+    const q=await (await fetch("http://127.0.0.1:"+port+"/api/daily-video-status?jobId="+encodeURIComponent(jobId))).json();
+    if(q.status==="succeeded"&&q.result){
+      const file=path.join(videoDir,q.result.name);
+      if(!fs.existsSync(file))throw Error("No se encontró el vídeo generado");
+      return res.json({status:"succeeded",progress:100,message:"Vídeo terminado",result:{file,name:q.result.name,url:"/media/videos/"+encodeURIComponent(q.result.name),durationMinutes:q.result.durationMinutes}});
+    }
+    if(q.status==="failed")return res.status(500).json({status:"failed",error:q.error||"Falló la generación"});
+    res.json({status:q.status||"running",progress:q.progress||0,message:q.message||"Generando vídeo…"});
+  }catch(e){res.status(500).json({status:"failed",error:e.message})}
+});
 app.post("/api/youtube/publish-existing",async(req,res)=>{try{const sid=sessionSub(req);if(!sid)throw Error("Primero inicia sesión en RelaxScape");if(!await token(sid))throw Error("Primero vincula tu canal de YouTube");const name=path.basename(String(req.body?.name||""));if(!name||name!==String(req.body?.name||""))throw Error("Vídeo no válido");const file=path.join(videoDir,name);if(!fs.existsSync(file))throw Error("El vídeo ya no está disponible");res.json({ok:true,result:await upload(file,req)});}catch(e){res.status(500).json({ok:false,error:e.message})}});
 app.post("/api/youtube/daily-publish",async(req,res)=>{try{const secret=String(process.env.YOUTUBE_PUBLISH_SECRET||"");if(!secret||req.get("x-youtube-secret")!==secret)throw Error("No autorizado");if(!await token("default"))throw Error("Primero vincula tu canal de YouTube con Google");const generated=await generateForYouTube(req,true);res.json({ok:true,result:await upload(generated.file,null)});}catch(e){res.status(500).json({ok:false,error:e.message})}});
 };
