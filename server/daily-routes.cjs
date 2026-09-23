@@ -346,12 +346,19 @@ module.exports=function registerDailyRoutes(app){
    'spa-water':['MÚSICA RELAJANTE SPA','YOGA · MEDITACIÓN · BIENESTAR']
   };
   const pair=labels[profileKey]||labels['zen-piano'];
-  const safe=String(pair[0]||title||'RelaxScape').replace(/[^a-zA-Z0-9À-ÿ .·&()\-]/g,'').slice(0,44);
-  const sub=String(pair[1]).replace(/[^a-zA-Z0-9À-ÿ .·&()\-]/g,'').slice(0,54);
-  const esc=v=>v.replace(/:/g,'\\:').replace(/,/g,'\\,').replace(/'/g,"\\\\'");
-  await ff(['-y','-i',image,'-vf',
-   "scale=1280:720:force_original_aspect_ratio=increase:flags=lanczos,crop=1280:720,eq=saturation=1.12:contrast=1.06,drawbox=x=0:y=0:w=1280:h=720:color=black@0.10:t=fill,drawbox=x=0:y=455:w=1280:h=265:color=black@0.58:t=fill,drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='RELAXSCAPE':fontcolor=white@0.92:fontsize=25:x=48:y=40,drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='"+esc(safe)+"':fontcolor=white:fontsize=46:x=48:y=505:shadowcolor=black@0.9:shadowx=2:shadowy=2,drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='"+esc(sub)+"':fontcolor=white@0.92:fontsize=22:x=48:y=575:shadowcolor=black@0.8:shadowx=1:shadowy=1",
-   '-frames:v','1','-q:v','2',out]);
+  const esc=v=>String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
+  const svg='<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">'+
+    '<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity=".08"/><stop offset="1" stop-color="#000" stop-opacity=".72"/></linearGradient></defs>'+
+    '<rect width="1280" height="720" fill="url(#g)"/>'+
+    '<rect x="42" y="34" width="240" height="48" rx="24" fill="#000" fill-opacity=".42"/>'+
+    '<text x="162" y="67" text-anchor="middle" font-family="DejaVu Sans,Arial,sans-serif" font-size="25" font-weight="700" fill="white">RELAXSCAPE</text>'+
+    '<text x="52" y="535" font-family="DejaVu Sans,Arial,sans-serif" font-size="48" font-weight="700" fill="white">'+esc(pair[0])+'</text>'+
+    '<text x="52" y="588" font-family="DejaVu Sans,Arial,sans-serif" font-size="23" font-weight="500" fill="white">'+esc(pair[1])+'</text></svg>';
+  const svgFile=path.join(TEMP_DIR,'thumb-'+Date.now()+'.svg');
+  fs.writeFileSync(svgFile,svg,'utf8');
+  try{
+   await ff(['-y','-i',image,'-i',svgFile,'-filter_complex','[0:v]scale=1280:720:force_original_aspect_ratio=increase:flags=lanczos,crop=1280:720,eq=saturation=1.12:contrast=1.06[bg];[1:v]format=rgba[ov];[bg][ov]overlay=0:0,format=yuv420p','-frames:v','1','-q:v','2',out]);
+  }finally{clean(svgFile);}
   return out;
  }
  async function makeVideo({durationMinutes=60,seed='daily',youtubeMode=false}){
