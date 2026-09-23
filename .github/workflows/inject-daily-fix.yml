@@ -1,0 +1,33 @@
+name: Inject daily controls
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  inject:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure daily control script is loaded
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('public/index.html')
+          s=p.read_text()
+          tag='<script src="/daily-control-fix.js?v=20260923-02"></script>'
+          if tag not in s:
+              marker='</body>'
+              if marker not in s:
+                  raise SystemExit('index.html has no </body> marker')
+              s=s.replace(marker, tag+'\n'+marker, 1)
+              p.write_text(s)
+          PY
+      - name: Commit injection
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add public/index.html
+          git diff --cached --quiet && exit 0
+          git commit -m 'Load reliable daily generation controls'
+          git push
