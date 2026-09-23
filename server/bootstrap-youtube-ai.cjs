@@ -489,4 +489,5 @@ require("./daily-routes.cjs")(app);
 try{require("./youtube-publish.cjs")(app)}catch(e){console.error("[YouTube publish] rutas no cargadas:",e.message)}
 
 app.use(proxyToCore);
+require('./daily-routes.cjs')(app);
 app.listen(PORT,"0.0.0.0",()=>console.log("RelaxScape YouTube AI wrapper activo en http://0.0.0.0:"+PORT));
