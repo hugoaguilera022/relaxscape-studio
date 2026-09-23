@@ -32,7 +32,7 @@
       <div class="field"><label>DURACIÓN (minutos)</label><div class="selectbox"><input id="mainDurationMinutes" type="number" min="1" max="1440" value="60" style="width:100%;border:0;background:transparent;font:inherit;outline:none"></div></div>
       <div class="field"><label>CALIDAD</label><div class="selectbox disabled">Full HD · 1920×1080</div></div>
     </div>
-    <div class="builder-bottom"><div id="builderStatus">Selecciona tus recursos para comenzar.</div><button id="generate" class="primary">Generar vídeo <b>→</b></button></div>
+    <div class="builder-bottom"><div id="builderStatus">Selecciona tus recursos para comenzar.</div><button id="generate" class="primary">Generar vídeo <b>→</b></button></div><div id="generationProgress" class="generation-progress hidden" style="margin:18px 0;padding:18px 20px;border:1px solid rgba(255,255,255,.12);border-radius:16px;background:rgba(255,255,255,.035)"><div style="display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:10px"><strong id="generationProgressTitle">Generando vídeo…</strong><b id="generationProgressPercent">0%</b></div><div style="height:10px;border-radius:999px;background:rgba(255,255,255,.10);overflow:hidden"><div id="generationProgressBar" style="height:100%;width:0%;border-radius:999px;background:linear-gradient(90deg,#77d6b3,#8fc8ff);transition:width .45s ease"></div></div><div id="generationProgressMessage" class="note" style="margin-top:9px">Preparando el motor de vídeo…</div></div>
   </div>
 </section>
 
