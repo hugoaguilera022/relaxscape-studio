@@ -481,12 +481,12 @@ function proxyToCore(req,res){
 }
 require("./auth-routes.cjs")(app);
 
-// Las rutas específicas van antes del proxy para que Programar ahora/Musicoterapia,
-// el generador diario y el login no sean enviados al core.
+// Rutas públicas específicas: deben resolverse ANTES del proxy al core.
+// Esto evita 502 durante generaciones largas y mantiene intactos
+// YouTube automático, Paisajes, Crear IA y el login.
 require("./musicoterapia-routes.cjs")(app);
-require('./daily-routes.cjs')(app);
+require("./daily-routes.cjs")(app);
+try{require("./youtube-publish.cjs")(app)}catch(e){console.error("[YouTube publish] rutas no cargadas:",e.message)}
 
-// El resto de rutas continúa pasando al core, preservando YouTube automático,
-// Paisajes y Crear IA.
 app.use(proxyToCore);
 app.listen(PORT,"0.0.0.0",()=>console.log("RelaxScape YouTube AI wrapper activo en http://0.0.0.0:"+PORT));
