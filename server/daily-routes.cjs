@@ -73,6 +73,63 @@ module.exports=function registerDailyRoutes(app){
   }catch(e){return null;}
  }
 
+ async function downloadYouTubeLandscape(out,seed){
+  // Paisajes fotográficos reales y cinematográficos, más cercanos al lenguaje visual
+  // de los vídeos de relajación del canal analizado. No se reutilizan sus imágenes.
+  const urls=[
+   'https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=2400&q=92',
+   'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=2400&q=92',
+   'https://images.unsplash.com/photo-1439853949127-fa647821eba0?auto=format&fit=crop&w=2400&q=92',
+   'https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=2400&q=92',
+   'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?auto=format&fit=crop&w=2400&q=92',
+   'https://images.unsplash.com/photo-1511497584788-876760111969?auto=format&fit=crop&w=2400&q=92',
+   'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=2400&q=92',
+   'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=2400&q=92'
+  ];
+  const url=urls[hashSeed(seed)%urls.length],r=await fetch(url,{signal:AbortSignal.timeout(30000)});
+  if(!r.ok)throw Error('No se pudo descargar el paisaje YouTube (HTTP '+r.status+').');
+  const b=Buffer.from(await r.arrayBuffer());if(b.length<10000)throw Error('Paisaje YouTube no válido.');
+  fs.writeFileSync(out,b);return {provider:'Unsplash · fotografía real',sourceUrl:url};
+ }
+
+ async function generateMusicGen(out,seed,seconds){
+  const base='https://facebook-musicgen.hf.space';
+  const prompts=[
+   'beautiful relaxing zen piano music for meditation and stress relief, soft expressive piano, gentle acoustic guitar and airy flute, slow tempo, warm cinematic harmony, peaceful ocean and nature feeling, instrumental only, no vocals, no drums, no percussion, no beat',
+   'peaceful yoga and meditation music inspired by the sea, delicate piano, soft flute, gentle acoustic guitar, very slow tempo, warm emotional melody, subtle ocean ambience, elegant healing relaxation music, instrumental only, no vocals, no drums, no percussion',
+   'calm concentration and study music, beautiful soft piano melody, warm pads, subtle acoustic guitar, gentle flute phrases, slow flowing harmony, sophisticated relaxing instrumental, no vocals, no drums, no percussion, no electronic beat',
+   'beautiful relaxing celtic instrumental music, emotional flute, soft piano, gentle acoustic guitar, ancient peaceful atmosphere, slow flowing melody, lush cinematic harmony, nature and forest feeling, instrumental only, no vocals, no drums, no percussion',
+   'deep sleep relaxation music, extremely gentle piano, long soft notes, airy flute, warm strings, slow peaceful harmony, dreamy night atmosphere, beautiful emotional instrumental, no vocals, no drums, no percussion, no rhythm-heavy elements'
+  ];
+  const prompt=prompts[hashSeed(seed)%prompts.length];
+  let submit;
+  try{
+   submit=await fetch(base+'/gradio_api/call/predict_full',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({data:['small',prompt,null,Math.min(120,Math.max(30,seconds)),250,0,0.9,3.0]}),
+    signal:AbortSignal.timeout(30000)
+   });
+  }catch{return null;}
+  if(!submit.ok)return null;
+  const j=await submit.json().catch(()=>null),eventId=j?.event_id;if(!eventId)return null;
+  try{
+   const stream=await fetch(base+'/gradio_api/call/predict_full/'+eventId,{signal:AbortSignal.timeout(720000)});
+   if(!stream.ok)return null;
+   const text=await stream.text();
+   const matches=[...text.matchAll(/data:\s*(\[[\s\S]*?\])\s*(?:\n|$)/g)];
+   if(!matches.length)return null;
+   const data=JSON.parse(matches[matches.length-1][1]),item=data?.[0];
+   const url=item?.url||(typeof item==='string'?item:null)||(item?.path?base+'/file='+item.path:null);
+   if(!url)return null;
+   const src=await fetch(url,{signal:AbortSignal.timeout(120000)});if(!src.ok)return null;
+   const tmp=path.join(TEMP_DIR,'musicgen-'+Date.now()+'.bin');fs.writeFileSync(tmp,Buffer.from(await src.arrayBuffer()));
+   try{
+    await ff(['-y','-i',tmp,'-vn','-ac','2','-ar','44100','-c:a','pcm_s16le',out]);
+   }finally{clean(tmp);}
+   return {provider:'Meta MusicGen · Hugging Face ZeroGPU',prompt};
+  }catch{return null;}
+ }
+
  async function downloadLandscape(out,seed){
   const url=LANDSCAPES[hashSeed(seed)%LANDSCAPES.length];
   const r=await fetch(url,{signal:AbortSignal.timeout(30000)});
@@ -260,10 +317,12 @@ module.exports=function registerDailyRoutes(app){
   try{
    const theme=youtubeMode?youtubeProfileFor(seed):promptFor(seed);
    const prompt=theme.prompt;
-   let imageInfo=await generateFreeAIImage(image,prompt,seed);
+   let imageInfo= youtubeMode?await downloadYouTubeLandscape(image,seed):await generateFreeAIImage(image,prompt,seed);
    if(!imageInfo)imageInfo=await downloadLandscape(image,seed);
    const segmentSeconds=Math.min(seconds,300);
-   if(youtubeMode)writeYouTubeWav(aud,segmentSeconds,seed);else writeWav(aud,segmentSeconds,seed);
+   let audioInfo=null;
+   if(youtubeMode)audioInfo=await generateMusicGen(aud,seed,segmentSeconds);
+   if(!audioInfo){if(youtubeMode)writeYouTubeWav(aud,segmentSeconds,seed);else writeWav(aud,segmentSeconds,seed);}
    // El segmento de audio ahora dura hasta 5 minutos completos. Se repite ese bloque,
    // nunca un bloque de 10 s, y el WAV está construido para cerrar el loop suavemente.
    const segment=path.join(TEMP_DIR,'segment-'+stamp+'.mp4');
@@ -294,7 +353,7 @@ module.exports=function registerDailyRoutes(app){
    };
    const titleOptions=(youtubeMode?youtubeTitles[theme.key]:titles[theme.key])||titles.zen;
    return {url:'/media/videos/'+path.basename(out),name:path.basename(out),durationMinutes:minutes,
-    generatedImage:true,imageProvider:imageInfo.provider,reference:youtubeMode?'Musicoterapia viral patterns':'@musicoterapiateam',storedInLibrary:false,paidApis:false,
+    generatedImage:true,imageProvider:imageInfo.provider,reference:youtubeMode?'Musicoterapia · patrones de vídeos más vistos':'@musicoterapiateam',storedInLibrary:false,paidApis:false,
     aiImage:imageInfo.provider.includes('FLUX'),theme:theme.key,title:titleOptions[0],titleOptions,
     description:'Vídeo original de RelaxScape Studio con música ambiental y paisaje natural. Ideal para relajación, meditación, estudio o descanso.',
     tags:['música relajante','relajación','meditación','naturaleza','sleep','ambient','calma']};
