@@ -464,6 +464,16 @@ const child=spawn(process.execPath,[path.join(ROOT,"server/index.js")],{
 });
 child.on("exit",(code,signal)=>{console.error("[RelaxScape core] exited",code,signal);process.exit(code||1)});
 
+async function waitForCore(maxAttempts=12){
+  for(let i=0;i<maxAttempts;i++){
+    try{
+      const r=await fetch("http://127.0.0.1:"+INTERNAL_PORT+"/health",{signal:AbortSignal.timeout(1500)});
+      if(r.ok)return true;
+    }catch{}
+    await new Promise(resolve=>setTimeout(resolve,750));
+  }
+  return false;
+}
 function proxyToCore(req,res){
   const headers={...req.headers,host:"127.0.0.1:"+INTERNAL_PORT};
   delete headers["content-length"];
@@ -471,12 +481,14 @@ function proxyToCore(req,res){
   req.on("data",c=>chunks.push(c));
   req.on("end",async()=>{
     try{
+      const ready=await waitForCore();
+      if(!ready) return res.status(503).json({error:"El servidor interno todavía está arrancando. Vuelve a intentarlo en unos segundos."});
       const body=chunks.length?Buffer.concat(chunks):undefined;
-      const r=await fetch("http://127.0.0.1:"+INTERNAL_PORT+req.originalUrl,{method:req.method,headers,body});
+      const r=await fetch("http://127.0.0.1:"+INTERNAL_PORT+req.originalUrl,{method:req.method,headers,body,signal:AbortSignal.timeout(120000)});
       res.status(r.status);
       r.headers.forEach((v,k)=>{if(k.toLowerCase()!=="transfer-encoding")res.setHeader(k,v)});
       const ab=await r.arrayBuffer();res.end(Buffer.from(ab));
-    }catch(e){res.status(502).json({error:"Servidor principal no disponible: "+e.message})}
+    }catch(e){console.error("[Proxy core]",e.message);res.status(503).json({error:"Servidor principal no disponible temporalmente."})}
   });
 }
 // Registramos primero las rutas públicas para que no queden atrapadas por el proxy.
