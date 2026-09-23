@@ -1,0 +1,98 @@
+const path=require('path');
+const fs=require('fs');
+const {spawn}=require('child_process');
+const sharp=require('sharp');
+
+module.exports=function registerMusicoterapiaRoutes(app){
+ const ROOT=path.resolve(process.cwd());
+ const VIDEO_DIR=path.join(ROOT,'data/videos');
+ const TEMP_DIR=path.join(ROOT,'data/daily-temp');
+ fs.mkdirSync(VIDEO_DIR,{recursive:true});
+ fs.mkdirSync(TEMP_DIR,{recursive:true});
+ const jobs=new Map();
+
+ const profiles=[
+  {key:'zen',queries:['peaceful mountain lake sunrise','misty mountains lake','calm forest sunrise'],music:'deep zen relaxation, soft felt piano, harp, warm acoustic guitar, airy bamboo flute, delicate strings, slow 56 BPM, evolving peaceful melody, spacious cinematic meditation, no vocals, no drums, no percussion',titles:['Música Zen Ultra Relajante para Calmar la Mente · Estrés y Ansiedad','Música Zen para Relajarse Profundamente · Piano, Harpa y Naturaleza','Música Relajante para Calmar la Mente · Zen y Meditación'],thumb:['ZEN ULTRA RELAJANTE','CALMA · ESTRÉS · MEDITACIÓN']},
+  {key:'study',queries:['peaceful study nature','japanese garden lake','calm library window nature'],music:'beautiful concentration and study music, gentle felt piano, soft acoustic guitar, subtle harp and strings, 62 BPM, sophisticated repeating harmony with small melodic variations, no vocals, no drums, no percussion',titles:['Música para Estudiar, Trabajar e Inspirarse · Concentración y Calma','Música para Estudiar y Concentrarse · Piano Relajante y Naturaleza','Música Ambiental para Trabajar y Estudiar · Concentración Profunda'],thumb:['MÚSICA PARA ESTUDIAR','CONCENTRACIÓN · TRABAJO · CALMA']},
+  {key:'alpha',queries:['calm blue ocean','abstract calm water waves','meditation blue light nature'],music:'slow ambient focus music, soft piano arpeggios, warm pads, subtle harp, very gentle low pulse without percussion, 58 BPM, peaceful concentration and mental clarity, no vocals',titles:['Música para Estudiar y Memorizar · Concentración Profunda y Calma','Música para Concentrarse y Estudiar · Relajación Mental','Música para la Memoria y Concentración · Sonido Relajante'],thumb:['CONCENTRACIÓN PROFUNDA','ESTUDIO · MEMORIA · CALMA']},
+  {key:'celtic',queries:['celtic forest river','green mountain waterfall','misty forest waterfall'],music:'beautiful Celtic relaxation instrumental, expressive wooden flute, harp, soft piano, acoustic strings, 60 BPM, flowing ancient folk melody, lush natural atmosphere, healing and peaceful, no vocals, no drums, no percussion',titles:['Música Celta Relajante · Flauta, Bosque y Montañas','Música Celta Instrumental para Relajarse · Naturaleza y Flauta','Flauta Celta y Paisajes Naturales · Música para Meditar'],thumb:['MÚSICA CÉLTICA','FLAUTA · NATURALEZA · RELAJACIÓN']},
+  {key:'sleep',queries:['moonlit lake night','night forest moon','stars mountain lake'],music:'deep sleep relaxation music, sparse felt piano, very soft cello, warm strings, distant flute, 50 BPM, extremely slow harmonic movement, dreamy nocturnal atmosphere, no vocals, no drums, no percussion',titles:['Música para Dormir Profundamente · Sueño Reparador y Relajación','Música para Dormir Rápido · Calma Profunda y Noche Tranquila','Música Relajante para Dormir · Sueño Profundo y Paz'],thumb:['DORMIR PROFUNDAMENTE','SUEÑO · CALMA · DESCANSO']},
+  {key:'spa',queries:['tropical waterfall lagoon','spa water nature','peaceful waterfall rainforest'],music:'luxury spa relaxation instrumental, delicate piano, harp, soft flute, warm strings and gentle acoustic guitar, 57 BPM, elegant flowing melody, wellness and meditation, no vocals, no drums, no percussion',titles:['Música Relajante para Spa, Yoga y Meditación · Agua y Naturaleza','Música de Spa para Relajarse · Cascada, Bosque y Calma','Meditación Profunda · Música Relajante y Paisaje Natural'],thumb:['MÚSICA RELAJANTE','SPA · YOGA · MEDITACIÓN']}
+ ];
+
+ function hashSeed(seed){let n=0;for(const c of String(seed))n=(n*31+c.charCodeAt(0))>>>0;return n;}
+ function profileFor(seed){return profiles[hashSeed(seed)%profiles.length];}
+ function clean(f){try{if(f&&fs.existsSync(f))fs.unlinkSync(f)}catch{}}
+ async function ff(args){const p=(await import('ffmpeg-static')).default;return new Promise((resolve,reject)=>{const x=spawn(p,args,{stdio:['ignore','ignore','pipe']});let e='';x.stderr.on('data',d=>e+=d);x.on('error',reject);x.on('close',c=>c?reject(Error(e.slice(-7000)||`FFmpeg ${c}`)):resolve())})}
+
+ async function pexelsVideos(query,count=5){
+  const key=process.env.PEXELS_API_KEY;
+  if(!key)return [];
+  const u='https://api.pexels.com/v1/videos/search?query='+encodeURIComponent(query)+'&orientation=landscape&size=medium&per_page=20&locale=en-US';
+  const r=await fetch(u,{headers:{Authorization:key},signal:AbortSignal.timeout(20000)});
+  if(!r.ok)throw Error('Pexels API '+r.status);
+  const j=await r.json();
+  return (j.videos||[]).map(v=>{const files=(v.video_files||[]).filter(x=>x.file_type==='video/mp4'&&x.width>=1280&&x.height>=650);files.sort((a,b)=>(b.width*b.height)-(a.width*a.height));const f=files[0]||(v.video_files||[]).find(x=>x.file_type==='video/mp4');return f?{id:v.id,link:f.link,thumb:v.image,page:v.url,photographer:v.user?.name||'Pexels'}:null}).filter(Boolean).slice(0,count);
+ }
+
+ async function pixabayVideos(query,count=5){
+  const key=process.env.PIXABAY_API_KEY;
+  if(!key)return [];
+  const u='https://pixabay.com/api/videos/?key='+encodeURIComponent(key)+'&q='+encodeURIComponent(query)+'&video_type=film&category=nature&per_page=20';
+  const r=await fetch(u,{signal:AbortSignal.timeout(20000)});if(!r.ok)throw Error('Pixabay API '+r.status);const j=await r.json();
+  return (j.hits||[]).map(v=>{const f=v.videos?.large||v.videos?.medium||v.videos?.small;return f?.url?{id:v.id,link:f.url,thumb:v.picture_id?`https://i.vimeocdn.com/video/${v.picture_id}_640x360.jpg`:null,page:`https://pixabay.com/videos/id-${v.id}/`,photographer:v.user||'Pixabay'}:null}).filter(Boolean).slice(0,count);
+ }
+
+ async function collectClips(profile,seed){
+  const all=[];
+  for(let i=0;i<profile.queries.length;i++){
+   let found=[];
+   try{found=await pexelsVideos(profile.queries[i],2)}catch{}
+   if(!found.length)try{found=await pixabayVideos(profile.queries[i],2)}catch{}
+   all.push(...found);
+  }
+  const seen=new Set(),unique=all.filter(v=>{if(seen.has(v.id))return false;seen.add(v.id);return true});
+  for(let i=unique.length-1;i>0;i--){const j=hashSeed(seed+'-'+i)%(i+1);[unique[i],unique[j]]=[unique[j],unique[i]]}
+  return unique.slice(0,8);
+ }
+
+ async function download(url,out){const r=await fetch(url,{signal:AbortSignal.timeout(90000)});if(!r.ok)throw Error('No se pudo descargar clip ('+r.status+')');const b=Buffer.from(await r.arrayBuffer());if(b.length<50000)throw Error('Clip inválido');fs.writeFileSync(out,b)}
+
+ async function generateMusic(profile,seconds,seed,out){
+  const base='https://ace-step-v1-5.hf.space';
+  const duration=Math.min(300,Math.max(120,seconds));
+  let r;
+  try{r=await fetch(base+'/v1/music/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({caption:profile.music,lyrics:'[Instrumental]',thinking:true,instrumental:true,audio_duration:duration,audio_format:'mp3',model:'acestep-v15-turbo',inference_steps:8,batch_size:1,use_random_seed:true}),signal:AbortSignal.timeout(30000)})}catch{return false}
+  if(!r.ok)return false;const job=await r.json().catch(()=>null);if(!job?.job_id)return false;const deadline=Date.now()+Math.max(300000,duration*1500);
+  while(Date.now()<deadline){
+   try{const s=await fetch(base+'/v1/jobs/'+encodeURIComponent(job.job_id),{signal:AbortSignal.timeout(20000)});const j=await s.json();if(j.status==='failed')return false;if(j.status==='succeeded'){const p=j.result?.first_audio_path||(Array.isArray(j.result?.audio_paths)?j.result.audio_paths[0]:null);if(!p)return false;const au=p.startsWith('http')?p:(base+'/v1/audio?path='+encodeURIComponent(p));const a=await fetch(au,{signal:AbortSignal.timeout(90000)});if(!a.ok)return false;const tmp=path.join(TEMP_DIR,'mt-'+Date.now()+'.mp3');fs.writeFileSync(tmp,Buffer.from(await a.arrayBuffer()));try{await ff(['-y','-i',tmp,'-vn','-ac','2','-ar','44100',out])}finally{clean(tmp)}return true}}catch{}
+   await new Promise(r=>setTimeout(r,4000));
+  }
+  return false;
+ }
+
+ async function makeVideo({durationMinutes=60,seed='daily'}){
+  const profile=profileFor(seed),minutes=Math.max(1,Math.min(1440,Number(durationMinutes)||60)),seconds=minutes*60,stamp=new Date().toISOString().replace(/[:.]/g,'-');
+  const work=path.join(TEMP_DIR,'mt-'+stamp),out=path.join(VIDEO_DIR,'daily-'+stamp+'.mp4'),thumb=path.join(VIDEO_DIR,'thumb-daily-'+stamp+'.jpg');fs.mkdirSync(work,{recursive:true});
+  try{
+   const clips=await collectClips(profile,seed);
+   if(clips.length<3)throw Error('No hay clips disponibles. Añade PEXELS_API_KEY (gratis) en Render.');
+   const local=[];
+   for(let i=0;i<clips.length;i++){const f=path.join(work,`c${i}.mp4`);await download(clips[i].link,f);local.push(f)}
+   const list=path.join(work,'concat.txt');fs.writeFileSync(list,local.map(f=>`file '${f.replace(/'/g,"'\\''")}'`).join('\n'));
+   const montage=path.join(work,'montage.mp4');
+   await ff(['-y','-f','concat','-safe','0','-i',list,'-an','-vf','scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,fps=24,format=yuv420p','-c:v','libx264','-preset','veryfast','-crf','22',montage]);
+   const music=path.join(work,'music.mp3');const ok=await generateMusic(profile,300,seed,music);if(!ok)throw Error('No se pudo generar la música IA de ACE-Step.');
+   await ff(['-y','-stream_loop','-1','-i',montage,'-stream_loop','-1','-i',music,'-t',String(seconds),'-map','0:v:0','-map','1:a:0','-c:v','copy','-c:a','aac','-b:a','192k','-shortest',out]);
+   const cover=clips[0].thumb;let img=null;if(cover){try{const rr=await fetch(cover,{signal:AbortSignal.timeout(30000)});if(rr.ok)img=Buffer.from(await rr.arrayBuffer())}catch{}}
+   if(img)await sharp(img).resize(1280,720,{fit:'cover'}).jpeg({quality:92}).toFile(thumb);
+   else await ff(['-y','-ss','2','-i',out,'-frames:v','1','-q:v','2',thumb]);
+   const titleOptions=profile.titles;
+   const description='Música original de RelaxScape creada para relajación, meditación, descanso y bienestar. Paisajes naturales seleccionados automáticamente según el estilo del vídeo.\n\nContenido visual: Pexels/Pixabay. Música: IA generativa ACE-Step.\n\nEste vídeo está inspirado en patrones generales de contenido de relajación y música terapéutica; no reproduce ni reutiliza vídeos o audio de otros canales.';
+   return {url:'/media/videos/'+path.basename(out),name:path.basename(out),durationMinutes:minutes,thumbnailUrl:'/media/videos/'+encodeURIComponent(path.basename(thumb)),generatedImage:false,imageProvider:'Pexels/Pixabay · vídeo natural',reference:'Musicoterapia · patrones de vídeos más vistos',storedInLibrary:false,paidApis:false,aiImage:false,theme:profile.key,title:titleOptions[0],titleOptions,description,tags:['música relajante','musicoterapia','meditación','música para dormir','música para estudiar','zen','naturaleza'],sources:clips.map(c=>({url:c.page,photographer:c.photographer}))};
+  }finally{try{fs.rmSync(work,{recursive:true,force:true})}catch{}}
+ }
+
+ app.post('/api/musicoterapia-video-now',async(req,res)=>{const id='mt-'+Date.now();jobs.set(id,{status:'running',progress:5,message:'Analizando el estilo Musicoterapia...'});res.json({jobId:id,status:'running'});(async()=>{try{jobs.set(id,{status:'running',progress:20,message:'Seleccionando paisajes y vídeos naturales...'});const result=await makeVideo({durationMinutes:req.body?.durationMinutes||60,seed:id});jobs.set(id,{status:'succeeded',progress:100,message:'Vídeo Musicoterapia listo',result})}catch(e){console.error('[Musicoterapia engine]',e);jobs.set(id,{status:'failed',progress:0,error:e.message||String(e)})}})()});
+ app.get('/api/musicoterapia-video-status',async(req,res)=>res.json(jobs.get(String(req.query.jobId))||{status:'unknown'}));
+};
