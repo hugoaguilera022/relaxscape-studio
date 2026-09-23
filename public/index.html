@@ -78,6 +78,10 @@
   <div class="builder">
     <div class="builder-head"><div><div><h2>Cuenta y canal</h2><p>Inicia sesión en la web con Google y RelaxScape utilizará esa misma cuenta para identificar el canal de YouTube autorizado.</p></div></div></div>
     <div class="builder-bottom"><div id="ytConnectionStatus">Comprobando cuenta y canal…</div></div>
+    <div id="ytChannelCard" class="yt-channel-card hidden" style="margin-top:16px;padding:16px;border:1px solid rgba(255,255,255,.12);border-radius:14px;display:flex;align-items:center;gap:14px">
+      <img id="ytChannelAvatar" alt="Imagen del canal de YouTube" style="width:64px;height:64px;border-radius:50%;object-fit:cover;background:#222">
+      <div><strong id="ytChannelName">Canal de YouTube</strong><div id="ytChannelId" class="note" style="margin-top:4px"></div></div>
+    </div>
     <div id="ytAccountInfo" class="note" style="margin-top:12px"></div>
   </div>
   <div class="builder" style="margin-top:20px">
