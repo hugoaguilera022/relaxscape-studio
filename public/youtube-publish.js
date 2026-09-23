@@ -18,7 +18,7 @@ async function refreshYouTubePublishStatus(){
  }catch(e){s.textContent="No se pudo comprobar YouTube: "+e.message}
 }
 document.addEventListener("DOMContentLoaded",()=>{
- const g=document.querySelector("#ytGeneratePreview"),s=document.querySelector("#ytPublishStatus"),previewBox=document.querySelector("#ytPreviewBox"),video=document.querySelector("#ytPreviewVideo"),confirmBox=document.querySelector("#ytUploadConfirm"),confirmBtn=document.querySelector("#ytConfirmUpload"),uploadStatus=document.querySelector("#ytUploadStatus");
+ const g=document.querySelector("#ytGeneratePreview"),s=document.querySelector("#ytPublishStatus"),previewBox=document.querySelector("#ytPreviewBox"),video=document.querySelector("#ytPreviewVideo"),thumbnail=document.querySelector("#ytThumbnailPreview"),confirmBox=document.querySelector("#ytUploadConfirm"),confirmBtn=document.querySelector("#ytConfirmUpload"),uploadStatus=document.querySelector("#ytUploadStatus");
  if(g)g.onclick=async()=>{
   g.disabled=true;s.textContent="🟡 Generando vídeo…";previewBox?.classList.add("hidden");confirmBox?.classList.add("hidden");
   try{
@@ -35,13 +35,13 @@ document.addEventListener("DOMContentLoaded",()=>{
     await new Promise(resolve=>setTimeout(resolve,2000));
    }
    if(!done)throw Error("La generación tardó demasiado.");
-   if(video){video.src=done.url+"?v="+Date.now();video.load()}
+   if(video){video.src=done.url+"?v="+Date.now();video.load()} if(thumbnail&&done.thumbnailUrl){thumbnail.src=done.thumbnailUrl+"?v="+Date.now()}
    const title=document.querySelector("#ytTitle"),opts=document.querySelector("#ytTitleOptions"),desc=document.querySelector("#ytDescription"),privacy=document.querySelector("#ytPrivacy");
    if(title)title.value=done.title||"RelaxScape · Naturaleza y relajación";
    if(opts){opts.innerHTML="";(done.titleOptions||[done.title||"RelaxScape · Naturaleza y relajación"]).forEach((v,i)=>{const o=document.createElement("option");o.value=v;o.textContent=v;if(i===0)o.selected=true;opts.appendChild(o)});opts.onchange=()=>{if(title)title.value=opts.value}}
    if(desc)desc.value=done.description||"";
-   previewBox?.classList.remove("hidden");confirmBox?.classList.remove("hidden");s.textContent="🟢 Vídeo generado. Revísalo antes de publicar.";window.__ytPendingVideo=done.name;
+   previewBox?.classList.remove("hidden");confirmBox?.classList.remove("hidden");s.textContent="🟢 Vídeo generado. Revísalo antes de publicar.";window.__ytPendingVideo=done.name;window.__ytPendingThumbnail=done.thumbnailUrl?done.thumbnailUrl.split("/").pop():null;
   }catch(e){s.textContent="🔴 "+e.message}finally{g.disabled=false}
  };
- if(confirmBtn)confirmBtn.onclick=async()=>{if(!window.__ytPendingVideo)return;confirmBtn.disabled=true;if(uploadStatus)uploadStatus.textContent="Subiendo el vídeo a YouTube…";try{const r=await fetch("/api/youtube/publish-existing",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify({name:window.__ytPendingVideo,title:document.querySelector("#ytTitle")?.value,description:document.querySelector("#ytDescription")?.value,tags:["música relajante","relajación","meditación","naturaleza","sleep","ambient"],privacyStatus:document.querySelector("#ytPrivacy")?.value||"public"})});const x=await r.json();if(!r.ok)throw Error(x.error||"No se pudo subir el vídeo");if(uploadStatus)uploadStatus.textContent="🟢 Vídeo publicado correctamente en YouTube.";confirmBtn.textContent="✓ Subido a YouTube";}catch(e){if(uploadStatus)uploadStatus.textContent="🔴 "+e.message;confirmBtn.disabled=false}};refreshYouTubePublishStatus();
+ if(confirmBtn)confirmBtn.onclick=async()=>{if(!window.__ytPendingVideo)return;confirmBtn.disabled=true;if(uploadStatus)uploadStatus.textContent="Subiendo el vídeo a YouTube…";try{const r=await fetch("/api/youtube/publish-existing",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify({name:window.__ytPendingVideo,title:document.querySelector("#ytTitle")?.value,description:document.querySelector("#ytDescription")?.value,tags:["música relajante","relajación","meditación","naturaleza","sleep","ambient"],privacyStatus:document.querySelector("#ytPrivacy")?.value||"public",thumbnailName:window.__ytPendingThumbnail})});const x=await r.json();if(!r.ok)throw Error(x.error||"No se pudo subir el vídeo");if(uploadStatus)uploadStatus.textContent=x.result?.thumbnailSet?"🟢 Vídeo y portada publicados correctamente en YouTube.":"🟢 Vídeo publicado; YouTube no confirmó la portada personalizada.";confirmBtn.textContent="✓ Subido a YouTube";}catch(e){if(uploadStatus)uploadStatus.textContent="🔴 "+e.message;confirmBtn.disabled=false}};refreshYouTubePublishStatus();
 });
