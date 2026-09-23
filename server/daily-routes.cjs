@@ -128,12 +128,12 @@ module.exports=function registerDailyRoutes(app){
   b.writeUInt16LE(channels*bytesPerSample,32);b.writeUInt16LE(16,34);
   b.write('data',36);b.writeUInt32LE(n*channels*bytesPerSample,40);
 
-  const s=hashSeed(seed), theme=s%4;
-  // El perfil musical se selecciona con la misma semilla que el paisaje: imagen y sonido
-  // pertenecen siempre al mismo universo (zen, concentración, sueño o celta).
-  const roots=[[110,132,165,220],[100,120,150,200],[90,108,135,180],[120,144,180,240]][theme];
+  const s=hashSeed(seed), theme=s%6;
+  // El audio usa exactamente el mismo índice temático que promptFor(seed),
+  // para que paisaje, iluminación y música pertenezcan al mismo ambiente.
+  const roots=[[110,132,165,220],[100,120,150,200],[90,108,135,180],[120,144,180,240],[104,130,156,208],[82,98,123,164]][theme];
   const phases=roots.map((_,i)=>((s+i*97)%1000)/1000*Math.PI*2);
-  const scale=theme===3?[0,3,5,7,10,12]:[0,2,4,7,9,11];
+  const scale=theme===3?[0,3,5,7,10,12]:theme===5?[0,2,3,7,9,10]:[0,2,4,7,9,11];
   const ambience=[[.0025,7.5],[.0020,10],[.0017,12],[.0014,15],[.0011,20]];
 
   for(let i=0;i<n;i++){
