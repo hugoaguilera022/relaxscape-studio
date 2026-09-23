@@ -102,7 +102,7 @@ module.exports=function registerDailyRoutes(app){
   return {provider:'Unsplash · fotografía real de respaldo',sourceUrl:url,profile:profile.key};
  }
  
- async function generateAceStep(out,seed,seconds){
+ async function generateAceStep(out,seed,seconds,onProgress){
   const base='https://ace-step-v1-5.hf.space';
   const prompts={
    'zen-piano':'long-form instrumental zen relaxation, beautiful soft felt piano melody, warm strings, airy pads, very subtle acoustic guitar, 58 BPM, slow evolving harmony, spacious cinematic meditation, no vocals, no drums, no percussion, no electronic beat',
@@ -148,7 +148,7 @@ module.exports=function registerDailyRoutes(app){
      finally{clean(tmp);}
      return {provider:'ACE-Step 1.5 · Hugging Face ZeroGPU',prompt:caption,profile:profile.key};
     }
-    await new Promise(resolve=>setTimeout(resolve,5000));
+    if(typeof onProgress==='function'){const elapsed=Math.max(0,Date.now()-(deadline-Math.max(360000,duration*1800)));const total=Math.max(1,Math.max(360000,duration*1800));const local=Math.min(94,55+Math.round((elapsed/total)*39));onProgress(local,'Creando audio relajante IA…');} await new Promise(resolve=>setTimeout(resolve,5000));
    }
   }catch{return null;}
   return null;
@@ -380,7 +380,7 @@ module.exports=function registerDailyRoutes(app){
   await sharp(image).resize(1280,720,{fit:'cover'}).composite([{input:svg,blend:'over'}]).jpeg({quality:90,mozjpeg:true}).toFile(out);
   return out;
  }
- async function makeVideo({durationMinutes=60,seed='daily',youtubeMode=false}){
+ async function makeVideo({durationMinutes=60,seed='daily',youtubeMode=false,onProgress}){
   const minutes=Math.max(1,Math.min(1440,Number(durationMinutes)||60)),seconds=Math.max(60,minutes*60);
   const stamp=new Date().toISOString().replace(/[:.]/g,'-');
   const image=path.join(TEMP_DIR,'daily-'+stamp+'.img'),aud=path.join(TEMP_DIR,'daily-'+stamp+'.wav');
@@ -388,12 +388,16 @@ module.exports=function registerDailyRoutes(app){
   try{
    const theme=youtubeMode?youtubeProfileFor(seed):promptFor(seed);
    const prompt=theme.prompt;
+   const progress=(p,m)=>{if(typeof onProgress==='function')onProgress(p,m);};
+   progress(20,'Preparando paisaje…');
    let imageInfo= youtubeMode?await downloadYouTubeLandscape(image,seed):await generateFreeAIImage(image,prompt,seed);
    if(!imageInfo)imageInfo=await downloadLandscape(image,seed);
+   progress(40,'Paisaje preparado.');
    const segmentSeconds=Math.min(seconds,300);
    let audioInfo=null;
-   if(youtubeMode)audioInfo=await generateAceStep(aud,seed,segmentSeconds);
-   if(!audioInfo){if(youtubeMode)writeYouTubeWav(aud,segmentSeconds,seed);else writeWav(aud,segmentSeconds,seed);}
+   if(youtubeMode)audioInfo=await generateAceStep(aud,seed,segmentSeconds,(p,m)=>progress(p,m));
+   if(!audioInfo){progress(70,'Creando audio relajante local…');if(youtubeMode)writeYouTubeWav(aud,segmentSeconds,seed);else writeWav(aud,segmentSeconds,seed);}
+   progress(75,'Montando vídeo…');
    // El motor YouTube genera un bloque musical largo y coherente que se repite solo
    // después de varios minutos, evitando bucles cortos y artificiales.
    const segment=path.join(TEMP_DIR,'segment-'+stamp+'.mp4');
@@ -406,6 +410,7 @@ module.exports=function registerDailyRoutes(app){
     await ff(['-y','-stream_loop','-1','-i',segment,'-t',String(seconds),
       '-map','0:v:0','-map','0:a:0','-c','copy','-movflags','+faststart',out]);
    }finally{clean(segment);}
+   progress(96,'Comprobando vídeo final…');
    const titles={
     zen:['Música Zen para Relajarse y Calmar la Mente · Naturaleza y Meditación','Relajación Profunda · Música Zen y Paisajes Naturales','Música Relajante para Reducir el Estrés · Zen y Naturaleza'],
     focus:['Música para Estudiar y Concentrarse · Paisaje Natural Relajante','Música Relajante para Trabajar, Estudiar y Concentrarse','Concentración Profunda · Música Ambiental y Naturaleza'],
@@ -452,8 +457,7 @@ module.exports=function registerDailyRoutes(app){
   const id='daily-'+Date.now();jobs.set(id,{status:'running',progress:5,message:'Preparando generación gratuita...'});res.json({jobId:id,status:'running'});
   try{
    jobs.set(id,{status:'running',progress:25,message:'Generando paisaje IA gratuito...'});
-   jobs.set(id,{status:'running',progress:55,message:'Creando audio relajante local...'});
-   const result=await makeVideo({durationMinutes:req.body?.durationMinutes||60,seed:id,youtubeMode:req.body?.youtubeMode===true});
+   const result=await makeVideo({durationMinutes:req.body?.durationMinutes||60,seed:id,youtubeMode:req.body?.youtubeMode===true,onProgress:(progress,message)=>jobs.set(id,{status:'running',progress,message})});
    jobs.set(id,{status:'succeeded',progress:100,message:'Vídeo terminado',result});
   }catch(e){console.error('[Daily free]',e);jobs.set(id,{status:'failed',progress:0,error:e.message||String(e)});}
  });
