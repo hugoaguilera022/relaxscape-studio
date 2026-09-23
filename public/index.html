@@ -15,6 +15,7 @@
     <button class="nav" data-tab="landscapes">◉ <span>Paisajes</span></button>
     <button class="nav" data-tab="music">♫ <span>Música</span></button>
     <button class="nav" data-tab="schedule">◷ <span>Programación</span></button>
+    <button class="nav" data-tab="youtubePublish">⬆ <span>YouTube automático</span></button>
     <button class="nav" data-tab="library">▣ <span>Biblioteca</span></button>
   </nav>
   <div class="aside-bottom"><small>RELAXSCAPE STUDIO</small><p>Genera contenido relajante de forma automática.</p></div>
@@ -72,6 +73,23 @@
 
 <section id="music" class="tab"><div class="section-head"><div><p class="eyebrow">BIBLIOTECA SONORA</p><h2>Música relajante</h2><p class="sub">24 pistas ambientales de distintos estilos. Puedes escucharlas y crear mezclas originales de 1 o 2 horas combinando toda la biblioteca.</p></div><label class="button">＋ Subir música<input id="musicInput" type="file" accept="audio/*" hidden></label></div><div class="mix-tools"><button id="mix1h" class="primary small">🎧 Crear mezcla 1 hora</button><button id="mix2h" class="ghost small">🌙 Crear mezcla 2 horas</button><span id="mixStatus"></span></div><div class="music-filters" id="musicFilters"><button class="active" data-cat="Todas">Todas</button><button data-cat="Sueño">😴 Sueño</button><button data-cat="Meditación">🧘 Meditación</button><button data-cat="Naturaleza">🌿 Naturaleza</button><button data-cat="Relax">✨ Relax</button><button data-cat="Concentración">🎯 Concentración</button></div><div id="musicList" class="track-grid"></div></section>
 
+<section id="youtubePublish" class="tab">
+  <div class="section-head"><div><p class="eyebrow">PUBLICACIÓN AUTOMÁTICA</p><h2>YouTube automático</h2><p class="sub">Vincula tu canal una sola vez y RelaxScape podrá generar un vídeo nuevo y subirlo cada día. Este apartado es independiente de Programación.</p></div><span class="badge">OAUTH 2.0 · YOUTUBE API</span></div>
+  <div class="builder">
+    <div class="builder-head"><div><div><h2>Cuenta de YouTube</h2><p>La conexión usa la autorización oficial de Google. No guardamos tu contraseña.</p></div></div><span id="ytConnectionBadge" class="badge">Sin vincular</span></div>
+    <div class="builder-bottom"><div id="ytConnectionStatus">Comprobando conexión…</div><button id="ytConnect" class="primary">Vincular cuenta de YouTube →</button><button id="ytDisconnect" class="ghost hidden">Desvincular</button></div>
+  </div>
+  <div class="builder" style="margin-top:20px">
+    <div class="builder-head"><div><div><h2>Publicación diaria</h2><p>Usa el mismo motor de imagen IA + audio + mezclador + MP4 del generador diario y después lo publica en tu canal.</p></div></div><span class="badge">AUTOMÁTICO</span></div>
+    <div class="builder-grid">
+      <div class="field"><label>DURACIÓN</label><div class="selectbox"><input id="ytDailyDuration" type="number" min="1" max="1440" value="60" style="width:100%;border:0;background:transparent;font:inherit;outline:none"></div></div>
+      <div class="field"><label>PRIVACIDAD</label><div class="selectbox disabled">Público</div></div>
+    </div>
+    <div class="builder-bottom"><div id="ytPublishStatus">Vincula primero tu canal.</div><button id="ytPublishNow" class="primary">Generar y subir ahora →</button></div>
+  </div>
+  <div class="note" style="margin-top:16px">Para activar la subida diaria real en Render se necesita configurar OAuth de Google y un Render Cron Job. Render ejecuta los cron jobs en UTC y no les proporciona disco persistente, por lo que la cuenta vinculada debe guardarse en un servicio web con almacenamiento persistente. </div>
+</section>
+
 <section id="schedule" class="tab"><div class="section-head"><div><p class="eyebrow">AUTOMATIZACIÓN</p><h2>Vídeo diario</h2></div></div><div class="schedule-card"><div class="schedule-icon">◷</div><div><h3>Generación automática diaria</h3><p>Cada día se puede crear un vídeo automáticamente usando el primer paisaje y la primera pista disponibles.</p></div><label class="switch"><input id="scheduleToggle" type="checkbox" checked><span></span></label></div><div class="schedule-options"><label>HORA<input id="scheduleHour" type="time" value="07:00"></label><label>DURACIÓN<select id="scheduleDuration"><option value="1">1 hora</option></select></label><button id="saveSchedule" class="primary">Guardar programación</button><button id="runDailyNow" class="ghost">▶ Generar vídeo ahora</button></div><div id="dailyStatus" class="daily-status">Comprobando estado del vídeo diario…</div><p class="note">La hora se interpreta según la zona horaria del servidor donde esté desplegada la aplicación.</p></section>
 
 <section id="library" class="tab"><div class="section-head"><div><p class="eyebrow">HISTORIAL</p><h2>Vídeos generados</h2></div></div><div id="videos" class="video-list"></div></section>
@@ -82,6 +100,7 @@
 <footer>RelaxScape Studio · Vídeos proporcionados por <a href="https://www.pexels.com/" target="_blank" rel="noopener">Pexels</a> · Usa imágenes y música con derechos de uso adecuados.</footer>
 <script src="/app.js?v=20260923-01"></script>
 <script src="/youtube.js?v=20260923-01"></script>
+<script src="/youtube-publish.js?v=20260923-01"></script>
 <script>
 document.addEventListener("click",function(e){const b=e.target.closest(".nav");if(!b)return;document.querySelectorAll(".nav").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));const tab=document.getElementById(b.dataset.tab);if(tab)tab.classList.add("active");if(b.dataset.tab==="ai"&&typeof window.ensureAIOptions==="function")window.ensureAIOptions();});
 </script>
