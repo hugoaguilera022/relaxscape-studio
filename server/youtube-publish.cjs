@@ -1,6 +1,6 @@
 const fs=require("fs"),fsp=fs.promises,path=require("path"),crypto=require("crypto");
 module.exports=function(app){
- const root=path.resolve(process.cwd()), tokenFile=path.join(root,"data/youtube-token.json"), videoDir=path.join(root,"data/videos");
+ const root=path.resolve(process.cwd()), tokenFile=process.env.YOUTUBE_TOKEN_FILE||path.join(root,"data/youtube-token.json"), videoDir=path.join(root,"data/videos");
  fs.mkdirSync(path.dirname(tokenFile),{recursive:true});fs.mkdirSync(videoDir,{recursive:true});
  const cfg=()=>({id:process.env.YOUTUBE_CLIENT_ID,secret:process.env.YOUTUBE_CLIENT_SECRET,redirect:process.env.YOUTUBE_REDIRECT_URI});
  const token=()=>{try{return JSON.parse(fs.readFileSync(tokenFile,"utf8"))}catch{return null}};
