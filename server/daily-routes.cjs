@@ -347,18 +347,8 @@ module.exports=function registerDailyRoutes(app){
   };
   const pair=labels[profileKey]||labels['zen-piano'];
   const esc=v=>String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
-  const svg='<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">'+
-    '<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity=".08"/><stop offset="1" stop-color="#000" stop-opacity=".72"/></linearGradient></defs>'+
-    '<rect width="1280" height="720" fill="url(#g)"/>'+
-    '<rect x="42" y="34" width="240" height="48" rx="24" fill="#000" fill-opacity=".42"/>'+
-    '<text x="162" y="67" text-anchor="middle" font-family="DejaVu Sans,Arial,sans-serif" font-size="25" font-weight="700" fill="white">RELAXSCAPE</text>'+
-    '<text x="52" y="535" font-family="DejaVu Sans,Arial,sans-serif" font-size="48" font-weight="700" fill="white">'+esc(pair[0])+'</text>'+
-    '<text x="52" y="588" font-family="DejaVu Sans,Arial,sans-serif" font-size="23" font-weight="500" fill="white">'+esc(pair[1])+'</text></svg>';
-  const svgFile=path.join(TEMP_DIR,'thumb-'+Date.now()+'.svg');
-  fs.writeFileSync(svgFile,svg,'utf8');
-  try{
-   await ff(['-y','-i',image,'-i',svgFile,'-filter_complex','[0:v]scale=1280:720:force_original_aspect_ratio=increase:flags=lanczos,crop=1280:720,eq=saturation=1.12:contrast=1.06[bg];[1:v]format=rgba[ov];[bg][ov]overlay=0:0,format=yuv420p','-frames:v','1','-q:v','2',out]);
-  }finally{clean(svgFile);}
+  const svg=Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity=".08"/><stop offset="1" stop-color="#000" stop-opacity=".72"/></linearGradient></defs><rect width="1280" height="720" fill="url(#g)"/><rect x="42" y="34" width="240" height="48" rx="24" fill="#000" fill-opacity=".42"/><text x="162" y="67" text-anchor="middle" font-family="DejaVu Sans,Arial,sans-serif" font-size="25" font-weight="700" fill="white">RELAXSCAPE</text><text x="52" y="535" font-family="DejaVu Sans,Arial,sans-serif" font-size="48" font-weight="700" fill="white">'+esc(pair[0])+'</text><text x="52" y="588" font-family="DejaVu Sans,Arial,sans-serif" font-size="23" font-weight="500" fill="white">'+esc(pair[1])+'</text></svg>');
+  await sharp(image).resize(1280,720,{fit:'cover'}).composite([{input:svg,blend:'over'}]).jpeg({quality:90,mozjpeg:true}).toFile(out);
   return out;
  }
  async function makeVideo({durationMinutes=60,seed='daily',youtubeMode=false}){
