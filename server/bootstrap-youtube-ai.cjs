@@ -479,6 +479,8 @@ function proxyToCore(req,res){
     }catch(e){res.status(502).json({error:"Servidor principal no disponible: "+e.message})}
   });
 }
+require("./auth-routes.cjs")(app);
+
 app.use(proxyToCore);
 
 require('./daily-routes.cjs')(app);
