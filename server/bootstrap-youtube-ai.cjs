@@ -458,24 +458,28 @@ app.post("/api/youtube-ai-final",async(req,res)=>{
   finally{await fsp.rm(w,{recursive:true,force:true})}
 });
 
-process.env.RELAXSCAPE_EMBEDDED="1";
-
-import("./index.js").then(({default:coreApp})=>{
-  // Un único proceso Node escucha el PORT público de Render.
-  // El core se monta en el wrapper sin un segundo puerto ni proxy HTTP interno.
-  app.use(coreApp);
-
-  const server=require('./daily-routes.cjs')(app);
-app.listen(PORT,"0.0.0.0",()=>{
-    console.log("RelaxScape Studio listo en http://0.0.0.0:"+PORT);
-  });
-  server.keepAliveTimeout=120000;
-  server.headersTimeout=125000;
-  server.on("error",(err)=>console.error("[Wrapper] error de servidor:",err));
-}).catch(err=>{
-  console.error("[RelaxScape] No se pudo cargar el core:",err.stack||err.message);
-  process.exitCode=1;
+const child=spawn(process.execPath,[path.join(ROOT,"server/index.js")],{
+  env:{...process.env,PORT:String(INTERNAL_PORT)},
+  stdio:"inherit"
 });
+child.on("exit",(code,signal)=>{console.error("[RelaxScape core] exited",code,signal);process.exit(code||1)});
 
-process.on("uncaughtException",(err)=>console.error("[RelaxScape] uncaughtException:",err.stack||err.message));
-process.on("unhandledRejection",(err)=>console.error("[RelaxScape] unhandledRejection:",err));
+function proxyToCore(req,res){
+  const headers={...req.headers,host:"127.0.0.1:"+INTERNAL_PORT};
+  delete headers["content-length"];
+  const chunks=[];
+  req.on("data",c=>chunks.push(c));
+  req.on("end",async()=>{
+    try{
+      const body=chunks.length?Buffer.concat(chunks):undefined;
+      const r=await fetch("http://127.0.0.1:"+INTERNAL_PORT+req.originalUrl,{method:req.method,headers,body});
+      res.status(r.status);
+      r.headers.forEach((v,k)=>{if(k.toLowerCase()!=="transfer-encoding")res.setHeader(k,v)});
+      const ab=await r.arrayBuffer();res.end(Buffer.from(ab));
+    }catch(e){res.status(502).json({error:"Servidor principal no disponible: "+e.message})}
+  });
+}
+app.use(proxyToCore);
+
+require('./daily-routes.cjs')(app);
+app.listen(PORT,"0.0.0.0",()=>console.log("RelaxScape YouTube AI wrapper activo en http://0.0.0.0:"+PORT));
