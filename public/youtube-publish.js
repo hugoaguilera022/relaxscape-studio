@@ -14,5 +14,11 @@ document.addEventListener("DOMContentLoaded",()=>{
  if(g)g.onclick=async()=>{g.disabled=true;s.textContent="🟡 Generando vídeo…";previewBox?.classList.add("hidden");p?.classList.add("hidden");try{const r=await fetch("/api/youtube/daily-generate",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify({durationMinutes:Number(document.querySelector("#ytDailyDuration")?.value||60)})});const x=await r.json();if(!r.ok)throw Error(x.error||"No se pudo generar");if(video){video.src=x.result.url+"?v="+Date.now();video.load()}previewBox?.classList.remove("hidden");p?.classList.remove("hidden");s.textContent="🟢 Vídeo generado. Revísalo antes de publicarlo.";window.__ytPendingVideo=x.result.name}catch(e){s.textContent="🔴 "+e.message}finally{g.disabled=false}};
  if(p)p.onclick=async()=>{p.disabled=true;s.textContent="🟡 Publicando el vídeo revisado en YouTube…";try{const r=await fetch("/api/youtube/publish-existing",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify({name:window.__ytPendingVideo})});const x=await r.json();if(!r.ok)throw Error(x.error||"No se pudo publicar");s.innerHTML='🟢 Publicado en YouTube: <a href="'+x.result.url+'" target="_blank" rel="noopener">Abrir vídeo</a>';p.classList.add("hidden");}catch(e){s.textContent="🔴 "+e.message}finally{p.disabled=false}};
  refreshYouTubePublishStatus();
- if(new URLSearchParams(location.search).get("login")==="connected"){history.replaceState({},document.title,location.pathname);setTimeout(refreshYouTubePublishStatus,500)}
+ const params=new URLSearchParams(location.search);
+ if(params.get("youtube")==="connected"){
+  const nav=document.querySelector('.nav[data-tab="youtubePublish"]');
+  if(nav)nav.click();
+  history.replaceState({},document.title,location.pathname);
+  setTimeout(refreshYouTubePublishStatus,300);
+ }
 });
