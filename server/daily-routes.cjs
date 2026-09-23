@@ -74,62 +74,89 @@ module.exports=function registerDailyRoutes(app){
  }
 
  async function downloadYouTubeLandscape(out,seed){
-  // Paisajes fotográficos reales y cinematográficos, más cercanos al lenguaje visual
-  // de los vídeos de relajación del canal analizado. No se reutilizan sus imágenes.
-  const urls=[
-   'https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=2400&q=92',
-   'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=2400&q=92',
-   'https://images.unsplash.com/photo-1439853949127-fa647821eba0?auto=format&fit=crop&w=2400&q=92',
-   'https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=2400&q=92',
-   'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?auto=format&fit=crop&w=2400&q=92',
-   'https://images.unsplash.com/photo-1511497584788-876760111969?auto=format&fit=crop&w=2400&q=92',
-   'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=2400&q=92',
-   'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=2400&q=92'
-  ];
-  const url=urls[hashSeed(seed)%urls.length],r=await fetch(url,{signal:AbortSignal.timeout(30000)});
+  // La imagen se selecciona por el MISMO perfil que controla la música.
+  // Así evitamos combinaciones incoherentes (por ejemplo mar + música celta).
+  const profiles={
+   'zen-piano':[
+    'https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=2400&q=92',
+    'https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=2400&q=92'
+   ],
+   'ocean-meditation':[
+    'https://images.unsplash.com/photo-1439853949127-fa647821eba0?auto=format&fit=crop&w=2400&q=92',
+    'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=2400&q=92'
+   ],
+   'focus-piano':[
+    'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=2400&q=92',
+    'https://images.unsplash.com/photo-1511497584788-876760111969?auto=format&fit=crop&w=2400&q=92'
+   ],
+   'celtic-flute':[
+    'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=2400&q=92',
+    'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=2400&q=92'
+   ],
+   'deep-sleep':[
+    'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=2400&q=92',
+    'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?auto=format&fit=crop&w=2400&q=92'
+   ],
+   'spa-water':[
+    'https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=2400&q=92',
+    'https://images.unsplash.com/photo-1439853949127-fa647821eba0?auto=format&fit=crop&w=2400&q=92'
+   ]
+  };
+  const keys=Object.keys(profiles),profile=youtubeProfileFor(seed),urls=profiles[profile.key]||profiles['zen-piano'];
+  const url=urls[hashSeed(seed)%urls.length];
+  const r=await fetch(url,{signal:AbortSignal.timeout(30000)});
   if(!r.ok)throw Error('No se pudo descargar el paisaje YouTube (HTTP '+r.status+').');
   const b=Buffer.from(await r.arrayBuffer());if(b.length<10000)throw Error('Paisaje YouTube no válido.');
-  fs.writeFileSync(out,b);return {provider:'Unsplash · fotografía real',sourceUrl:url};
+  fs.writeFileSync(out,b);return {provider:'Unsplash · fotografía real coherente con el perfil',sourceUrl:url,profile:profile.key};
  }
 
- async function generateMusicGen(out,seed,seconds){
-  const base='https://facebook-musicgen.hf.space';
-  const prompts=[
-   'beautiful relaxing zen piano music for meditation and stress relief, soft expressive piano, gentle acoustic guitar and airy flute, slow tempo, warm cinematic harmony, peaceful ocean and nature feeling, instrumental only, no vocals, no drums, no percussion, no beat',
-   'peaceful yoga and meditation music inspired by the sea, delicate piano, soft flute, gentle acoustic guitar, very slow tempo, warm emotional melody, subtle ocean ambience, elegant healing relaxation music, instrumental only, no vocals, no drums, no percussion',
-   'calm concentration and study music, beautiful soft piano melody, warm pads, subtle acoustic guitar, gentle flute phrases, slow flowing harmony, sophisticated relaxing instrumental, no vocals, no drums, no percussion, no electronic beat',
-   'beautiful relaxing celtic instrumental music, emotional flute, soft piano, gentle acoustic guitar, ancient peaceful atmosphere, slow flowing melody, lush cinematic harmony, nature and forest feeling, instrumental only, no vocals, no drums, no percussion',
-   'deep sleep relaxation music, extremely gentle piano, long soft notes, airy flute, warm strings, slow peaceful harmony, dreamy night atmosphere, beautiful emotional instrumental, no vocals, no drums, no percussion, no rhythm-heavy elements'
-  ];
-  const prompt=prompts[hashSeed(seed)%prompts.length];
+ async function generateAceStep(out,seed,seconds){
+  // ACE-Step 1.5: API pública del Space oficial de Hugging Face.
+  // Permite piezas mucho más largas y coherentes que MusicGen y tiene licencia MIT.
+  const base='https://ace-step-v1-5.hf.space';
+  const prompts={
+   'zen-piano':'instrumental zen meditation music, soft expressive piano as the main instrument, gentle warm strings, very subtle acoustic guitar, slow 58 BPM, spacious long notes, peaceful mountain lake at sunrise, serene spa atmosphere, emotional but minimal, no vocals, no drums, no percussion, no beat, no electronic sounds',
+   'ocean-meditation':'instrumental ocean meditation music, delicate piano and airy flute, very soft acoustic guitar, slow 56 BPM, flowing sustained harmony, gentle waves atmosphere, peaceful turquoise sea and quiet beach at sunrise, soothing yoga and relaxation mood, no vocals, no drums, no percussion, no beat',
+   'focus-piano':'instrumental concentration and study music, beautiful soft piano melody, warm sustained pads, subtle acoustic guitar, slow 62 BPM, repetitive but evolving harmonic flow, calm Japanese garden and still lake atmosphere, sophisticated peaceful background music, no vocals, no drums, no percussion, no electronic beat',
+   'celtic-flute':'instrumental relaxing Celtic-inspired music, emotional wooden flute as the main instrument, soft piano and gentle strings underneath, slow 60 BPM, flowing melody, emerald forest, river and misty mountains atmosphere, natural acoustic character, peaceful and cinematic, no vocals, no drums, no percussion',
+   'deep-sleep':'instrumental deep sleep music, extremely gentle felt piano, long soft notes, warm airy strings, distant flute tones, very slow 50 BPM, minimal melody, blue-hour mountain lake and moonlight atmosphere, dreamy continuous relaxation, no vocals, no drums, no percussion, no beat',
+   'spa-water':'instrumental luxury spa relaxation music, delicate piano, soft marimba-like mallets, airy flute and warm strings, slow 58 BPM, flowing water and tropical lagoon atmosphere, elegant wellness and meditation mood, peaceful and spacious, no vocals, no drums, no percussion, no electronic beat'
+  };
+  const profile=youtubeProfileFor(seed),caption=prompts[profile.key]||prompts['zen-piano'];
+  const duration=Math.min(600,Math.max(120,Number(seconds)||300));
   let submit;
   try{
-   submit=await fetch(base+'/gradio_api/call/predict_full',{
+   submit=await fetch(base+'/v1/music/generate',{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({data:['small',prompt,null,Math.min(120,Math.max(30,seconds)),250,0,0.9,3.0]}),
+    body:JSON.stringify({caption,lyrics:'[Instrumental]',thinking:true,instrumental:true,audio_duration:duration,audio_format:'mp3',model:'acestep-v15-turbo',inference_steps:8,batch_size:1,use_random_seed:false,seed:hashSeed(seed)}),
     signal:AbortSignal.timeout(30000)
    });
   }catch{return null;}
   if(!submit.ok)return null;
-  const j=await submit.json().catch(()=>null),eventId=j?.event_id;if(!eventId)return null;
+  const job=await submit.json().catch(()=>null),jobId=job?.job_id;if(!jobId)return null;
+  const deadline=Date.now()+Math.max(300000,duration*1500);
   try{
-   const stream=await fetch(base+'/gradio_api/call/predict_full/'+eventId,{signal:AbortSignal.timeout(720000)});
-   if(!stream.ok)return null;
-   const text=await stream.text();
-   const matches=[...text.matchAll(/data:\s*(\[[\s\S]*?\])\s*(?:\n|$)/g)];
-   if(!matches.length)return null;
-   const data=JSON.parse(matches[matches.length-1][1]),item=data?.[0];
-   const url=item?.url||(typeof item==='string'?item:null)||(item?.path?base+'/file='+item.path:null);
-   if(!url)return null;
-   const src=await fetch(url,{signal:AbortSignal.timeout(120000)});if(!src.ok)return null;
-   const tmp=path.join(TEMP_DIR,'musicgen-'+Date.now()+'.bin');fs.writeFileSync(tmp,Buffer.from(await src.arrayBuffer()));
-   try{
-    await ff(['-y','-i',tmp,'-vn','-ac','2','-ar','44100','-c:a','pcm_s16le',out]);
-   }finally{clean(tmp);}
-   return {provider:'Meta MusicGen · Hugging Face ZeroGPU',prompt};
+   while(Date.now()<deadline){
+    const r=await fetch(base+'/v1/jobs/'+encodeURIComponent(jobId),{signal:AbortSignal.timeout(30000)});
+    if(!r.ok)return null;
+    const j=await r.json().catch(()=>null);
+    if(j?.status==='failed')return null;
+    if(j?.status==='succeeded'){
+     const result=j.result||{};
+     const audioPath=result.first_audio_path||(Array.isArray(result.audio_paths)?result.audio_paths[0]:null);
+     if(!audioPath)return null;
+     const audioUrl=audioPath.startsWith('http')?audioPath:(base+'/v1/audio?path='+encodeURIComponent(audioPath));
+     const src=await fetch(audioUrl,{signal:AbortSignal.timeout(120000)});if(!src.ok)return null;
+     const tmp=path.join(TEMP_DIR,'acestep-'+Date.now()+'.mp3');fs.writeFileSync(tmp,Buffer.from(await src.arrayBuffer()));
+     try{await ff(['-y','-i',tmp,'-vn','-ac','2','-ar','44100','-c:a','pcm_s16le',out]);}
+     finally{clean(tmp);}
+     return {provider:'ACE-Step 1.5 · Hugging Face ZeroGPU',prompt:caption,profile:profile.key};
+    }
+    await new Promise(resolve=>setTimeout(resolve,5000));
+   }
   }catch{return null;}
+  return null;
  }
-
  async function downloadLandscape(out,seed){
   const url=LANDSCAPES[hashSeed(seed)%LANDSCAPES.length];
   const r=await fetch(url,{signal:AbortSignal.timeout(30000)});
