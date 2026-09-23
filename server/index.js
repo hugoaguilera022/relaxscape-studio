@@ -86,19 +86,35 @@ app.get("/api/auth/callback",async(req,res)=>{
   authStates.delete(state);
   if(!code || !expires || expires<Date.now()) return res.status(400).send("La sesión de Google ha caducado. Vuelve a intentarlo.");
   try{
-    const tokenRes=await fetch("https://oauth2.googleapis.com/token",{
-      method:"POST",
-      headers:{"Content-Type":"application/x-www-form-urlencoded"},
-      body:new URLSearchParams({
-        code,client_id:GOOGLE_CLIENT_ID,client_secret:GOOGLE_CLIENT_SECRET,
-        redirect_uri:GOOGLE_REDIRECT_URI,grant_type:"authorization_code"
-      })
-    });
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),15000);
+    let tokenRes;
+    try{
+      tokenRes=await fetch("https://oauth2.googleapis.com/token",{
+        method:"POST",
+        headers:{"Content-Type":"application/x-www-form-urlencoded"},
+        body:new URLSearchParams({
+          code,client_id:GOOGLE_CLIENT_ID,client_secret:GOOGLE_CLIENT_SECRET,
+          redirect_uri:GOOGLE_REDIRECT_URI,grant_type:"authorization_code"
+        }),
+        signal:controller.signal
+      });
+    }finally{
+      clearTimeout(timeout);
+    }
     const tokens=await tokenRes.json();
     if(!tokenRes.ok || !tokens.access_token) throw Error(tokens.error_description||"Google no pudo validar el inicio de sesión.");
-    const userRes=await fetch("https://www.googleapis.com/oauth2/v3/userinfo",{
-      headers:{Authorization:"Bearer "+tokens.access_token}
-    });
+    const userController=new AbortController();
+    const userTimeout=setTimeout(()=>userController.abort(),10000);
+    let userRes;
+    try{
+      userRes=await fetch("https://www.googleapis.com/oauth2/v3/userinfo",{
+        headers:{Authorization:"Bearer "+tokens.access_token},
+        signal:userController.signal
+      });
+    }finally{
+      clearTimeout(userTimeout);
+    }
     const user=await userRes.json();
     if(!userRes.ok || !user.email) throw Error("Google no devolvió los datos de la cuenta.");
     const sessionId=randomBytes(32).toString("hex");
@@ -113,7 +129,10 @@ app.get("/api/auth/callback",async(req,res)=>{
     res.redirect("/");
   }catch(e){
     console.error("[Auth Google]",e.stack||e.message);
-    res.status(502).send("No se pudo completar el inicio de sesión con Google. Vuelve a intentarlo.");
+    const msg=e?.name==="AbortError"
+      ?"Google tardó demasiado en responder. Vuelve a intentarlo."
+      :"No se pudo completar el inicio de sesión con Google. Vuelve a intentarlo.";
+    res.status(e?.name==="AbortError"?504:502).send(msg);
   }
 });
 app.post("/api/auth/logout",(req,res)=>{
