@@ -479,15 +479,15 @@ function proxyToCore(req,res){
     }catch(e){res.status(502).json({error:"Servidor principal no disponible: "+e.message})}
   });
 }
-app.use(proxyToCore);
-
-// Todas las rutas se registran directamente en el proceso público de Render.
-// Así evitamos el compilador dinámico del launcher y registros duplicados.
+// Registramos primero las rutas públicas para que no queden atrapadas por el proxy.
+// El proxy debe ser el último middleware: actúa solo como fallback para las rutas del core.
 require('./musicoterapia-routes.cjs')(app);
 require('./daily-routes.cjs')(app);
 require('./youtube-publish.cjs')(app);
 
 app.get('/healthz',(req,res)=>res.status(200).json({ok:true,service:'RelaxScape',port:PORT}));
+
+app.use(proxyToCore);
 
 const server=app.listen(PORT,"0.0.0.0",()=>console.log("RelaxScape YouTube AI wrapper activo en http://0.0.0.0:"+PORT));
 server.keepAliveTimeout=120000;
