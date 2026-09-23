@@ -595,13 +595,15 @@ module.exports=function registerDailyRoutes(app){
    if(!scenes.length)throw Error('No se pudieron crear escenas visuales.');
    progress(40,'Escenas originales preparadas ('+scenes.length+').');
    const audioSegments=[];
-   const segmentSeconds=Math.min(600,Math.max(120,Math.min(seconds,600)));
-   for(let i=0;i<Math.min(6,Math.ceil(seconds/segmentSeconds));i++){
-    const aud=path.join(work,'music-'+i+'.wav');
-    const info=await generateBlueprintMusic(aud,blueprint,String(seed)+'-music-'+i,segmentSeconds,(p,m)=>progress(40+Math.round(p*.45),m));
-    if(info)audioSegments.push(aud);
-    else {writeYouTubeWav(aud,segmentSeconds,String(seed)+'-'+i);audioSegments.push(aud)}
-   }
+   // Para Programar ahora usamos una única generación musical corta y la repetimos.
+   // Así evitamos bloquear la generación durante horas en vídeos largos.
+   const segmentSeconds=Math.min(120,Math.max(60,seconds));
+   const aud=path.join(work,'music-0.wav');
+   progress(42,'Generando música de Musicoterapia…');
+   const info=await generateBlueprintMusic(aud,blueprint,String(seed)+'-music-0',segmentSeconds,(p,m)=>progress(42+Math.round(p*.28),m));
+   if(info)audioSegments.push(aud);
+   else {writeYouTubeWav(aud,segmentSeconds,String(seed)+'-0');audioSegments.push(aud)}
+   progress(70,'Música preparada; continuando con el montaje…');
    const audio=path.join(work,'music-long.wav');
    const alist=path.join(work,'audio.txt');
    fs.writeFileSync(alist,audioSegments.map(x=>"file '"+x.replace(/'/g,"'\\''")+"'").join("\n"));
