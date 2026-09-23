@@ -188,8 +188,41 @@ async function youtubeMetaAndSample(url,work){
     }
   }
 
+  // 4) Último fallback sin descargar el vídeo: usamos oEmbed + miniatura oficial.
+  // Esto permite continuar con el análisis visual aunque YouTube bloquee los streams.
+  // No se inventa análisis de audio: el resultado queda marcado como visualOnly.
+  let visualOnly=false;
+  if(!info?.id && videoId){
+    try{
+      const oe=new AbortController(),ot=setTimeout(()=>oe.abort(),6000);
+      const rr=await fetch("https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v="+videoId+"&format=json",{
+        headers:{Accept:"application/json","User-Agent":"Mozilla/5.0"},signal:oe.signal
+      });
+      clearTimeout(ot);
+      if(rr.ok){
+        const d=await rr.json();
+        info={
+          id:videoId,
+          title:d.title||"Vídeo de YouTube",
+          author:d.author_name||"",
+          uploader:d.author_name||"",
+          channel:d.author_name||"",
+          duration:60,
+          thumbnail:"https://i.ytimg.com/vi/"+videoId+"/maxresdefault.jpg",
+          description:"",
+          keywords:[],
+          tags:[]
+        };
+        visualOnly=true;
+        console.log("[YouTube] fallback visual oEmbed + miniatura oficial");
+      }
+    }catch(e){
+      console.warn("[YouTube oEmbed fallback]",e.name==="AbortError"?"timeout":e.message);
+    }
+  }
+
   if(!info?.id){
-    throw Error("YouTube está bloqueando el acceso desde Render. Se probaron yt-dlp, Piped e Invidious. "+(metaError?.message||""));
+    throw Error("YouTube está bloqueando el acceso desde Render. Se probaron yt-dlp, Piped e Invidious y el fallback visual.");
   }
 
   const duration=Math.max(1,Number(info.duration||60));
@@ -240,10 +273,28 @@ async function youtubeMetaAndSample(url,work){
     }
   }
 
+  // Si no hubo stream pero tenemos la miniatura oficial, generamos un clip
+  // visual de apoyo para que la IA pueda analizar la escena sin descarga manual.
+  if(!clips.length && visualOnly && info?.thumbnail){
+    const out=path.join(work,"sample-visual.mp4");
+    try{
+      const thumbPath=path.join(work,"youtube-thumbnail.jpg");
+      const tr=await fetch(info.thumbnail,{headers:{"User-Agent":"Mozilla/5.0"}});
+      if(tr.ok){
+        await fsp.writeFile(thumbPath,Buffer.from(await tr.arrayBuffer()));
+        await ff(["-y","-loop","1","-i",thumbPath,"-t","5","-r","1","-c:v","libx264","-pix_fmt","yuv420p","-vf","scale=1280:-2",out]);
+        if(fs.existsSync(out)&&fs.statSync(out).size>5000) clips.push(out);
+      }
+    }catch(e){
+      lastError=e;
+      console.warn("[YouTube visual fallback]",e.message);
+    }
+  }
+
   if(!clips.length){
     throw Error("Se encontró el vídeo pero no fue posible obtener muestras reproducibles. "+(lastError?.message||""));
   }
-  return {info,duration,clips};
+  return {info,duration,clips,visualOnly};
 }
 
 async function extractFrame(video,out){
@@ -294,7 +345,12 @@ app.post("/api/youtube-ai-analyze",async(req,res)=>{
   try{
     await fsp.mkdir(work,{recursive:true});
     const x=await youtubeMetaAndSample(url,work);
-    const analysis=await analyzeLocalVideo(x.clips[0],work,{title:x.info.title,author:x.info.uploader||x.info.channel,duration:x.duration,thumbnail:x.info.thumbnail,description:x.info.description,keywords:(x.info.tags||[]).join(",")});
+    const analysis=await analyzeLocalVideo(x.clips[0],work,{title:x.info.title,author:x.info.uploader||x.info.channel,duration:x.duration,thumbnail:x.info.thumbnail,description:x.info.description,keywords:(x.info.tags||[]).join(","),visualOnly:x.visualOnly});
+    if(x.visualOnly){
+      analysis.visualOnly=true;
+      analysis.audioAnalysis="No disponible: YouTube bloqueó el acceso al stream de audio. Se realizó análisis visual mediante la miniatura oficial.";
+      analysis.videoAnalysis=(analysis.videoAnalysis||"")+" Modo visual de respaldo: se utilizó la miniatura oficial porque YouTube bloqueó la reproducción desde el servidor.";
+    }
     res.json(analysis);
   }catch(e){res.status(500).json({error:e.message||String(e),code:"YOUTUBE_ACCESS_BLOCKED"})}
   finally{setTimeout(()=>fsp.rm(work,{recursive:true,force:true}).catch(()=>{}),600000)}
