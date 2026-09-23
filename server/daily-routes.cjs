@@ -437,78 +437,198 @@ module.exports=function registerDailyRoutes(app){
   await sharp(image).resize(1280,720,{fit:'cover'}).composite([{input:svg,blend:'over'}]).jpeg({quality:90,mozjpeg:true}).toFile(out);
   return out;
  }
- async function makeVideo({durationMinutes=60,seed='daily',youtubeMode=false,onProgress}){
+
+ function referenceBlueprintFromText(title,analysis,profileKey){
+  const t=(String(title||"")+" "+String(analysis||"")).toLowerCase();
+  const key=profileKey||classifyMusicoterapiaTitle(title);
+  const has=(re)=>re.test(t);
+  const visualSets={
+   focus:["minimalist desk with warm lamp, open notebook and piano keys","sunlit library with books, soft dust in the air","abstract cream and gold light waves, elegant and calm","night study room with window rain and warm lamp"],
+   celtic:["misty stone valley with ancient ruins and soft green light","wooden flute and harp in a candlelit stone room","emerald river gorge with cinematic fog","moonlit Celtic-inspired hall with warm firelight"],
+   deep:["quiet bedroom with linen, moonlight and soft curtains","dark blue star field with slow luminous particles","warm candle beside a sleeping-room window at night","abstract deep-indigo clouds and soft glowing light"],
+   ocean:["underwater blue light caustics over smooth stones","minimal white room with moving ocean reflections","close view of translucent water and floating light","distant moonlit sea with soft horizon"],
+   rain:["rain-covered window with warm interior light","cozy reading room with candle and wood textures","close-up of raindrops and blurred city lights","dark forest seen through a rainy cabin window"],
+   spa:["minimal luxury spa room with candles and stone","silk fabric, warm light and shallow water reflections","close-up of hands-free spa stones and soft steam","tropical wellness interior with diffused morning light"],
+   forest:["misty woodland path with shafts of light","close-up of moss, ferns and a small stream","wooden cabin interior with forest light through windows","abstract green bokeh and slow luminous particles"],
+   zen:["minimal zen room with cushions, candle and soft sunlight","warm stone interior with incense smoke","abstract beige and amber light with subtle particles","quiet architectural space with water reflections"]
+  };
+  const set=visualSets[key==='focus-piano'?'focus':key==='celtic-flute'?'celtic':key==='deep-sleep'?'deep':key==='ocean-meditation'?'ocean':key==='rain-piano'||key==='cabin-rain'?'rain':key==='spa-water'?'spa':key==='forest-flute'||key==='river-meditation'?'forest':'zen'];
+  let subject="original relaxing audiovisual experience";
+  if(has(/estudi|concentr|memor|trabaj/))subject="focus and concentration";
+  else if(has(/dormir|sueño|sleep|descans/))subject="deep sleep";
+  else if(has(/celta|celtic|flauta|flute/))subject="celtic instrumental relaxation";
+  else if(has(/mar|océano|ocean|olas|agua/))subject="ocean meditation";
+  else if(has(/lluvia|rain/))subject="rain relaxation";
+  else if(has(/spa|yoga|masaje|wellness/))subject="spa and wellness";
+  return {key,subject,scenes:set,sourceTitle:String(title||""),analysis:String(analysis||"")};
+ }
+
+ async function getMusicoterapiaReference(seed){
+  await refreshMusicoterapiaTrends();
+  const top=trendCache.topVideos||[];
+  if(!top.length)return null;
+  const idx=hashSeed(seed)%Math.min(top.length,8);
+  const v=top[idx];
+  return {...v,url:"https://www.youtube.com/watch?v="+v.id};
+ }
+
+ async function analyzeReferenceForDaily(ref){
+  if(!ref?.url)return null;
+  try{
+   const baseUrl='http://127.0.0.1:'+String(process.env.PORT||3000);
+   const rr=await fetch(baseUrl+'/api/youtube-ai-analyze',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({url:ref.url}),signal:AbortSignal.timeout(180000)
+   });
+   if(!rr.ok)return null;
+   return await rr.json();
+  }catch(e){
+   console.warn('[Daily reference analysis]',e.message||e);
+   return null;
+  }
+ }
+
+ async function generateSceneSet(work,blueprint,seed,onProgress){
+  const files=[];
+  const total=blueprint.scenes.length;
+  for(let i=0;i<total;i++){
+   const scene=blueprint.scenes[i];
+   const prompt=[
+    'Create a completely original cinematic visual for a long-form relaxation video.',
+    scene+'.',
+    'Theme: '+blueprint.subject+'.',
+    'Visual reference description only: '+blueprint.analysis.slice(0,1200),
+    'Do not reproduce any frame, composition, logo, person, text, thumbnail or identifiable copyrighted artwork from the reference.',
+    'Use a distinct original composition, realistic premium photography, slow peaceful atmosphere, subtle depth, 16:9, no text, no logos.'
+   ].join(' ');
+   const out=path.join(work,'scene-'+i+'.jpg');
+   let ok=await generateFreeAIImage(out,prompt,String(seed)+'-scene-'+i);
+   if(!ok){
+    const fallback=LANDSCAPES[(hashSeed(String(seed)+'-'+i))%LANDSCAPES.length];
+    const rr=await fetch(fallback,{signal:AbortSignal.timeout(30000)});
+    if(rr.ok)fs.writeFileSync(out,Buffer.from(await rr.arrayBuffer()));
+   }
+   if(fs.existsSync(out)&&fs.statSync(out).size>10000)files.push(out);
+   if(typeof onProgress==='function')onProgress(22+Math.round((i+1)/total*18),'Creando escena '+(i+1)+'/'+total+' · '+blueprint.subject+'…');
+  }
+  return files;
+ }
+
+ function musicPromptForBlueprint(blueprint,seedIndex){
+  const base={
+   'focus-piano':'original instrumental concentration music, felt piano, soft marimba, warm strings, subtle acoustic guitar, 62 BPM, evolving harmonic loop, no vocals, no drums',
+   'celtic-flute':'original Celtic-inspired instrumental, wooden flute, harp, cello and soft piano, 60 BPM, gentle folk phrasing, no vocals, no drums',
+   'deep-sleep':'original deep sleep ambient instrumental, sparse felt piano, warm strings, airy pads, 50 BPM, extremely slow harmonic movement, no vocals, no drums',
+   'ocean-meditation':'original ocean meditation instrumental, piano, nylon guitar, airy flute, soft strings, 56 BPM, flowing phrasing, no vocals, no drums',
+   'rain-piano':'original rainy-night relaxation instrumental, felt piano, cello, soft strings and subtle room ambience, 54 BPM, no vocals, no drums',
+   'spa-water':'original luxury spa instrumental, piano, harp, soft mallets and warm strings, 58 BPM, elegant and minimal, no vocals, no drums',
+   'forest-flute':'original forest meditation instrumental, wooden flute, harp, acoustic guitar and strings, 57 BPM, organic and spacious, no vocals, no drums',
+   'zen-piano':'original zen instrumental, felt piano, soft strings, harp and airy pads, 58 BPM, spacious and meditative, no vocals, no drums'
+  };
+  return (base[blueprint.key]||base['zen-piano'])+' Variation '+seedIndex+', different melody and voicing, never imitate the reference recording.';
+ }
+
+ async function generateBlueprintMusic(out,blueprint,seed,seconds,onProgress){
+  const duration=Math.min(600,Math.max(120,seconds));
+  const base='https://ace-step-v1-5.hf.space';
+  const caption=musicPromptForBlueprint(blueprint,hashSeed(seed)%1000);
+  let submit;
+  try{
+   submit=await fetch(base+'/v1/music/generate',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({caption,lyrics:'[Instrumental]',thinking:true,instrumental:true,audio_duration:duration,audio_format:'mp3',model:'acestep-v15-turbo',inference_steps:8,batch_size:1,use_random_seed:true}),
+    signal:AbortSignal.timeout(30000)
+   });
+  }catch{return null}
+  if(!submit.ok)return null;
+  const job=await submit.json().catch(()=>null),jobId=job?.job_id;if(!jobId)return null;
+  const deadline=Date.now()+Math.max(360000,duration*1800);
+  while(Date.now()<deadline){
+   try{
+    const rr=await fetch(base+'/v1/jobs/'+encodeURIComponent(jobId),{signal:AbortSignal.timeout(30000)});
+    if(!rr.ok)return null;
+    const j=await rr.json().catch(()=>null);
+    if(j?.status==='failed')return null;
+    if(j?.status==='succeeded'){
+     const rp=j.result||{},ap=rp.first_audio_path||(Array.isArray(rp.audio_paths)?rp.audio_paths[0]:null);
+     if(!ap)return null;
+     const u=ap.startsWith('http')?ap:(base+'/v1/audio?path='+encodeURIComponent(ap));
+     const src=await fetch(u,{signal:AbortSignal.timeout(120000)});if(!src.ok)return null;
+     const tmp=path.join(TEMP_DIR,'blue-music-'+Date.now()+'.mp3');fs.writeFileSync(tmp,Buffer.from(await src.arrayBuffer()));
+     try{await ff(['-y','-i',tmp,'-vn','-ac','2','-ar','44100','-c:a','pcm_s16le',out]);}finally{clean(tmp)}
+     return {provider:'ACE-Step 1.5 · original composition',prompt:caption};
+    }
+    if(typeof onProgress==='function'){
+     const elapsed=Math.max(0,Date.now()-(deadline-Math.max(360000,duration*1800)));
+     const total=Math.max(1,Math.max(360000,duration*1800));
+     onProgress(40+Math.min(35,Math.round(elapsed/total*35)),'Creando música original IA…');
+    }
+    await new Promise(r=>setTimeout(r,5000));
+   }catch{return null}
+  }
+  return null;
+ }
+
+
+ async function makeVideo({durationMinutes=60,seed='daily',youtubeMode=false,onProgress,referenceUrl=null}){
   const minutes=Math.max(1,Math.min(1440,Number(durationMinutes)||60)),seconds=Math.max(60,minutes*60);
   const stamp=new Date().toISOString().replace(/[:.]/g,'-');
-  const image=path.join(TEMP_DIR,'daily-'+stamp+'.img'),aud=path.join(TEMP_DIR,'daily-'+stamp+'.wav');
+  const work=path.join(TEMP_DIR,'daily-work-'+stamp);
   const out=path.join(VIDEO_DIR,'daily-'+stamp+'.mp4');
+  fs.mkdirSync(work,{recursive:true});
   try{
-   if(youtubeMode)await refreshMusicoterapiaTrends();
-   const theme=youtubeMode?youtubeProfileFor(seed):promptFor(seed);
-   const prompt=theme.prompt;
-   const progress=(p,m)=>{if(typeof onProgress==='function')onProgress(p,m);};
-   progress(20,'Preparando paisaje…');
-   let imageInfo= youtubeMode?await downloadYouTubeLandscape(image,seed):await generateFreeAIImage(image,prompt,seed);
-   if(!imageInfo)imageInfo=await downloadLandscape(image,seed);
-   progress(40,'Paisaje preparado.');
-   const segmentSeconds=Math.min(seconds,300);
-   let audioInfo=null;
-   if(youtubeMode)audioInfo=await generateAceStep(aud,seed,segmentSeconds,(p,m)=>progress(p,m));
-   if(!audioInfo){progress(70,'Creando audio relajante local…');if(youtubeMode)writeYouTubeWav(aud,segmentSeconds,seed);else writeWav(aud,segmentSeconds,seed);}
-   progress(75,'Montando vídeo…');
-   // El motor YouTube genera un bloque musical largo y coherente que se repite solo
-   // después de varios minutos, evitando bucles cortos y artificiales.
-   const segment=path.join(TEMP_DIR,'segment-'+stamp+'.mp4');
-   try{
-    await ff(['-y','-loop','1','-framerate','10','-i',image,'-i',aud,'-t',String(segmentSeconds),
-      '-map','0:v:0','-map','1:a:0',
-      '-vf','scale=1920:1080:force_original_aspect_ratio=increase:flags=lanczos,crop=1920:1080,unsharp=5:5:0.35:5:5:0.15,format=yuv420p',
-      '-r','10','-c:v','libx264','-preset','ultrafast','-crf','24','-threads','2','-pix_fmt','yuv420p',
-      '-c:a','aac','-b:a','160k','-ar','44100','-ac','2','-movflags','+faststart',segment]);
-    await ff(['-y','-stream_loop','-1','-i',segment,'-t',String(seconds),
-      '-map','0:v:0','-map','0:a:0','-c','copy','-movflags','+faststart',out]);
-   }finally{clean(segment);}
+   const progress=(p,m)=>{if(typeof onProgress==='function')onProgress(p,m)};
+   let ref=null,analysis=null;
+   if(youtubeMode){
+    progress(5,'Buscando una referencia real de Musicoterapia…');
+    ref=referenceUrl?{url:referenceUrl,id:(String(referenceUrl).match(/[?&]v=([^&]+)/)||[])[1]||'',title:''}:await getMusicoterapiaReference(seed);
+    if(ref)progress(10,'Referencia seleccionada: '+(ref.title||'vídeo del canal')+'…');
+    analysis=await analyzeReferenceForDaily(ref);
+   }
+   const profileKey=ref?.profile||classifyMusicoterapiaTitle(ref?.title||'');
+   const blueprint=referenceBlueprintFromText(ref?.title||'',analysis?.videoAnalysis||'',profileKey);
+   if(analysis?.audioAnalysis)blueprint.analysis+=' Audio: '+analysis.audioAnalysis.slice(-900);
+   progress(18,youtubeMode?'Analizando estilo, escenas y ritmo de la referencia…':'Preparando concepto audiovisual…');
+   const scenes=await generateSceneSet(work,blueprint,seed,progress);
+   if(!scenes.length)throw Error('No se pudieron crear escenas visuales.');
+   progress(40,'Escenas originales preparadas ('+scenes.length+').');
+   const audioSegments=[];
+   const segmentSeconds=Math.min(600,Math.max(120,Math.min(seconds,600)));
+   for(let i=0;i<2&&i*segmentSeconds<seconds;i++){
+    const aud=path.join(work,'music-'+i+'.wav');
+    const info=await generateBlueprintMusic(aud,blueprint,String(seed)+'-music-'+i,segmentSeconds,(p,m)=>progress(40+Math.round(p*.45),m));
+    if(info)audioSegments.push(aud);
+    else {writeYouTubeWav(aud,segmentSeconds,String(seed)+'-'+i);audioSegments.push(aud)}
+   }
+   const audio=path.join(work,'music-long.wav');
+   const alist=path.join(work,'audio.txt');
+   fs.writeFileSync(alist,audioSegments.map(x=>"file '"+x.replace(/'/g,"'\\''")+"'").join("\n"));
+   if(audioSegments.length>1)await ff(['-y','-f','concat','-safe','0','-i',alist,'-c:a','pcm_s16le',audio]);
+   else fs.copyFileSync(audioSegments[0],audio);
+   progress(76,'Montando escenas con movimiento y transiciones…');
+   const sceneSeconds=Math.max(30,Math.ceil(seconds/scenes.length));
+   const segs=[];
+   for(let i=0;i<scenes.length;i++){
+    const seg=path.join(work,'video-'+i+'.mp4');segs.push(seg);
+    const zoom=i%2===0?'zoompan=z=min(zoom+0.0008,1.10):x=iw/2-(iw/zoom/2):y=ih/2-(ih/zoom/2):d=1:s=1920x1080:fps=10':'zoompan=z=max(zoom-0.0006,1.0):x=iw/2-(iw/zoom/2):y=ih/2-(ih/zoom/2):d=1:s=1920x1080:fps=10';
+    await ff(['-y','-loop','1','-i',scenes[i],'-t',String(sceneSeconds),'-vf',zoom+',format=yuv420p','-r','10','-c:v','libx264','-preset','ultrafast','-crf','24','-pix_fmt','yuv420p',seg]);
+   }
+   const list=path.join(work,'videos.txt');fs.writeFileSync(list,segs.map(x=>"file '"+x.replace(/'/g,"'\\''")+"'").join("\n"));
+   const visual=path.join(work,'visual.mp4');
+   await ff(['-y','-f','concat','-safe','0','-i',list,'-c','copy',visual]);
+   const audioDuration=seconds;
+   await ff(['-y','-stream_loop','-1','-i',visual,'-stream_loop','-1','-i',audio,'-t',String(audioDuration),'-map','0:v:0','-map','1:a:0','-c:v','copy','-c:a','aac','-b:a','160k','-ar','44100','-ac','2','-shortest','-movflags','+faststart',out]);
    progress(96,'Comprobando vídeo final…');
-   const titles={
-    zen:['Música Zen para Relajarse y Calmar la Mente · Naturaleza y Meditación','Relajación Profunda · Música Zen y Paisajes Naturales','Música Relajante para Reducir el Estrés · Zen y Naturaleza'],
-    focus:['Música para Estudiar y Concentrarse · Paisaje Natural Relajante','Música Relajante para Trabajar, Estudiar y Concentrarse','Concentración Profunda · Música Ambiental y Naturaleza'],
-    sleep:['Música para Dormir Profundamente · Noche Tranquila y Naturaleza','Sueño Profundo · Música Relajante con Paisaje Nocturno','Música Relajante para Dormir · Calma, Noche y Naturaleza'],
-    celtic:['Música Celta Relajante · Flauta, Naturaleza y Montañas','Música Celta para Relajarse · Bosque, Río y Montañas','Música Instrumental Celta · Relajación y Naturaleza'],
-    spa:['Música para Meditación y Spa · Agua, Naturaleza y Relajación','Relajación Profunda · Música de Spa y Paisajes Naturales','Música Relajante para Meditar · Naturaleza y Agua'],
-    rain:['Sonidos de Lluvia y Música Relajante · Bosque para Dormir','Lluvia en el Bosque · Música para Dormir y Relajarse','Música Relajante con Lluvia · Calma y Sueño Profundo']
-   };
-   const youtubeTitles={
-    'zen-piano':['Música Zen Relajante para Calmar la Mente · Paisaje de Montaña','Música Relajante de Piano y Naturaleza · Meditación Profunda','Música Zen para Reducir el Estrés · Lago, Montañas y Piano'],
-    'ocean-meditation':['Música Relajante con Olas del Mar · Meditación y Calma','Música para Yoga y Meditación · Mar Tranquilo y Piano','Sonidos del Mar y Música Relajante · Paz, Calma y Descanso'],
-    'focus-piano':['Música para Estudiar, Trabajar y Concentrarse · Piano y Naturaleza','Música Relajante para Concentración · Estudio y Trabajo','Música Ambiental para Estudiar · Piano Suave y Paisaje Natural'],
-    'celtic-flute':['Música Celta Relajante · Flauta, Bosque y Montañas','Música Celta Instrumental para Relajarse · Naturaleza y Río','Flauta Celta y Paisajes Naturales · Música para Meditar'],
-    'deep-sleep':['Música para Dormir Profundamente · Noche, Lago y Relajación','Música Relajante para Dormir · Sueño Profundo y Naturaleza','Música para Dormir y Descansar · Paisaje Nocturno y Calma'],
-    'spa-water':['Música Relajante para Spa, Yoga y Meditación · Agua y Naturaleza','Música de Spa para Relajarse · Cascada, Bosque y Calma','Meditación Profunda · Música Relajante y Paisaje Natural'],
-    'rain-piano':['Música Relajante con Lluvia y Piano · Bosque para Dormir','Lluvia en el Bosque · Piano Suave para Relajarse','Música para Dormir con Lluvia · Naturaleza y Calma'],
-    'forest-flute':['Flauta y Bosque · Música Relajante para Meditar','Música de Naturaleza con Flauta · Relajación Profunda','Música para Meditar · Bosque, Flauta y Naturaleza'],
-    'sunset-piano':['Piano Relajante al Atardecer · Música para Calmar la Mente','Música de Piano para Relajarse · Lago y Puesta de Sol','Atardecer en las Montañas · Piano y Naturaleza'],
-    'river-meditation':['Música para Meditar con Río y Naturaleza · Calma Profunda','Meditación y Relajación · Río, Bosque y Música Suave','Música Relajante para Respirar y Meditar · Paisaje Natural'],
-    'cabin-rain':['Música para Dormir con Lluvia · Bosque y Cabaña','Lluvia Nocturna y Piano · Música para Dormir Profundamente','Relajación Profunda · Lluvia, Bosque y Música Suave'],
-    'desert-calm':['Música para Meditar en un Oasis · Calma y Relajación','Meditación Profunda · Oasis, Piano y Naturaleza','Música Relajante para Yoga y Respiración · Paisaje de Oasis']
-   };
-   const titleOptions=(youtubeMode?youtubeTitles[theme.key]:titles[theme.key])||titles.zen;
-   const thumbnailName='thumb-'+path.basename(out,'.mp4')+'.jpg';
-   const thumbnail=path.join(VIDEO_DIR,thumbnailName);
-   if(youtubeMode)await createYouTubeThumbnail(image,thumbnail,titleOptions[0],theme.key);
-   const descriptions={
-    'zen-piano':'Música zen relajante para calmar la mente y reducir el estrés. Un paisaje de montaña y lago acompañado de piano suave y armonías ambientales para meditación, descanso, yoga y momentos de tranquilidad. 🌿\\n\\n🎧 Escucha con auriculares para disfrutar de la atmósfera completa.\\n\\nEste vídeo ha sido creado originalmente por RelaxScape Studio mediante generación audiovisual y no utiliza grabaciones del canal Musicoterapia.',
-    'ocean-meditation':'Música relajante para meditación, yoga y descanso, inspirada en la calma del mar. Piano delicado, flauta suave y una atmósfera lenta acompañan un paisaje natural de agua y amanecer. 🌊\\n\\nIdeal para relajación, respiración, meditación, yoga, ansiedad y descanso.\\n\\nContenido original creado por RelaxScape Studio.',
-    'focus-piano':'Música ambiental para estudiar, trabajar y concentrarse. Piano suave, armonías continuas y un paisaje natural tranquilo crean un fondo sin distracciones para sesiones de concentración y lectura. 📚\\n\\nIdeal para estudio, trabajo, lectura, escritura y concentración profunda.\\n\\nContenido original creado por RelaxScape Studio.',
-    'celtic-flute':'Música celta instrumental relajante con flauta, cuerdas suaves y paisajes naturales de bosque, río y montaña. Una atmósfera tranquila para meditar, descansar y desconectar. 🍃\\n\\nContenido original creado por RelaxScape Studio.',
-    'deep-sleep':'Música extremadamente suave para dormir profundamente y descansar. Piano delicado, cuerdas ambientales y un paisaje nocturno crean una atmósfera lenta y continua para el sueño. 🌙\\n\\nRecomendado para dormir, relajarse y crear un ambiente tranquilo antes de acostarse.\\n\\nContenido original creado por RelaxScape Studio.',
-    'spa-water':'Música relajante para spa, yoga y meditación con piano, flauta y una atmósfera natural inspirada en agua, cascadas y naturaleza tropical. 💧\\n\\nIdeal para masaje, spa, meditación, yoga, respiración y descanso.\\n\\nContenido original creado por RelaxScape Studio.'
-   };
-   const description=youtubeMode?(descriptions[theme.key]||'Música relajante y paisaje natural creados originalmente por RelaxScape Studio.'):'Vídeo original de RelaxScape Studio con música ambiental y paisaje natural. Ideal para relajación, meditación, estudio o descanso.';
-   return {url:'/media/videos/'+path.basename(out),name:path.basename(out),durationMinutes:minutes,thumbnailUrl:youtubeMode?'/media/videos/'+encodeURIComponent(thumbnailName):null,
-    generatedImage:true,imageProvider:imageInfo.provider,reference:youtubeMode?'Musicoterapia · patrones de vídeos más vistos':'@musicoterapiateam',storedInLibrary:false,paidApis:false,
-    aiImage:imageInfo.provider.includes('FLUX'),theme:theme.key,title:titleOptions[0],titleOptions,
-    description,tags:['música relajante','relajación','meditación','naturaleza','sleep','ambient','calma']};
-  }finally{clean(image);clean(aud);}
+   const titleBase=ref?.title?String(ref.title).replace(/[|]/g,''):'RelaxScape original';
+   const titleOptions=[
+    titleBase.replace(/\bMÚSICA\b/ig,'Música original').replace(/\bMUSICA\b/ig,'Música original'),
+    blueprint.subject==='focus and concentration'?'Música original para Estudiar y Concentrarse · Ambiente Profundo':'Música original para Relajarse · '+blueprint.subject
+   ];
+   const thumbnailName='thumb-'+path.basename(out,'.mp4')+'.jpg',thumbnail=path.join(VIDEO_DIR,thumbnailName);
+   await createYouTubeThumbnail(scenes[0],thumbnail,titleOptions[0],blueprint.key);
+   const description='Recreación audiovisual original de RelaxScape Studio inspirada en tendencias de relajación y en la estructura temática de una referencia pública. Todas las imágenes y la música de este vídeo se generan como material nuevo y no reutilizan la grabación, audio, fotogramas, miniatura ni texto del vídeo de referencia.';
+   return {url:'/media/videos/'+path.basename(out),name:path.basename(out),durationMinutes:minutes,thumbnailUrl:'/media/videos/'+encodeURIComponent(thumbnailName),generatedImage:true,imageProvider:'Hugging Face · FLUX.1-schnell · escenas originales',referenceVideo:ref?.url||null,referenceTitle:ref?.title||null,referenceAnalysis:analysis?.videoAnalysis||null,sceneCount:scenes.length,musicProvider:'ACE-Step · composición original',theme:blueprint.key,title:titleOptions[0],titleOptions,description,tags:['música relajante','meditación','relajación','estudio','sueño','música original','ambient']};
+  }finally{await fsp.rm(work,{recursive:true,force:true}).catch(()=>{})}
  }
 
  app.post('/api/daily-video-now',async(req,res)=>{
