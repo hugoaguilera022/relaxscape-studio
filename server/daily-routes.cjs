@@ -337,13 +337,13 @@ module.exports=function registerDailyRoutes(app){
  }
 
  async function createYouTubeThumbnail(image,out,title){
-  const safe=String(title||'RelaxScape').replace(/[\\:\\[\\]\\']/g,'\\\\ async function makeVideo({durationMinutes=60,seed='daily',youtubeMode=false}){').replace(/%/g,'\\\\%').replace(/,/g,'\\\\,');
+  const safe=String(title||'RelaxScape').replace(/[^a-zA-Z0-9À-ÿ .·&()\-]/g,'').slice(0,80);
+  const safe2=safe.replace(/:/g,'\\:').replace(/,/g,'\\,').replace(/'/g,"\\\\'");
   await ff(['-y','-i',image,'-vf',
-   "scale=1280:720:force_original_aspect_ratio=increase:flags=lanczos,crop=1280:720,drawbox=x=0:y=500:w=1280:h=220:color=black@0.48:t=fill,drawtext=text='"+safe+"':fontcolor=white:fontsize=46:font='Sans':x=50:y=560:box=0:shadowcolor=black@0.8:shadowx=2:shadowy=2",
+   "scale=1280:720:force_original_aspect_ratio=increase:flags=lanczos,crop=1280:720,eq=saturation=1.12:contrast=1.06,drawbox=x=0:y=0:w=1280:h=720:color=black@0.10:t=fill,drawbox=x=0:y=470:w=1280:h=250:color=black@0.55:t=fill,drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='RELAXSCAPE':fontcolor=white@0.9:fontsize=26:x=48:y=42,drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='"+safe2+"':fontcolor=white:fontsize=48:x=48:y=525:shadowcolor=black@0.9:shadowx=2:shadowy=2",
    '-frames:v','1','-q:v','2',out]);
   return out;
  }
-
  async function makeVideo({durationMinutes=60,seed='daily',youtubeMode=false}){
   const minutes=Math.max(1,Math.min(1440,Number(durationMinutes)||60)),seconds=Math.max(60,minutes*60);
   const stamp=new Date().toISOString().replace(/[:.]/g,'-');
