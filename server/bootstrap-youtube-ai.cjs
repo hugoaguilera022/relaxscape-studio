@@ -475,8 +475,6 @@ function startCore(){
     }
   });
 }
-startCore();
-
 async function waitForCore(maxAttempts=12){
   for(let i=0;i<maxAttempts;i++){
     try{
@@ -510,11 +508,15 @@ require('./musicoterapia-routes.cjs')(app);
 require('./daily-routes.cjs')(app);
 require('./youtube-publish.cjs')(app);
 
-app.get('/healthz',(req,res)=>res.status(200).json({ok:true,service:'RelaxScape',port:PORT}));
+app.get('/health',(req,res)=>res.status(200).json({ok:true,service:'RelaxScape',port:PORT,corePort:INTERNAL_PORT}));
+app.get('/healthz',(req,res)=>res.status(200).json({ok:true,service:'RelaxScape',port:PORT,corePort:INTERNAL_PORT}));
 
 app.use(proxyToCore);
 
-const server=app.listen(PORT,"0.0.0.0",()=>console.log("RelaxScape YouTube AI wrapper activo en http://0.0.0.0:"+PORT));
+const server=app.listen(PORT,"0.0.0.0",()=>{
+  console.log("RelaxScape YouTube AI wrapper activo en http://0.0.0.0:"+PORT);
+  startCore();
+});
 server.keepAliveTimeout=120000;
 server.headersTimeout=125000;
 server.on('error',(err)=>{console.error('[Wrapper] error de servidor:',err);process.exit(1)});
