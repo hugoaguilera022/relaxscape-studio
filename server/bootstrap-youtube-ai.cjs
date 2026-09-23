@@ -481,10 +481,12 @@ function proxyToCore(req,res){
 }
 require("./auth-routes.cjs")(app);
 
-app.use(proxyToCore);
-
-// Musicoterapia se registra antes del generador diario para que "Generar vídeo ahora"
-// pueda usar su motor específico sin alterar YouTube automático ni Crear IA.
+// Las rutas específicas van antes del proxy para que Programar ahora/Musicoterapia,
+// el generador diario y el login no sean enviados al core.
 require("./musicoterapia-routes.cjs")(app);
 require('./daily-routes.cjs')(app);
+
+// El resto de rutas continúa pasando al core, preservando YouTube automático,
+// Paisajes y Crear IA.
+app.use(proxyToCore);
 app.listen(PORT,"0.0.0.0",()=>console.log("RelaxScape YouTube AI wrapper activo en http://0.0.0.0:"+PORT));
