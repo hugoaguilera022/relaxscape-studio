@@ -28,4 +28,17 @@ services:
         value: "05:00"
       - key: DAILY_TIMEZONE
         value: "Europe/Madrid"
-\n  - type: cron\n    name: relaxscape-youtube-daily\n    runtime: node\n    schedule: "0 7 * * *"\n    buildCommand: npm install\n    startCommand: node youtube-daily-cron.cjs\n    envVars:\n      - key: DAILY_WEB_URL\n        value: https://relaxscape-studio.onrender.com\n      - key: YOUTUBE_DAILY_MINUTES\n        value: "60"\n      - key: YOUTUBE_PUBLISH_SECRET\n        sync: false\n
+
+  - type: cron
+    name: relaxscape-youtube-daily
+    runtime: node
+    schedule: "0 7 * * *"
+    buildCommand: npm install
+    startCommand: node youtube-daily-cron.cjs
+    envVars:
+      - key: DAILY_WEB_URL
+        value: https://relaxscape-studio.onrender.com
+      - key: YOUTUBE_DAILY_MINUTES
+        value: "60"
+      - key: YOUTUBE_PUBLISH_SECRET
+        sync: false
