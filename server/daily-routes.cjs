@@ -58,7 +58,9 @@ module.exports=function registerDailyRoutes(app){
    const stream=await fetch(base+'/gradio_api/call/infer/'+eventId,{signal:AbortSignal.timeout(30000)});
    if(!stream.ok)return null;
    const text=await stream.text();
-   const m=text.match(/data:\s*(\[[\s\S]*?\])\s*(?:\n\n|$)/);
+   const m=text.match(/data:\s*(\[[\s\S]*?\])\s*(?:
+
+|$)/);
    if(!m)return null;
    const data=JSON.parse(m[1]);
    const file=data?.[0];
@@ -210,7 +212,8 @@ module.exports=function registerDailyRoutes(app){
   const image=path.join(TEMP_DIR,'daily-'+stamp+'.img'),aud=path.join(TEMP_DIR,'daily-'+stamp+'.wav');
   const out=path.join(VIDEO_DIR,'daily-'+stamp+'.mp4');
   try{
-   const theme=promptFor(seed);\n   const prompt=theme.prompt;
+   const theme=promptFor(seed);
+   const prompt=theme.prompt;
    let imageInfo=await generateFreeAIImage(image,prompt,seed);
    if(!imageInfo)imageInfo=await downloadLandscape(image,seed);
    const segmentSeconds=Math.min(seconds,300);
