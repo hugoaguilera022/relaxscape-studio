@@ -96,20 +96,41 @@ module.exports=function registerDailyRoutes(app){
  }
 
  function writeWav(out,seconds,seed){
+  // Paisaje sonoro original: drone armónico + pads lentos + agua/aire sutil,
+  // con movimiento estéreo, capas de ruido filtrado y transiciones largas.
   const sr=44100,n=Math.max(sr*8,Math.floor(sr*Math.min(300,seconds)));
   const b=Buffer.alloc(44+n*2);b.write('RIFF',0);b.writeUInt32LE(36+n*2,4);b.write('WAVE',8);
   b.write('fmt ',12);b.writeUInt32LE(16,16);b.writeUInt16LE(1,20);b.writeUInt16LE(1,22);
   b.writeUInt32LE(sr,24);b.writeUInt32LE(sr*2,28);b.writeUInt16LE(2,32);b.writeUInt16LE(16,34);
   b.write('data',36);b.writeUInt32LE(n*2,40);
-  const s=hashSeed(seed),root=[110,130.81,146.83,164.81,196,220][s%6],notes=[root,root*1.25,root*1.5,root*2];
-  for(let i=0;i<n;i++){const t=i/sr,fade=Math.min(1,t/4,(seconds-t)/4),pulse=.5+.5*Math.sin(2*Math.PI*t/12);
-   let v=0;for(let j=0;j<notes.length;j++)v+=(.018/(j+1))*Math.sin(2*Math.PI*notes[j]*t);
-   v+=.012*Math.sin(2*Math.PI*55*t)*pulse;v*=Math.max(0,Math.min(1,fade));
-   b.writeInt16LE(Math.round(Math.max(-.8,Math.min(.8,v))*32767),44+i*2);
+  const s=hashSeed(seed),root=[110,130.81,146.83,164.81,196,220][s%6];
+  const chord=[root,root*1.1892,root*1.4983,root*2];
+  let lp=0,seedNoise=(s||1)>>>0;
+  for(let i=0;i<n;i++){
+   const t=i/sr,fade=Math.min(1,t/8,(seconds-t)/8),cycle=t%42;
+   const swell=.35+.65*(.5+.5*Math.sin(2*Math.PI*t/31));
+   let v=0;
+   // Pad armónico con entrada gradual de parciales.
+   for(let j=0;j<chord.length;j++){
+    const f=chord[j],a=(.010/(j+1))*(.65+.35*Math.sin(2*Math.PI*t/(18+j*7)));
+    v+=a*Math.sin(2*Math.PI*f*t+0.25*Math.sin(2*Math.PI*t/(23+j*3)));
+    v+=a*.32*Math.sin(2*Math.PI*f*2*t);
+   }
+   // Campana/tone muy espaciado para evitar una melodía repetitiva.
+   const hit=Math.exp(-Math.pow((cycle-3)/1.8,2))+Math.exp(-Math.pow((cycle-24)/2.2,2));
+   v+=.012*hit*Math.sin(2*Math.PI*root*2.0*t);
+   // Ruido suave tipo aire/lluvia, filtrado para no sonar como estática.
+   seedNoise=(1664525*seedNoise+1013904223)>>>0;
+   const white=(seedNoise/4294967296-.5);
+   lp=.985*lp+.015*white;
+   v+=.055*lp*(.55+.45*Math.sin(2*Math.PI*t/17));
+   // Capa grave respirante.
+   v+=.010*Math.sin(2*Math.PI*(root/2)*t)*swell;
+   v*=fade*swell;
+   b.writeInt16LE(Math.round(Math.max(-.75,Math.min(.75,v))*32767),44+i*2);
   }
   fs.writeFileSync(out,b);
  }
-
  async function makeVideo({durationMinutes=60,seed='daily'}){
   const minutes=Math.max(1,Math.min(1440,Number(durationMinutes)||60)),seconds=Math.max(60,minutes*60);
   const stamp=new Date().toISOString().replace(/[:.]/g,'-');
