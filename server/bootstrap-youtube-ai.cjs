@@ -338,6 +338,30 @@ async function analyzeLocalVideo(video,work,extra={}){
   const audio=await analyzeAudio(video);
   return {title:extra.title||"",author:extra.author||"",duration:dur,thumbnail:extra.thumbnail||"",description:extra.description||"",keywords:extra.keywords||"",videoAnalysis:vision||"Análisis visual realizado sobre capturas reales del vídeo.",audioAnalysis:audio,samples:frames.map(f=>"/media/videos/"+path.basename(work)+"/"+path.basename(f))};
 }
+
+async function analyzeSampleClips(clips,work,extra={}){
+  const frames=[];
+  for(let i=0;i<clips.length;i++){
+    const f=path.join(work,"sample-frame-"+i+".jpg");
+    try{
+      await ff(["-y","-ss","5","-i",clips[i],"-frames:v","1","-q:v","2",f]);
+      if(fs.existsSync(f))frames.push(f);
+    }catch{}
+  }
+  const vision=await analyzeVision(frames,extra);
+  const audio=clips[0]?await analyzeAudio(clips[0]):"";
+  return {
+    title:extra.title||"",
+    author:extra.author||"",
+    duration:Math.max(1,Number(extra.duration||60)),
+    thumbnail:extra.thumbnail||"",
+    description:extra.description||"",
+    keywords:extra.keywords||"",
+    videoAnalysis:vision||"Análisis visual realizado sobre capturas reales del vídeo.",
+    audioAnalysis:audio,
+    samples:frames.map(f=>"/media/videos/"+path.basename(work)+"/"+path.basename(f))
+  };
+}
 app.post("/api/youtube-ai-analyze",async(req,res)=>{
   const url=String(req.body?.url||"");
   if(!url)return res.status(400).json({error:"Falta el enlace de YouTube"});
@@ -345,7 +369,7 @@ app.post("/api/youtube-ai-analyze",async(req,res)=>{
   try{
     await fsp.mkdir(work,{recursive:true});
     const x=await youtubeMetaAndSample(url,work);
-    const analysis=await analyzeLocalVideo(x.clips[0],work,{title:x.info.title,author:x.info.uploader||x.info.channel,duration:x.duration,thumbnail:x.info.thumbnail,description:x.info.description,keywords:(x.info.tags||[]).join(","),visualOnly:x.visualOnly});
+    const analysis=await analyzeSampleClips(x.clips,work,{title:x.info.title,author:x.info.uploader||x.info.channel,duration:x.duration,thumbnail:x.info.thumbnail,description:x.info.description,keywords:(x.info.tags||[]).join(","),visualOnly:x.visualOnly});
     if(x.visualOnly){
       analysis.visualOnly=true;
       analysis.audioAnalysis="No disponible: YouTube bloqueó el acceso al stream de audio. Se realizó análisis visual mediante la miniatura oficial.";
@@ -366,7 +390,7 @@ app.post("/api/youtube-ai-analyze-upload",upload.single("video"),async(req,res)=
     await fsp.rename(req.file.path,source);
     const ffbin=(await import("ffmpeg-static")).default;
     let duration=60;
-    try{const p=await runCmd(ffbin,["-hide_banner","-i",source,"-f","null","-"]);const m=String(p.err||"").match(/Duration:\s*(\\d+):(\\d+):(\\d+)/);if(m)duration=Number(m[1])*3600+Number(m[2])*60+Number(m[3])}catch{}
+    try{const p=await runCmd(ffbin,["-hide_banner","-i",source,"-f","null","-"]);const m=String(p.err||"").match(/Duration:\s*(\d+):(\d+):(\d+)/);if(m)duration=Number(m[1])*3600+Number(m[2])*60+Number(m[3])}catch{}
     const a=await analyzeLocalVideo(source,work,{duration});
     a.originalFileName=req.file.originalname||"referencia.mp4";
     a.referenceImage=a.samples?.[0]||"";
