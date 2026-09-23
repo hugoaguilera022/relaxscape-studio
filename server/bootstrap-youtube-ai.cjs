@@ -465,7 +465,8 @@ import("./index.js").then(({default:coreApp})=>{
   // El core se monta en el wrapper sin un segundo puerto ni proxy HTTP interno.
   app.use(coreApp);
 
-  const server=app.listen(PORT,"0.0.0.0",()=>{
+  const server=require('./daily-routes.cjs')(app);
+app.listen(PORT,"0.0.0.0",()=>{
     console.log("RelaxScape Studio listo en http://0.0.0.0:"+PORT);
   });
   server.keepAliveTimeout=120000;
