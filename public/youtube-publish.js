@@ -18,9 +18,9 @@ async function refreshYouTubePublishStatus(){
  }catch(e){s.textContent="No se pudo comprobar YouTube: "+e.message}
 }
 document.addEventListener("DOMContentLoaded",()=>{
- const g=document.querySelector("#ytGeneratePreview"),s=document.querySelector("#ytPublishStatus"),previewBox=document.querySelector("#ytPreviewBox"),video=document.querySelector("#ytPreviewVideo");
+ const g=document.querySelector("#ytGeneratePreview"),s=document.querySelector("#ytPublishStatus"),previewBox=document.querySelector("#ytPreviewBox"),video=document.querySelector("#ytPreviewVideo"),confirmBox=document.querySelector("#ytUploadConfirm"),confirmBtn=document.querySelector("#ytConfirmUpload"),uploadStatus=document.querySelector("#ytUploadStatus");
  if(g)g.onclick=async()=>{
-  g.disabled=true;s.textContent="🟡 Generando vídeo…";previewBox?.classList.add("hidden");
+  g.disabled=true;s.textContent="🟡 Generando vídeo…";previewBox?.classList.add("hidden");confirmBox?.classList.add("hidden");
   try{
    const r=await fetch("/api/youtube/daily-generate",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify({durationMinutes:Number(document.querySelector("#ytDailyDuration")?.value||60)})});
    const x=await r.json();if(!r.ok)throw Error(x.error||"No se pudo iniciar la generación");
@@ -36,8 +36,8 @@ document.addEventListener("DOMContentLoaded",()=>{
    }
    if(!done)throw Error("La generación tardó demasiado.");
    if(video){video.src=done.url+"?v="+Date.now();video.load()}
-   previewBox?.classList.remove("hidden");s.textContent="🟢 Vídeo generado. Puedes visualizarlo aquí antes de cualquier publicación.";window.__ytPendingVideo=done.name;
+   previewBox?.classList.remove("hidden");confirmBox?.classList.remove("hidden");s.textContent="🟢 Vídeo generado. Revísalo antes de publicar.";window.__ytPendingVideo=done.name;
   }catch(e){s.textContent="🔴 "+e.message}finally{g.disabled=false}
  };
- refreshYouTubePublishStatus();
+ if(confirmBtn)confirmBtn.onclick=async()=>{if(!window.__ytPendingVideo)return;confirmBtn.disabled=true;if(uploadStatus)uploadStatus.textContent="Subiendo el vídeo a YouTube…";try{const r=await fetch("/api/youtube/upload-generated",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify({name:window.__ytPendingVideo})});const x=await r.json();if(!r.ok)throw Error(x.error||"No se pudo subir el vídeo");if(uploadStatus)uploadStatus.textContent="🟢 Vídeo publicado correctamente en YouTube.";confirmBtn.textContent="✓ Subido a YouTube";}catch(e){if(uploadStatus)uploadStatus.textContent="🔴 "+e.message;confirmBtn.disabled=false}};refreshYouTubePublishStatus();
 });
