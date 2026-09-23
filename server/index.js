@@ -3,7 +3,7 @@ import cors from "cors";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
-import { createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
 import { fileURLToPath } from "url";
 import { spawn } from "child_process";
 import { setImmediate as yieldImmediate } from "timers/promises";
@@ -37,6 +37,106 @@ app.use("/media/music", (req,res,next)=>{
   next();
 }, express.static(MUSIC_DIR, { etag:false, lastModified:false, maxAge:0 }));
 app.use("/media/videos", express.static(VIDEO_DIR));
+// --- Autenticación Google ---
+const authSessions = new Map();
+const authStates = new Map();
+const AUTH_COOKIE = "relaxscape_session";
+const GOOGLE_CLIENT_ID = String(process.env.GOOGLE_CLIENT_ID || "").trim();
+const GOOGLE_CLIENT_SECRET = String(process.env.GOOGLE_CLIENT_SECRET || "").trim();
+const GOOGLE_REDIRECT_URI = String(process.env.GOOGLE_REDIRECT_URI || "").trim() ||
+  "https://relaxscape-studio.onrender.com/api/auth/callback";
+
+function parseCookies(req){
+  const raw=String(req.headers.cookie||"");
+  return Object.fromEntries(raw.split(";").map(x=>x.trim().split("=").map(decodeURIComponent)).filter(x=>x.length===2));
+}
+function setSessionCookie(res,id){
+  res.setHeader("Set-Cookie", AUTH_COOKIE+"="+encodeURIComponent(id)+"; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000");
+}
+function clearSessionCookie(res){
+  res.setHeader("Set-Cookie", AUTH_COOKIE+"=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0");
+}
+function currentUser(req){
+  const id=parseCookies(req)[AUTH_COOKIE];
+  return id ? authSessions.get(id) || null : null;
+}
+app.get("/api/auth/status",(req,res)=>{
+  const user=currentUser(req);
+  res.json({authenticated:Boolean(user),user:user||null});
+});
+app.get("/api/auth/login",(req,res)=>{
+  if(!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET){
+    return res.status(503).send("El inicio de sesión con Google aún no está configurado en el servidor. Añade GOOGLE_CLIENT_ID y GOOGLE_CLIENT_SECRET en Render.");
+  }
+  const state=randomBytes(24).toString("hex");
+  authStates.set(state,Date.now()+10*60*1000);
+  const u=new URL("https://accounts.google.com/o/oauth2/v2/auth");
+  u.searchParams.set("client_id",GOOGLE_CLIENT_ID);
+  u.searchParams.set("redirect_uri",GOOGLE_REDIRECT_URI);
+  u.searchParams.set("response_type","code");
+  u.searchParams.set("scope","openid email profile");
+  u.searchParams.set("state",state);
+  u.searchParams.set("access_type","online");
+  res.redirect(u.toString());
+});
+app.get("/api/auth/callback",async(req,res)=>{
+  const code=String(req.query.code||"");
+  const state=String(req.query.state||"");
+  const expires=authStates.get(state);
+  authStates.delete(state);
+  if(!code || !expires || expires<Date.now()) return res.status(400).send("La sesión de Google ha caducado. Vuelve a intentarlo.");
+  try{
+    const tokenRes=await fetch("https://oauth2.googleapis.com/token",{
+      method:"POST",
+      headers:{"Content-Type":"application/x-www-form-urlencoded"},
+      body:new URLSearchParams({
+        code,client_id:GOOGLE_CLIENT_ID,client_secret:GOOGLE_CLIENT_SECRET,
+        redirect_uri:GOOGLE_REDIRECT_URI,grant_type:"authorization_code"
+      })
+    });
+    const tokens=await tokenRes.json();
+    if(!tokenRes.ok || !tokens.access_token) throw Error(tokens.error_description||"Google no pudo validar el inicio de sesión.");
+    const userRes=await fetch("https://www.googleapis.com/oauth2/v3/userinfo",{
+      headers:{Authorization:"Bearer "+tokens.access_token}
+    });
+    const user=await userRes.json();
+    if(!userRes.ok || !user.email) throw Error("Google no devolvió los datos de la cuenta.");
+    const sessionId=randomBytes(32).toString("hex");
+    authSessions.set(sessionId,{
+      id:String(user.sub||""),
+      name:String(user.name||user.given_name||"Cuenta Google"),
+      email:String(user.email),
+      picture:String(user.picture||""),
+      createdAt:new Date().toISOString()
+    });
+    setSessionCookie(res,sessionId);
+    res.redirect("/");
+  }catch(e){
+    console.error("[Auth Google]",e.stack||e.message);
+    res.status(502).send("No se pudo completar el inicio de sesión con Google. Vuelve a intentarlo.");
+  }
+});
+app.post("/api/auth/logout",(req,res)=>{
+  const id=parseCookies(req)[AUTH_COOKIE];
+  if(id) authSessions.delete(id);
+  clearSessionCookie(res);
+  res.json({ok:true});
+});
+const userPreferences = new Map();
+app.get("/api/user/preferences",(req,res)=>{
+  const user=currentUser(req);
+  if(!user) return res.status(401).json({error:"No autenticado"});
+  res.json({preferences:userPreferences.get(user.id)||{}});
+});
+app.put("/api/user/preferences",(req,res)=>{
+  const user=currentUser(req);
+  if(!user) return res.status(401).json({error:"No autenticado"});
+  const p=req.body?.preferences;
+  if(!p || typeof p!=="object" || Array.isArray(p)) return res.status(400).json({error:"Preferencias inválidas"});
+  userPreferences.set(user.id,p);
+  res.json({ok:true,preferences:p});
+});
+
 // Daily video generator: free route (FLUX public Space + local audio + FFmpeg).
 registerDailyRoutes(app);
 
