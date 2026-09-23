@@ -2,7 +2,8 @@ const fs=require("fs"),fsp=fs.promises,path=require("path"),crypto=require("cryp
 module.exports=function(app){
  const root=path.resolve(process.cwd()), tokenFile=process.env.YOUTUBE_TOKEN_FILE||path.join(root,"data/youtube-token.json"), videoDir=path.join(root,"data/videos");
  fs.mkdirSync(path.dirname(tokenFile),{recursive:true});fs.mkdirSync(videoDir,{recursive:true});
- const cfg=()=>({id:process.env.YOUTUBE_CLIENT_ID,secret:process.env.YOUTUBE_CLIENT_SECRET,redirect:process.env.YOUTUBE_REDIRECT_URI});\n const pendingStates=new Set();
+ const cfg=()=>({id:process.env.YOUTUBE_CLIENT_ID,secret:process.env.YOUTUBE_CLIENT_SECRET,redirect:process.env.YOUTUBE_REDIRECT_URI});
+ const pendingStates=new Set();
  const token=()=>{try{return JSON.parse(fs.readFileSync(tokenFile,"utf8"))}catch{return null}};
  const save=t=>fs.writeFileSync(tokenFile,JSON.stringify(t,null,2),{mode:0o600});
  const ready=()=>{const c=cfg();return !!(c.id&&c.secret&&c.redirect)};
@@ -10,7 +11,7 @@ module.exports=function(app){
   let t=token();if(!t)return null;
   if(t.access_token&&Date.now()-t.created_at<((t.expires_in||3600)-120)*1000)return t.access_token;
   if(!t.refresh_token)return t.access_token;
-  const state=String(req.query.state||"");if(!pendingStates.has(state))return res.status(400).send("Estado OAuth inválido o caducado.");pendingStates.delete(state);const c=cfg(),r=await fetch("https://oauth2.googleapis.com/token",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({client_id:c.id,client_secret:c.secret,refresh_token:t.refresh_token,grant_type:"refresh_token"})}),d=await r.json();
+  const c=cfg(),r=await fetch("https://oauth2.googleapis.com/token",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({client_id:c.id,client_secret:c.secret,refresh_token:t.refresh_token,grant_type:"refresh_token"})}),d=await r.json();
   if(!r.ok)throw Error(d.error_description||d.error||"No se pudo renovar YouTube");
   save({...t,...d,refresh_token:t.refresh_token,created_at:Date.now()});return d.access_token;
  }
