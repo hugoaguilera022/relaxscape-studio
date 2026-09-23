@@ -1,17 +1,17 @@
 async function refreshYouTubePublishStatus(){
- const s=document.querySelector("#ytConnectionStatus"),b=document.querySelector("#ytConnectionBadge"),g=document.querySelector("#ytGeneratePreview"),info=document.querySelector("#ytAccountInfo");
+ const s=document.querySelector("#ytConnectionStatus"),b=document.querySelector("#ytConnectionBadge"),g=document.querySelector("#ytGeneratePreview"),info=document.querySelector("#ytAccountInfo"),card=document.querySelector("#ytChannelCard"),avatar=document.querySelector("#ytChannelAvatar"),name=document.querySelector("#ytChannelName"),id=document.querySelector("#ytChannelId");
  if(!s)return;
  try{
   const r=await fetch("/api/youtube/status",{credentials:"same-origin",cache:"no-store"}),x=await r.json();
-  if(!x.configured){s.textContent="Faltan las credenciales OAuth de Google en Render.";b.textContent="No configurado";if(g)g.disabled=true;return}
+  if(!x.configured){s.textContent="Faltan las credenciales OAuth de Google en Render.";b.textContent="No configurado";if(g)g.disabled=true;if(card)card.classList.add("hidden");return}
   if(x.connected){
-   s.textContent="✓ Canal detectado: "+(x.channel?.title||"YouTube");
+   s.textContent="✓ Canal de YouTube vinculado"; if(card)card.classList.remove("hidden"); if(name)name.textContent=x.channel?.title||"Canal de YouTube"; if(id)id.textContent=x.channel?.id?"ID del canal: "+x.channel.id:"Canal reconocido por Google"; if(avatar){avatar.src=x.channel?.thumbnail||"https://www.gstatic.com/youtube/img/branding/youtubelogo/svg/youtubelogo.svg";avatar.onerror=()=>{avatar.style.display="none"}}
    b.textContent="Conectado";
    if(g)g.disabled=false;
    if(info)info.textContent=window.RelaxScapeUser?.email?("Cuenta Google: "+window.RelaxScapeUser.email+". El canal de YouTube se reconoce automáticamente con esta misma sesión."): "Canal de YouTube reconocido automáticamente.";
   }else{
    s.textContent=window.RelaxScapeUser?.email?"Tu cuenta está iniciada, pero YouTube todavía no está autorizado. Cierra sesión y vuelve a iniciar sesión con Google para conceder el acceso a YouTube.":"Inicia sesión en RelaxScape con Google para reconocer automáticamente tu canal.";
-   b.textContent="Pendiente";
+   b.textContent="Pendiente"; if(card)card.classList.add("hidden");
    if(g)g.disabled=true;
    if(info)info.textContent="No hay un segundo inicio de sesión: la cuenta de Google de RelaxScape es la cuenta que se utilizará para YouTube.";
   }
