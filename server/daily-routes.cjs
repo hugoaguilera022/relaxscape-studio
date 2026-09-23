@@ -629,7 +629,7 @@ module.exports=function registerDailyRoutes(app){
   }finally{await fs.promises.rm(work,{recursive:true,force:true}).catch(()=>{})}
  }
 
- app.post('/api/daily-video-now',async(req,res)=>{
+ app.post('/api/daily-video-now',async(req,res,next)=>{if(req.body?.musicoterapia===true)return next();
   const id='daily-'+Date.now();jobs.set(id,{status:'running',progress:5,message:'Preparando generación gratuita...'});res.json({jobId:id,status:'running'});
   try{
    jobs.set(id,{status:'running',progress:5,message:'Preparando referencia y generación audiovisual...'});
