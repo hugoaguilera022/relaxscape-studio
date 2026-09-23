@@ -1670,38 +1670,35 @@ app.post("/api/preview-video", async (req,res)=>{
   }finally{fs.rmSync(workDir,{recursive:true,force:true});}
 });
 
-app.post("/api/generate-video", async (req, res) => {
-  const { image, music, durationHours = 1, durationMinutes } = req.body || {};
-  if (!image || !music) return res.status(400).json({ error: "Selecciona una imagen y una pista de música." });
-  const imageName = decodeURIComponent(image.split("/").pop());
-  const musicName = decodeURIComponent(music.split("/").pop());
-  let imagePath = path.join(IMAGE_DIR, imageName);
-  if (!fs.existsSync(imagePath) && /^https?:\/\//i.test(image)) {
-    const downloaded = await fetchWithTimeout(image, { headers: { Accept: "image/*" } }, 90000);
-    if (!downloaded.ok) return res.status(502).json({ error: "No se pudo descargar el paisaje seleccionado." });
-    const localName = "selected-pexels-" + Date.now() + ".jpg";
-    imagePath = path.join(IMAGE_DIR, localName);
-    fs.writeFileSync(imagePath, Buffer.from(await downloaded.arrayBuffer()));
-  }
-  const musicPath = path.join(MUSIC_DIR, musicName);
-  if (!fs.existsSync(imagePath) || !fs.existsSync(musicPath)) return res.status(404).json({ error: "No se encontró el archivo seleccionado." });
-  const minutes = durationMinutes != null ? Number(durationMinutes) : Number(durationHours)*60;
-  if (!Number.isFinite(minutes) || minutes < 1 || minutes > 1440) return res.status(400).json({ error: "La duración debe estar entre 1 y 1440 minutos." });
-  const durationSeconds = Math.round(minutes*60);
+const videoGenerationJobs = new Map();
 
-  const stamp=Date.now();
-  const filename = `relaxscape-${stamp}-${minutes}min.mp4`;
-  const out = path.join(VIDEO_DIR, filename);
-  const workDir=path.join(VIDEO_DIR,"fast-video-"+stamp);
-  const segment=path.join(workDir,"segment.mp4");
-  fs.mkdirSync(workDir,{recursive:true});
-
+async function buildVideoGenerationJob(jobId, payload) {
+  const job = videoGenerationJobs.get(jobId);
+  if (!job) return;
+  const { image, music, minutes, durationSeconds, filename, out, workDir, segment } = payload;
   try {
-    // Solo se codifican 5 segundos a 1080p. La duración completa usa stream copy para acelerar al máximo.
+    job.progress = 5;
+    job.stage = "Preparando imagen y música…";
+    const imageName = decodeURIComponent(String(image).split("/").pop());
+    let imagePath = path.join(IMAGE_DIR, imageName);
+    if (!fs.existsSync(imagePath) && /^https?:\\/\\//i.test(image)) {
+      job.progress = 10;
+      job.stage = "Descargando paisaje…";
+      const downloaded = await fetchWithTimeout(image, { headers: { Accept: "image/*" } }, 90000);
+      if (!downloaded.ok) throw new Error("No se pudo descargar el paisaje seleccionado.");
+      const localName = "selected-pexels-" + Date.now() + ".jpg";
+      imagePath = path.join(IMAGE_DIR, localName);
+      fs.writeFileSync(imagePath, Buffer.from(await downloaded.arrayBuffer()));
+    }
+    const musicName = decodeURIComponent(String(music).split("/").pop());
+    const musicPath = path.join(MUSIC_DIR, musicName);
+    if (!fs.existsSync(imagePath) || !fs.existsSync(musicPath)) throw new Error("No se encontró el archivo seleccionado.");
+
+    job.progress = 20;
+    job.stage = "Creando el clip maestro de vídeo…";
     await runFfmpeg([
       "-y","-loop","1","-framerate","5","-i",imagePath,
-      "-stream_loop","-1","-i",musicPath,
-      "-t","5",
+      "-stream_loop","-1","-i",musicPath,"-t","5",
       "-map","0:v:0","-map","1:a:0",
       "-vf","scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
       "-r","5","-c:v","libx264","-preset","ultrafast","-tune","stillimage","-crf","23","-threads","2",
@@ -1709,20 +1706,58 @@ app.post("/api/generate-video", async (req, res) => {
       "-movflags","+faststart",segment
     ]);
 
+    job.progress = 60;
+    job.stage = "Construyendo el vídeo de " + minutes + " minutos…";
     await runFfmpeg([
       "-y","-stream_loop","-1","-i",segment,
       "-t",String(durationSeconds),"-map","0:v:0","-map","0:a:0",
       "-c","copy","-movflags","+faststart",out
     ]);
 
-    res.json({ url: `/media/videos/${filename}`, name: filename, durationMinutes:minutes, fastLoop:true, segmentSeconds:5 });
+    job.progress = 95;
+    job.stage = "Comprobando archivo final…";
+    const sizeMB = fs.statSync(out).size / 1048576;
+    if (!fs.existsSync(out) || sizeMB < 0.01) throw new Error("El vídeo final quedó vacío.");
+
+    job.progress = 100;
+    job.stage = "Vídeo terminado.";
+    job.status = "succeeded";
+    job.result = { url: "/media/videos/" + encodeURIComponent(filename), name: filename, durationMinutes: minutes, fastLoop: true, segmentSeconds: 5, sizeMB: Number(sizeMB.toFixed(1)) };
   } catch (e) {
-    console.error("[Fast video] ERROR",e.stack||e.message);
-    res.status(500).json({ error: "No se pudo generar el vídeo: " + e.message });
+    job.status = "failed";
+    job.error = e?.message || String(e);
+    console.error("[Video generation] ERROR", e?.stack || e.message || e);
   } finally {
-    fs.rmSync(workDir,{recursive:true,force:true});
+    fs.rmSync(workDir, { recursive: true, force: true });
+    setTimeout(() => videoGenerationJobs.delete(jobId), 30 * 60 * 1000);
   }
+}
+
+app.post("/api/generate-video", async (req, res) => {
+  const { image, music, durationHours = 1, durationMinutes } = req.body || {};
+  if (!image || !music) return res.status(400).json({ error: "Selecciona una imagen y una pista de música." });
+  const minutes = durationMinutes != null ? Number(durationMinutes) : Number(durationHours) * 60;
+  if (!Number.isFinite(minutes) || minutes < 1 || minutes > 1440) return res.status(400).json({ error: "La duración debe estar entre 1 y 1440 minutos." });
+
+  const stamp = Date.now();
+  const filename = `relaxscape-${stamp}-${minutes}min.mp4`;
+  const out = path.join(VIDEO_DIR, filename);
+  const workDir = path.join(VIDEO_DIR, "fast-video-" + stamp);
+  const segment = path.join(workDir, "segment.mp4");
+  fs.mkdirSync(workDir, { recursive: true });
+
+  const jobId = "video-" + stamp + "-" + Math.random().toString(36).slice(2, 8);
+  videoGenerationJobs.set(jobId, { status: "running", progress: 0, stage: "Iniciando generación…", result: null, error: null });
+  buildVideoGenerationJob(jobId, { image, music, minutes, durationSeconds: Math.round(minutes * 60), filename, out, workDir, segment });
+  res.json({ jobId, status: "running" });
 });
+
+app.get("/api/generate-video-status", (req, res) => {
+  const job = videoGenerationJobs.get(String(req.query.jobId || ""));
+  if (!job) return res.status(404).json({ error: "No se encontró la generación solicitada." });
+  res.json({ status: job.status, progress: job.progress || 0, stage: job.stage || "Generando…", result: job.result || null, error: job.error || null });
+});
+
 async function generatePexelsVideo(prompt, aspectRatio, key, durationHours = 1) {
   const rawPrompt = String(prompt || "peaceful nature landscape");
   const aliases = {
