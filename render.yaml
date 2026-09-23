@@ -9,4 +9,16 @@ services:
       - key: NODE_ENV
         value: production
       - key: DAILY_VIDEO_HOUR
-        value: "03:00"
+        value: "05:00"
+      - key: DAILY_WEB_URL
+        value: https://relaxscape-studio.onrender.com
+
+  - type: cron
+    name: relaxscape-daily-video
+    runtime: node
+    schedule: "0 5 * * *"
+    buildCommand: npm install
+    startCommand: node daily-cron.cjs
+    envVars:
+      - key: DAILY_WEB_URL
+        value: https://relaxscape-studio.onrender.com
