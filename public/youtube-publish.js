@@ -36,7 +36,10 @@ document.addEventListener("DOMContentLoaded",()=>{
    }
    if(!done)throw Error("La generación tardó demasiado.");
    if(video){video.src=done.url+"?v="+Date.now();video.load()}
-   const title=document.querySelector("#ytTitle"),opts=document.querySelector("#ytTitleOptions"),desc=document.querySelector("#ytDescription"),privacy=document.querySelector("#ytPrivacy");\n   if(title)title.value=done.title||"RelaxScape · Naturaleza y relajación";\n   if(opts){opts.innerHTML="";(done.titleOptions||[done.title||"RelaxScape · Naturaleza y relajación"]).forEach((v,i)=>{const o=document.createElement("option");o.value=v;o.textContent=v;if(i===0)o.selected=true;opts.appendChild(o)});opts.onchange=()=>{if(title)title.value=opts.value}}\n   if(desc)desc.value=done.description||"";
+   const title=document.querySelector("#ytTitle"),opts=document.querySelector("#ytTitleOptions"),desc=document.querySelector("#ytDescription"),privacy=document.querySelector("#ytPrivacy");
+   if(title)title.value=done.title||"RelaxScape · Naturaleza y relajación";
+   if(opts){opts.innerHTML="";(done.titleOptions||[done.title||"RelaxScape · Naturaleza y relajación"]).forEach((v,i)=>{const o=document.createElement("option");o.value=v;o.textContent=v;if(i===0)o.selected=true;opts.appendChild(o)});opts.onchange=()=>{if(title)title.value=opts.value}}
+   if(desc)desc.value=done.description||"";
    previewBox?.classList.remove("hidden");confirmBox?.classList.remove("hidden");s.textContent="🟢 Vídeo generado. Revísalo antes de publicar.";window.__ytPendingVideo=done.name;
   }catch(e){s.textContent="🔴 "+e.message}finally{g.disabled=false}
  };
