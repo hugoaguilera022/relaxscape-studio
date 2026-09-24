@@ -120,34 +120,6 @@ async function refreshMusicoterapiaTrends(){
   }catch(e){return null;}
  }
 
- async function downloadYouTubeLandscape(out,seed){
-  const profile=youtubeProfileFor(seed);
-  const aiPrompt=profile.prompt+' Natural premium YouTube relaxation artwork, cinematic photography, rich atmospheric depth, realistic light, no people, no text, no logos.';
-  const ai=await generateFreeAIImage(out,aiPrompt,seed);
-  if(ai)return {...ai,profile:profile.key,provider:'Hugging Face · IA generativa · paisaje original'};
-  const fallbacks={
-   'zen-piano':'https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=2400&q=92',
-   'ocean-meditation':'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=2400&q=92',
-   'focus-piano':'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=2400&q=92',
-   'celtic-flute':'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=2400&q=92',
-   'deep-sleep':'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?auto=format&fit=crop&w=2400&q=92',
-   'spa-water':'https://images.unsplash.com/photo-1439853949127-fa647821eba0?auto=format&fit=crop&w=2400&q=92',
-   'rain-piano':'https://images.unsplash.com/photo-1511497584788-876760111969?auto=format&fit=crop&w=2400&q=92',
-   'forest-flute':'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=2400&q=92',
-   'sunset-piano':'https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=2400&q=92',
-   'river-meditation':'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=2400&q=92',
-   'cabin-rain':'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?auto=format&fit=crop&w=2400&q=92',
-   'desert-calm':'https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=2400&q=92'
-  };
-  const url=fallbacks[profile.key]||fallbacks['zen-piano'];
-  const rr=await fetch(url,{signal:AbortSignal.timeout(30000)});
-  if(!rr.ok)throw Error('No se pudo descargar el paisaje YouTube (HTTP '+rr.status+').');
-  const b=Buffer.from(await rr.arrayBuffer());
-  if(b.length<10000)throw Error('Paisaje YouTube no válido.');
-  fs.writeFileSync(out,b);
-  return {provider:'Unsplash · fotografía real de respaldo',sourceUrl:url,profile:profile.key};
- }
- 
  async function generateAceStep(out,seed,seconds,onProgress){ const profile=youtubeProfileFor(seed); return generateBlueprintMusic(out,{music:profile.music,subject:profile.title},seed,seconds,onProgress); }
 
  async function getMusicoterapiaReference(seed){
