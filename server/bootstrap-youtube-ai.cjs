@@ -500,7 +500,10 @@ function proxyToCore(req,res){
       res.status(r.status);
       r.headers.forEach((v,k)=>{if(k.toLowerCase()!=="transfer-encoding")res.setHeader(k,v)});
       const ab=await r.arrayBuffer();res.end(Buffer.from(ab));
-    }catch(e){res.status(502).json({error:"Servidor principal no disponible: "+e.message})}
+    }catch(e){
+      console.error("[RelaxScape proxy] core no disponible:",e.message);
+      res.status(503).json({error:"El servidor interno se está reiniciando. Inténtalo de nuevo en unos segundos.",retryable:true});
+    }
   });
 }
 require("./auth-routes.cjs")(app);
@@ -512,7 +515,13 @@ require("./musicoterapia-routes.cjs")(app);
 require("./daily-routes.cjs")(app);
 try{require("./youtube-publish.cjs")(app)}catch(e){console.error("[YouTube publish] rutas no cargadas:",e.message)}
 
+// Health público: debe resolverse sin depender del proceso interno.
+app.get('/health',(_req,res)=>{
+  const coreAlive=!!child && !child.killed;
+  res.status(200).json({ok:true,service:'relaxscape',core:coreAlive?'running':'restarting'});
+});
+
+// El proxy nunca devuelve 502: si el core está reiniciándose, informamos 503
+// y el supervisor interno vuelve a levantarlo automáticamente.
 app.use(proxyToCore);
-app.get('/health',(_req,res)=>res.json({ok:true,service:'relaxscape'}));
-require('./daily-routes.cjs')(app);
 app.listen(PORT,"0.0.0.0",()=>console.log("RelaxScape YouTube AI wrapper activo en http://0.0.0.0:"+PORT));
