@@ -514,5 +514,4 @@ try{require("./youtube-publish.cjs")(app)}catch(e){console.error("[YouTube publi
 
 app.use(proxyToCore);
 app.get('/health',(_req,res)=>res.json({ok:true,service:'relaxscape'}));
-require('./daily-routes.cjs')(app);
 app.listen(PORT,"0.0.0.0",()=>console.log("RelaxScape YouTube AI wrapper activo en http://0.0.0.0:"+PORT));
