@@ -1,7 +1,7 @@
 (()=>{
   const $=s=>document.querySelector(s);
   const api=async(url,opt={})=>{const r=await fetch(url,opt);const t=await r.text();let d={};try{d=t?JSON.parse(t):{}}catch{};if(!r.ok)throw Error(d.error||`Error ${r.status}`);return d};
-  const status=(msg,err=false)=>{const e=$('#dailyStatus');if(e){e.innerHTML=(err?'❌ ':'')+msg;e.classList.toggle('error',err)}};
+  const status=(msg,err=false)=>{const e=$('#dailyStatus');if(e){let clean=String(msg||'');clean=clean.replace(/descargando\s+paisajes?/gi,'preparando referencia visual IA').replace(/descargando\s+im[aá]genes?/gi,'preparando arte visual IA').replace(/generando\s+paisajes?/gi,'generando arte visual IA').replace(/paisajes\s+listos/gi,'referencia visual lista');e.innerHTML=(err?'❌ ':'')+clean;e.classList.toggle('error',err)}};
   const fmt=(s)=>{s=Math.max(0,Math.round(Number(s)||0));if(s<60)return `${s}s`;const m=Math.floor(s/60),sec=s%60;return sec?`${m} min ${sec}s`:`${m} min`};
   async function runNow(){
     const b=$('#runDailyNow');if(b)b.disabled=true;
