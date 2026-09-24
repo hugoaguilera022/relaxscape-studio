@@ -15,8 +15,8 @@
       status('<div class="generation-progress"><div class="generation-progress-head"><b>'+p+'%</b><span>'+ (message||'Procesando') +'</span></div><div class="generation-progress-track"><i style="width:'+p+'%"></i></div><div class="generation-progress-time">Tiempo transcurrido: '+fmt(elapsed)+(etaText?' · '+etaText.slice(3):'')+'</div></div>');
     };
     try{
-      const minutes=Math.max(1,Math.min(1440,Number($('#scheduleDuration')?.value||60)));
-      const clientEstimate=Math.max(180,Math.round(180+minutes*2.2));
+      const minutes=Math.max(1,Math.min(1440,Number($('#scheduleDuration')?.value||5)));
+      const clientEstimate=Math.max(180,Math.round(180+45+minutes*12));
       status('Iniciando generación… <b>0%</b> · tiempo transcurrido: 0s · estimación inicial: ~'+fmt(clientEstimate));
       const d=await api('/api/daily-video-now',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({durationMinutes:minutes,youtubeMode:true,musicoterapia:true})});
       localStorage.setItem('relaxscape_daily_last_run',new Date().toISOString());
