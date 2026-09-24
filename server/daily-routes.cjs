@@ -303,4 +303,5 @@ async function generateBlueprintMusic(out,blueprint,seed,seconds,onProgress){
   try{const result=await makeVideo({durationMinutes:req.body?.durationMinutes||5,seed:new Date().toISOString().slice(0,10),youtubeMode:true});res.json({ok:true,result});}
   catch(e){res.status(500).json({ok:false,error:e.message});}
  });
+  return app;
 };
