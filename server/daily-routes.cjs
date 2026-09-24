@@ -237,31 +237,17 @@ async function refreshMusicoterapiaTrends(){
 }
 
 function referenceBlueprintFromText(title,analysis,profileKey){
-  const t=(String(title||"")+" "+String(analysis||"")).toLowerCase();
-  const key=profileKey||classifyMusicoterapiaTitle(title);
-  const has=(re)=>re.test(t);
-  const visualSets={
-   focus:["minimalist desk with warm lamp, open notebook and piano keys","sunlit library with books, soft dust in the air","abstract cream and gold light waves, elegant and calm","night study room with window rain and warm lamp"],
-   celtic:["misty stone valley with ancient ruins and soft green light","wooden flute and harp in a candlelit stone room","emerald river gorge with cinematic fog","moonlit Celtic-inspired hall with warm firelight"],
-   deep:["quiet bedroom with linen, moonlight and soft curtains","dark blue star field with slow luminous particles","warm candle beside a sleeping-room window at night","abstract deep-indigo clouds and soft glowing light"],
-   ocean:["underwater blue light caustics over smooth stones","minimal white room with moving ocean reflections","close view of translucent water and floating light","distant moonlit sea with soft horizon"],
-   rain:["rain-covered window with warm interior light","cozy reading room with candle and wood textures","close-up of raindrops and blurred city lights","dark forest seen through a rainy cabin window"],
-   spa:["minimal luxury spa room with candles and stone","silk fabric, warm light and shallow water reflections","close-up of hands-free spa stones and soft steam","tropical wellness interior with diffused morning light"],
-   forest:["misty woodland path with shafts of light","close-up of moss, ferns and a small stream","wooden cabin interior with forest light through windows","abstract green bokeh and slow luminous particles"],
-   zen:["minimal zen room with cushions, candle and soft sunlight","warm stone interior with incense smoke","abstract beige and amber light with subtle particles","quiet architectural space with water reflections"]
-  };
-  const set=visualSets[key==='focus-piano'?'focus':key==='celtic-flute'?'celtic':key==='deep-sleep'?'deep':key==='ocean-meditation'?'ocean':key==='rain-piano'||key==='cabin-rain'?'rain':key==='spa-water'?'spa':key==='forest-flute'||key==='river-meditation'?'forest':'zen'];
-  let subject="original relaxing audiovisual experience";
-  if(has(/estudi|concentr|memor|trabaj/))subject="focus and concentration";
-  else if(has(/dormir|sueño|sleep|descans/))subject="deep sleep";
-  else if(has(/celta|celtic|flauta|flute/))subject="celtic instrumental relaxation";
-  else if(has(/mar|océano|ocean|olas|agua/))subject="ocean meditation";
-  else if(has(/lluvia|rain/))subject="rain relaxation";
-  else if(has(/spa|yoga|masaje|wellness/))subject="spa and wellness";
-  return {key,subject,scenes:set,sourceTitle:String(title||""),analysis:String(analysis||"")};
- }
+  const profile=youtubeProfileFor(profileKey||title||'daily');
+  const scenes=[
+    'abstract flowing light ribbons with soft cinematic glow',
+    'dreamy luminous particles through deep blue and teal gradients',
+    'minimal premium wellness composition with soft volumetric light',
+    'ethereal geometric forms with slow elegant visual rhythm'
+  ];
+  return {key:profileKey||'relax',title:profile.title,subject:profile.title,scenes,visual:profile.visual,music:profile.music,sourceTitle:String(title||''),analysis:String(analysis||'')};
+}
 
- async function getMusicoterapiaReference(seed){
+async function getMusicoterapiaReference(seed){
   await refreshMusicoterapiaTrends();
   const top=trendCache.topVideos||[];
   if(!top.length)return null;
