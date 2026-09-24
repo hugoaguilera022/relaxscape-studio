@@ -5,20 +5,28 @@
   const fmt=(s)=>{s=Math.max(0,Math.round(Number(s)||0));if(s<60)return `${s}s`;const m=Math.floor(s/60),sec=s%60;return sec?`${m} min ${sec}s`:`${m} min`};
   async function runNow(){
     const b=$('#runDailyNow');if(b)b.disabled=true;
+    const started=Date.now();
+    const renderProgress=(percent,message,estimated)=>{
+      const p=Math.max(0,Math.min(100,Number(percent)||0));
+      const elapsed=Math.max(0,Math.round((Date.now()-started)/1000));
+      let eta=estimated;
+      if(p>=5&&p<100) eta=Math.max(0,Math.round(elapsed*(100-p)/p));
+      const etaText=eta!=null?' · quedan ~'+fmt(eta):'';
+      status('Generando vídeo… <b>'+p+'%</b> · '+(message||'Procesando')+' · tiempo transcurrido: '+fmt(elapsed)+etaText);
+    };
     try{
       const minutes=Math.max(1,Math.min(1440,Number($('#scheduleDuration')?.value||60)));
-      const clientEstimate=Math.max(120,Math.round((3+minutes*0.025)*60));
-      status(`Iniciando… tiempo estimado: ${fmt(clientEstimate)}`);
+      const clientEstimate=Math.max(180,Math.round(180+minutes*2.2));
+      status('Iniciando generación… <b>0%</b> · tiempo transcurrido: 0s · estimación inicial: ~'+fmt(clientEstimate));
       const d=await api('/api/daily-video-now',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({durationMinutes:minutes,youtubeMode:true,musicoterapia:true})});
       localStorage.setItem('relaxscape_daily_last_run',new Date().toISOString());
       if(!d.jobId)throw Error('El servidor no devolvió un trabajo de generación.');
-      const started=Date.now(),initial=d.estimatedSeconds||clientEstimate;
-      status(`Generando… tiempo estimado: ${fmt(initial)}`);
+      renderProgress(d.progress||5,d.message||'Preparando generación…',d.estimatedSeconds||clientEstimate);
       for(let i=0;i<3600;i++){
         await new Promise(r=>setTimeout(r,1500));
         const j=await api('/api/daily-video-status?jobId='+encodeURIComponent(d.jobId));
         if(j.status==='succeeded'){
-          status('✓ Vídeo terminado. MP4 listo para visualizar y publicar.');
+          status('✓ <b>100%</b> · Vídeo terminado. Tiempo total: '+fmt((Date.now()-started)/1000)+'. MP4 listo para visualizar y publicar.');
           const v=j.result,video=$('#video'),down=$('#download'),result=$('#result');
           if(video){video.src=v.url+'?v='+Date.now();video.load();}
           if(down){down.href=v.url;down.download=v.name||'relaxscape-daily.mp4'}
@@ -27,8 +35,7 @@
         }
         if(j.status==='failed')throw Error(j.error||'La generación del MP4 falló.');
         if(j.status==='unknown')throw Error('El servidor perdió el trabajo de generación.');
-        const elapsed=Math.round((Date.now()-started)/1000),remaining=j.remainingMinutes;
-        status(`Generando vídeo… ${Number(j.progress||0)}% · ${j.message||'Procesando'}${remaining!=null?` · quedan ~${remaining} min`:''}`);
+        renderProgress(j.progress||0,j.message||'Procesando…',j.estimatedSeconds);
       }
       throw Error('La generación está tardando más de lo esperado.');
     }catch(e){status(e.message||'No se pudo iniciar la generación.',true)}finally{if(b)b.disabled=false}
