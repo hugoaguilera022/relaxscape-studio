@@ -93,3 +93,7 @@ aside{background:#fafafa;border-right:1px solid var(--mono-line)}
 .settings-row{border-color:var(--mono-line)}
 .settings-row p,.settings-account small{color:var(--mono-muted)}
 @media(max-width:850px){aside{background:rgba(250,250,250,.96);border-bottom-color:var(--mono-line)}}
+
+
+/* Daily generation progress */
+.generation-progress{display:grid;gap:9px}.generation-progress-head{display:flex;align-items:center;gap:10px}.generation-progress-head b{font-size:18px;color:var(--mono-text,#171717);min-width:45px}.generation-progress-head span{font-size:11px;color:var(--mono-muted,#777);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.generation-progress-track{height:9px;background:#e9e9e7;border-radius:99px;overflow:hidden}.generation-progress-track i{display:block;height:100%;background:#171717;border-radius:99px;transition:width .5s ease}.generation-progress-time{font-size:10px;color:var(--mono-muted,#777)}
