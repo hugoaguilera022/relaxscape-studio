@@ -254,13 +254,17 @@ async function generateBlueprintMusic(out,blueprint,seed,seconds,onProgress){
   }finally{await fs.promises.rm(work,{recursive:true,force:true}).catch(()=>{})}
  }
 
- app.post('/api/daily-video-now',async(req,res,next)=>{if(req.body?.musicoterapia===true)return next();
-  const id='daily-'+Date.now();jobs.set(id,{status:'running',progress:5,message:'Preparando generación gratuita...'});res.json({jobId:id,status:'running'});
+ app.post('/api/daily-video-now',async(req,res)=>{
+  const id='daily-'+Date.now();
+  const durationMinutes=Math.max(1,Math.min(1440,Number(req.body?.durationMinutes)||60));
+  const estimatedSeconds=Math.max(180,Math.round(180+durationMinutes*2.2));
+  const startedAt=Date.now();
+  jobs.set(id,{status:'running',progress:2,message:'Preparando generación audiovisual...',startedAt,estimatedSeconds});
+  res.json({jobId:id,status:'running',progress:2,message:'Preparando generación audiovisual...',startedAt,estimatedSeconds});
   try{
-   jobs.set(id,{status:'running',progress:5,message:'Preparando referencia y generación audiovisual...'});
-   const result=await makeVideo({durationMinutes:req.body?.durationMinutes||60,seed:id,youtubeMode:req.body?.youtubeMode===true,referenceUrl:req.body?.referenceUrl||null,onProgress:(progress,message)=>jobs.set(id,{status:'running',progress,message})});
-   jobs.set(id,{status:'succeeded',progress:100,message:'Vídeo terminado',result});
-  }catch(e){console.error('[Daily free]',e);jobs.set(id,{status:'failed',progress:0,error:e.message||String(e)});}
+   const result=await makeVideo({durationMinutes,seed:id,youtubeMode:req.body?.youtubeMode===true,referenceUrl:req.body?.referenceUrl||null,onProgress:(progress,message)=>jobs.set(id,{status:'running',progress,message,startedAt,estimatedSeconds})});
+   jobs.set(id,{status:'succeeded',progress:100,message:'Vídeo terminado',startedAt,estimatedSeconds,result});
+  }catch(e){console.error('[Daily free]',e);jobs.set(id,{status:'failed',progress:0,error:e.message||String(e),startedAt,estimatedSeconds});}
  });
  app.get('/api/daily-video-status',async(req,res)=>res.json(jobs.get(String(req.query.jobId))||{status:'unknown'}));
  app.post('/api/daily-video-cron',async(req,res)=>{
