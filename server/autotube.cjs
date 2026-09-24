@@ -42,7 +42,7 @@ async function generate(topic,minutes,job){
  job.stage='Generando voz';job.progress=38;const audio=path.join(dir,'voice.wav');await tts(plan.script,audio);
  job.stage='Generando visuales';const imgs=[];for(let i=0;i<plan.scenes.length;i++){job.progress=40+Math.round(i/plan.scenes.length*30);job.stage='Visual '+(i+1)+'/'+plan.scenes.length;const f=path.join(dir,'scene-'+i+'.jpg');await image(plan.scenes[i].image_prompt,f);imgs.push(f)}
  job.stage='Montando vídeo';job.progress=76;
- const list=path.join(dir,'images.txt'),duration=Math.max(2,Math.min(8,Math.ceil((minutes*60)/imgs.length)));fs.writeFileSync(list,imgs.map(f=>"file '"+f.replace(/'/g,"'\\''")+"'
+ const list=path.join(dir,'images.txt'); const duration=Math.max(2,Math.min(8,Math.ceil((minutes*60)/imgs.length))); const imageList=imgs.map(file=>"file '"+file+"'\nduration "+duration).join("\n")+"\nfile '"+imgs[imgs.length-1]+"'"; fs.writeFileSync(list,imageList);
 duration "+duration).join('\n')+'\nfile \''+imgs[imgs.length-1].replace(/'/g,"'\\''")+'\'');
  const visual=path.join(dir,'visual.mp4');await run(['-y','-f','concat','-safe','0','-i',list,'-vf','scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,format=yuv420p','-r','30','-c:v','libx264','-preset','veryfast','-crf','23','-movflags','+faststart',visual]);
  const name='autotube-'+Date.now()+'.mp4',out=path.join(VIDEOS,name);await run(['-y','-i',visual,'-i',audio,'-map','0:v','-map','1:a','-c:v','copy','-c:a','aac','-b:a','160k','-shortest','-movflags','+faststart',out]);
