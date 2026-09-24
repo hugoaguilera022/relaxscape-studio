@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AutoTube Studio</title><link rel="stylesheet" href="/automation.css"></head>
+<body>
+<header><div class="logo">AUTO<span>TUBE</span> <small>STUDIO</small></div><div class="right"><span id="ytDot" class="dot off"></span><span id="ytStatus">YouTube no conectado</span><a class="ghost" href="/api/youtube/connect">Conectar YouTube</a></div></header>
+<main>
+<section class="hero"><div><p class="eyebrow">AUTOMATIZACIÓN DE YOUTUBE</p><h1>De una idea a un vídeo.<br><em>Automáticamente.</em></h1><p>El flujo está pensado para el proceso del Reel: tema → investigación y guion → narración → decenas de ilustraciones → montaje → YouTube.</p></div><div class="hero-card"><b>1 vídeo / día</b><span>Generación automática</span><span>16:9 · 1080p</span><span>Publicación en YouTube</span></div></section>
+<section class="grid">
+<div class="card main"><div class="head"><div><span class="num">01</span><h2>Crear vídeo</h2><p>Escribe solo el tema. El resto lo prepara la IA.</p></div></div>
+<label>TEMA DEL VÍDEO</label><textarea id="topic" placeholder="Ej.: ¿Por qué caminar descalzo puede cambiar la forma en que funciona tu cuerpo?"></textarea>
+<div class="row"><div><label>DURACIÓN</label><select id="minutes"><option value="5">5 minutos</option><option value="7" selected>7 minutos</option><option value="10">10 minutos</option></select></div><button id="generate" class="primary">Crear vídeo →</button></div>
+<div id="progressBox" class="progress hidden"><div class="phead"><b id="stage">Preparando…</b><b id="percent">0%</b></div><div class="bar"><i id="bar"></i></div><p id="message">Iniciando.</p></div>
+<div id="result" class="result hidden"></div></div>
+<div class="side">
+<div class="card"><span class="num">02</span><h2>YouTube</h2><p>Autoriza tu canal con Google. No guardamos tu contraseña; se usa OAuth.</p><div id="channel" class="channel">Comprobando…</div><a class="primary full" href="/api/youtube/connect">Vincular canal</a></div>
+<div class="card"><span class="num">03</span><h2>Un vídeo diario</h2><p>Define un tema base y la hora. El servidor puede generar y subir un vídeo automáticamente.</p><label>TEMA DIARIO</label><input id="dailyTopic" value="historias y curiosidades sorprendentes"><label>MINUTOS</label><select id="dailyMinutes"><option>5</option><option selected>7</option><option>10</option></select><label>HORA</label><input id="dailyTime" type="time" value="19:00"><button id="saveDaily" class="primary full">Guardar automatización</button><div id="dailyMsg" class="note"></div></div>
+</div></section>
+<section class="pipeline"><h2>Así funciona</h2><div><span>01<br><b>Tema</b></span><i>→</i><span>02<br><b>Guion IA</b></span><i>→</i><span>03<br><b>Narración</b></span><i>→</i><span>04<br><b>Imágenes</b></span><i>→</i><span>05<br><b>Montaje</b></span><i>→</i><span>06<br><b>YouTube</b></span></div></section>
+<section class="note large">El sistema genera material original. No descarga ni copia el vídeo del Reel. Las imágenes se generan de nuevo a partir del guion.</section>
+</main>
+<script src="/automation.js"></script></body></html>
