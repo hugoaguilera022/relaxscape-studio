@@ -1,0 +1,1 @@
+const base=process.env.DAILY_WEB_URL||process.env.RENDER_EXTERNAL_URL;if(!base)throw Error("Falta DAILY_WEB_URL");const r=await fetch(base.replace(/\/$/,"")+"/api/automation/daily",{method:"POST",headers:{"x-automation-secret":String(process.env.AUTOMATION_SECRET||"")}});const t=await r.text();console.log(t);if(!r.ok)process.exit(1);
