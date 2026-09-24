@@ -29,4 +29,4 @@ services:
       - key: AUTOMATION_NICHE
         value: historias sorprendentes, curiosidades y explicaciones visuales de cosas que la mayoría de personas no conoce
       - key: AUTOMATION_MINUTES
-        value: "7"
+        value: "3"
