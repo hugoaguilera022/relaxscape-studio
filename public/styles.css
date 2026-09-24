@@ -97,3 +97,19 @@ aside{background:#fafafa;border-right:1px solid var(--mono-line)}
 
 /* Daily generation progress */
 .generation-progress{display:grid;gap:9px}.generation-progress-head{display:flex;align-items:center;gap:10px}.generation-progress-head b{font-size:18px;color:var(--mono-text,#171717);min-width:45px}.generation-progress-head span{font-size:11px;color:var(--mono-muted,#777);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.generation-progress-track{height:9px;background:#e9e9e7;border-radius:99px;overflow:hidden}.generation-progress-track i{display:block;height:100%;background:#171717;border-radius:99px;transition:width .5s ease}.generation-progress-time{font-size:10px;color:var(--mono-muted,#777)}
+
+
+/* Final light neutral palette — high contrast */
+:root{--mono-bg:#f2f2f0;--mono-panel:#ffffff;--mono-line:#d2d2cf;--mono-text:#171717;--mono-muted:#5f5f5b;--mono-accent:#5556c9;--mono-accent-soft:#e9e9ff}
+body{background:#f2f2f0!important;color:#171717!important}
+header{background:rgba(255,255,255,.97)!important;border-bottom-color:#d2d2cf!important}
+aside{background:#f8f8f6!important;border-right-color:#d2d2cf!important}
+.nav{color:#5f5f5b!important}.nav:hover{background:#e8e8e5!important;color:#171717!important}.nav.active{background:#e3e3e0!important;color:#171717!important}
+.hero,#dashboard .hero,#youtube .hero,#landscapes .hero,#music .hero,#youtubePublish .hero,#schedule .hero,#library .hero{background:#fff!important;border-color:#d2d2cf!important;color:#171717!important}
+.builder,.track,.schedule-card,.video-item,.schedule-panel,.schedule-status-card,.schedule-mini,.ai-card{background:#fff!important;border-color:#d2d2cf!important;color:#171717!important}
+.sub,.builder-head p,.panel-title p,.schedule-main-copy p,.schedule-mini span,.schedule-card p,.note{color:#5f5f5b!important}
+.eyebrow{color:#5556c9!important}.primary{background:#171717!important;color:#fff!important}.ghost{background:#fff!important;color:#171717!important;border-color:#c8c8c5!important}
+.selectbox,.text,.picker,.duration button,.schedule-form input,.schedule-form select{background:#fff!important;color:#171717!important;border-color:#c8c8c5!important}
+.duration button.active{background:#171717!important;color:#fff!important}.pipeline span{background:#e8e8e5!important;color:#5556c9!important}
+.daily-status{background:#fafaf8!important;color:#444!important;border-color:#d2d2cf!important}.generation-progress-head b{color:#171717!important}.generation-progress-head span,.generation-progress-time{color:#5f5f5b!important}.generation-progress-track{background:#dededb!important}.generation-progress-track i{background:#171717!important}
+.account-button{background:#fff!important;color:#171717!important;border-color:#c8c8c5!important}.account-dropdown,.settings-panel{background:#fff!important;color:#171717!important;border-color:#d2d2cf!important}
