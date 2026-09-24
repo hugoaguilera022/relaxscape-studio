@@ -49,26 +49,11 @@ La primera autorización devuelve el refresh token. Guárdalo como secreto `YOUT
 
 ## 4. Programación gratuita
 
-El workflow:
+El workflow `.github/workflows/autotube-daily.yml` se ejecuta diariamente a las **19:05 hora de Madrid** y llama a `POST /api/automation/daily`.
 
-`.github/workflows/autotube-daily.yml`
+El proceso diario ahora reproduce el flujo de producción: tema → investigación → estructura → guion → narración → recursos visuales 16:9 → subtítulos → miniatura → montaje → YouTube.
 
-se ejecuta diariamente a las **19:05 hora de Madrid** y llama a:
-
-`POST /api/automation/daily`
-
-La ejecución diaria:
-1. Elige un tema nuevo.
-2. Genera el guion.
-3. Genera la narración por fragmentos.
-4. Genera las ilustraciones.
-5. Monta el vídeo.
-6. Genera título, descripción y etiquetas.
-7. Lo sube a YouTube.
-
-En GitHub añade dos Secrets:
-- `AUTOTUBE_URL` = URL del nuevo servicio Render.
-- `AUTOMATION_SECRET` = exactamente el mismo valor que pusiste en Render.
+Cada proyecto se organiza temporalmente en `data/projects/<id>` con investigación, estructura, guion, voz, subtítulos, recursos, miniatura y metadatos.
 
 ## 5. Importante
 
