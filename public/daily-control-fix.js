@@ -1,15 +1,15 @@
 (()=>{
   const $=s=>document.querySelector(s);
   const api=async(url,opt={})=>{const r=await fetch(url,opt);const t=await r.text();let d={};try{d=t?JSON.parse(t):{}}catch{};if(!r.ok)throw Error(d.error||`Error ${r.status}`);return d};
-  const status=(msg,err=false)=>{const e=$('#dailyStatus');if(e){e.textContent=(err?'❌ ':'✓ ')+msg;e.classList.toggle('error',err)}};
+  const status=(msg,err=false)=>{const e=$('#dailyStatus');if(e){e.innerHTML=(err?'❌ ':'✓ ')+msg;e.classList.toggle('error',err)}};
   const fmt=(s)=>{s=Math.max(0,Math.round(Number(s)||0));if(s<60)return `${s}s`;const m=Math.floor(s/60),sec=s%60;return sec?`${m} min ${sec}s`:`${m} min`};
   async function runNow(){
     const b=$('#runDailyNow');if(b)b.disabled=true;
     try{
-      const minutes=Math.max(1,Number($('#scheduleDuration')?.value||1)*60);
+      const minutes=Math.max(1,Math.min(1440,Number($('#scheduleDuration')?.value||60)));
       const clientEstimate=Math.max(120,Math.round((3+minutes*0.025)*60));
       status(`Iniciando… tiempo estimado: ${fmt(clientEstimate)}`);
-      const d=await api('/api/daily-video-now',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({durationMinutes:minutes,youtubeMode:true})});
+      const d=await api('/api/daily-video-now',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({durationMinutes:minutes,youtubeMode:true,musicoterapia:true})});
       localStorage.setItem('relaxscape_daily_last_run',new Date().toISOString());
       if(!d.jobId)throw Error('El servidor no devolvió un trabajo de generación.');
       const started=Date.now(),initial=d.estimatedSeconds||clientEstimate;
