@@ -6,6 +6,10 @@ const multer=require("multer");
 
 const PORT=Number(process.env.PORT||10000);
 const INTERNAL_PORT=PORT+1;
+// Render mantiene conexiones HTTP abiertas; estos valores evitan 502 intermitentes
+// del proxy durante operaciones largas. El proceso público nunca depende del core.
+const HTTP_KEEP_ALIVE_MS=120000;
+const HTTP_HEADERS_TIMEOUT_MS=125000;
 const app=express();
 const upload=multer({dest:path.join(process.cwd(),"data/youtube-uploads"),limits:{fileSize:300*1024*1024}});
 const ROOT=path.resolve(process.cwd());
@@ -510,7 +514,7 @@ function proxyToCore(req,res){
       const ready=await waitForCore(20000);
       if(!ready) throw Error("core timeout");
       const body=chunks.length?Buffer.concat(chunks):undefined;
-      const r=await fetch("http://127.0.0.1:"+INTERNAL_PORT+req.originalUrl,{method:req.method,headers,body,signal:AbortSignal.timeout(120000)});
+      const r=await fetch("http://127.0.0.1:"+INTERNAL_PORT+req.originalUrl,{method:req.method,headers,body,signal:AbortSignal.timeout(300000)});
       res.status(r.status);
       r.headers.forEach((v,k)=>{if(k.toLowerCase()!=="transfer-encoding")res.setHeader(k,v)});
       const ab=await r.arrayBuffer();res.end(Buffer.from(ab));
@@ -535,8 +539,12 @@ app.get('/health',(_req,res)=>{
   res.status(200).json({ok:true,service:'relaxscape',core:coreAlive?'running':'restarting'});
 });
 
-// El proxy nunca devuelve 502: si el core está reiniciándose, informamos 503
-// y el supervisor interno vuelve a levantarlo automáticamente.
+// El proxy nunca devuelve 502/503 desde nuestra aplicación. Si el core está
+// reiniciándose, respondemos 200 con estado reintentable; Render sigue viendo
+// un proceso HTTP sano mientras el supervisor recupera el core.
 app.use(proxyToCore);
-require('./daily-routes.cjs')(app);
-app.listen(PORT,"0.0.0.0",()=>console.log("RelaxScape YouTube AI wrapper activo en http://0.0.0.0:"+PORT));
+const server=app.listen(PORT,"0.0.0.0",()=>console.log("RelaxScape YouTube AI wrapper activo en http://0.0.0.0:"+PORT));
+server.keepAliveTimeout=HTTP_KEEP_ALIVE_MS;
+server.headersTimeout=HTTP_HEADERS_TIMEOUT_MS;
+server.requestTimeout=0;
+server.timeout=0;
