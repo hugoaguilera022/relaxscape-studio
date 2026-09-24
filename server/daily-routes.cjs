@@ -1,7 +1,6 @@
 const path=require('path');
 const fs=require('fs');
 const {spawn}=require('child_process');
-const sharp=require('sharp');
 
 module.exports=function registerDailyRoutes(app){
  const ROOT=path.resolve(process.cwd());
