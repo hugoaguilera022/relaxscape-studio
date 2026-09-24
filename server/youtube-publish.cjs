@@ -64,7 +64,7 @@ module.exports=function(app){
   try {
    if(!ready()) return res.json({configured:false,connected:false});
    const sid=sessionSub(req);
-   const ch=await channel();
+   const ch=await channel(req);
    if(!ch)return res.json({configured:true,connected:false,authenticated:!!sid});
    return res.json({configured:true,connected:!!ch,authenticated:true,channel:ch,storage:remoteReady()?"supabase":"local"});
   } catch(e) {
