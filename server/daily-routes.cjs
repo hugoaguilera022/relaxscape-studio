@@ -12,19 +12,18 @@ module.exports=function registerDailyRoutes(app){
  const jobs=new Map();
  const trendCache={at:0,profiles:null,topVideos:[]};
 
- function classifyMusicoterapiaTitle(title){
-  const t=String(title||'').toLowerCase();
-  if(/estudi|concentr|memor|ondas alfa|trabaj/.test(t))return 'focus-piano';
-  if(/celta|celtic|flauta|flute/.test(t))return 'celtic-flute';
-  if(/dormir|sueño|sleep|descans/.test(t))return 'deep-sleep';
-  if(/mar|olas|océano|ocean|agua/.test(t))return 'ocean-meditation';
-  if(/lluvia|rain/.test(t))return 'rain-piano';
-  if(/spa|yoga|masaje|wellness/.test(t))return 'spa-water';
-  if(/bosque|forest|naturaleza|naturaleza|río|river/.test(t))return 'forest-flute';
-  return 'zen-piano';
- }
+ function classifyMusicoterapiaTitle(title='') {
+  const t=String(title).toLowerCase();
+  if (/sleep|sueño|dormir|insomnia|insomnio|deep sleep/.test(t)) return 'sleep';
+  if (/study|estudiar|focus|concentr|concentration|work|trabajar/.test(t)) return 'focus';
+  if (/meditation|meditacion|meditación|mindfulness|zen|relax|relaj/.test(t)) return 'meditation';
+  if (/piano|pian/.test(t)) return 'piano';
+  if (/rain|lluvia|rain sounds|white noise/.test(t)) return 'rain';
+  if (/spa|massage|masaje|healing|sanación|sanacion/.test(t)) return 'spa';
+  return 'relax';
+}
 
- async function refreshMusicoterapiaTrends(){
+async function refreshMusicoterapiaTrends(){
   const key=process.env.YOUTUBE_API_KEY;
   if(!key || Date.now()-trendCache.at<6*60*60*1000)return trendCache.profiles;
   try{
@@ -222,225 +221,22 @@ module.exports=function registerDailyRoutes(app){
   return {provider:'Unsplash',sourceUrl:url};
  }
 
- function youtubeProfileFor(seed){
-  // 12 familias originales basadas en patrones descriptivos de los vídeos más vistos:
-  // zen/anti-estrés, estudio, sueño, mar, agua, celta, flauta, piano y naturaleza.
-  const profiles=[
-   {key:'zen-piano',prompt:'Photorealistic cinematic mountain lake at sunrise, turquoise water, layered alpine mountains, soft golden mist, elegant pine trees, warm peach sky, peaceful healing and anti-stress atmosphere, premium relaxation channel aesthetic, wide 16:9'},
-   {key:'ocean-meditation',prompt:'Photorealistic cinematic tropical ocean at sunrise, crystal turquoise water, quiet sandy beach, gentle waves, distant rocky cliffs, warm glowing horizon, serene meditation and yoga atmosphere, premium relaxation channel aesthetic, wide 16:9'},
-   {key:'focus-piano',prompt:'Photorealistic cinematic Japanese-inspired garden beside a still lake, graceful maple and pine trees, distant mountains, soft morning light, subtle mist, refined concentration and study atmosphere, beautiful natural composition, wide 16:9'},
-   {key:'celtic-flute',prompt:'Photorealistic cinematic emerald Celtic valley, ancient moss-covered forest, winding river, waterfall, dramatic misty mountains, soft overcast daylight, deep green tones, peaceful Celtic healing atmosphere, wide 16:9'},
-   {key:'deep-sleep',prompt:'Photorealistic cinematic moonlit mountain lake at blue hour, dark pine forest, silver moon reflection, faint stars, low mist, deep navy tones, dreamy sleep and night relaxation atmosphere, wide 16:9'},
-   {key:'spa-water',prompt:'Photorealistic cinematic luxury tropical waterfall and lagoon, smooth stones, lush rainforest, palms, golden morning rays through mist, elegant spa and wellness atmosphere, wide 16:9'},
-   {key:'rain-piano',prompt:'Photorealistic cinematic rainy mountain forest, glassy river, soft waterfall, dense green leaves covered in rain, atmospheric fog, cozy peaceful mood, gentle piano relaxation aesthetic, wide 16:9'},
-   {key:'forest-flute',prompt:'Photorealistic cinematic ancient European forest at dawn, tall trees, moss, tiny stream, sunbeams through fog, rich natural greens, intimate wooden flute and meditation atmosphere, wide 16:9'},
-   {key:'sunset-piano',prompt:'Photorealistic cinematic peaceful alpine valley at sunset, orange and pink sky, calm lake reflections, distant mountains, soft haze, emotional but relaxing piano atmosphere, wide 16:9'},
-   {key:'river-meditation',prompt:'Photorealistic cinematic clear river flowing through a lush valley, smooth rocks, small cascades, ferns and trees, soft morning light, tranquil meditation and breathing atmosphere, wide 16:9'},
-   {key:'cabin-rain',prompt:'Photorealistic cinematic remote mountain cabin surrounded by pine forest during gentle rain, misty valley, warm window glow, cozy sleep and stress-relief atmosphere, elegant realistic photography, wide 16:9'},
-   {key:'desert-calm',prompt:'Photorealistic cinematic peaceful desert oasis at golden hour, palm trees, still water, distant mountains, warm amber light, minimalist meditation and deep relaxation atmosphere, premium realistic photography, wide 16:9'}
-  ];
-  const selected=pickWeightedProfile(seed,trendCache.profiles);
-  return profiles.find(p=>p.key===selected)||profiles[hashSeed(seed)%profiles.length];
- }
-
- function promptFor(seed){
-  // Selección basada en los patrones de los vídeos con más reproducciones del canal:
-  // zen/anti-estrés, concentración/estudio, sueño/relajación y estética celta/natural.
-  const themes=[
-   {
-    key:'zen',
-    prompt:'Photorealistic cinematic nature scene for a very long-form zen relaxation and meditation video: crystal-clear mountain lake, lush forest, soft sunrise mist, warm golden light, subtle water reflections, peaceful spa and wellness atmosphere, highly detailed natural landscape, wide 16:9 composition, no people, no buildings, no text, no logos, original scene'
-   },
-   {
-    key:'focus',
-    prompt:'Photorealistic cinematic peaceful nature landscape for concentration, studying and working: elegant Japanese-inspired garden beside a quiet lake, gentle morning light, green trees, soft mist, calm water, refined tranquil atmosphere, beautiful depth, wide 16:9 composition, no people, no buildings, no text, no logos, original scene'
-   },
-   {
-    key:'sleep',
-    prompt:'Photorealistic cinematic night nature landscape for deep sleep and relaxation: quiet lake surrounded by dark pine forest, moonlight reflected on still water, soft blue tones, faint mist, stars, dreamy peaceful atmosphere, wide 16:9 composition, no people, no buildings, no text, no logos, original scene'
-   },
-   {
-    key:'celtic',
-    prompt:'Photorealistic cinematic Celtic-inspired natural landscape for relaxing instrumental music: emerald valley, ancient forest, waterfall and river, distant misty mountains, soft overcast light, magical but realistic atmosphere, rich greens, wide 16:9 composition, no people, no buildings, no text, no logos, original scene'
-   },
-   {
-    key:'spa',
-    prompt:'Photorealistic cinematic tropical spa landscape for relaxation and meditation: tranquil turquoise lagoon, smooth stones, lush palms and rainforest, soft sunrise, gentle water movement, warm natural light, luxurious peaceful wellness atmosphere, wide 16:9 composition, no people, no buildings, no text, no logos, original scene'
-   },
-   {
-    key:'rain',
-    prompt:'Photorealistic cinematic rainy forest for sleep and anxiety relief: lush green woodland, slow river, small waterfall, soft rainfall, atmospheric fog, muted natural colors, intimate peaceful mood, realistic water droplets, wide 16:9 composition, no people, no buildings, no text, no logos, original scene'
-   }
-  ];
-  return themes[hashSeed(seed)%themes.length];
- }
-
- function writeYouTubeWav(out,seconds,seed){
-  const sr=44100,dur=Math.min(300,Math.max(60,seconds)),n=sr*dur;
-  const b=Buffer.alloc(44+n*4);
-  b.write('RIFF',0);b.writeUInt32LE(36+n*4,4);b.write('WAVE',8);
-  b.write('fmt ',12);b.writeUInt32LE(16,16);b.writeUInt16LE(1,20);b.writeUInt16LE(2,22);
-  b.writeUInt32LE(sr,24);b.writeUInt32LE(sr*4,28);b.writeUInt16LE(4,32);b.writeUInt16LE(16,34);
-  b.write('data',36);b.writeUInt32LE(n*4,40);
-  const s=hashSeed(seed),profile=youtubeProfileFor(seed).key;
-  const presets={
-   'zen-piano':{roots:[130.81,164.81,196,261.63],scale:[0,2,4,7,9,11],lead:1},
-   'ocean-meditation':{roots:[110,146.83,164.81,220],scale:[0,2,4,7,9,12],lead:2},
-   'focus-piano':{roots:[130.81,164.81,196,246.94],scale:[0,2,4,7,9,11],lead:1},
-   'celtic-flute':{roots:[146.83,196,220,293.66],scale:[0,3,5,7,10,12],lead:3},
-   'deep-sleep':{roots:[98,123.47,146.83,196],scale:[0,2,3,7,9,10],lead:1},
-   'spa-water':{roots:[110,138.59,164.81,220],scale:[0,2,4,7,9,11],lead:1},
-   'rain-piano':{roots:[110,146.83,164.81,220],scale:[0,2,3,7,9,10],lead:1},
-   'forest-flute':{roots:[130.81,164.81,196,261.63],scale:[0,3,5,7,10,12],lead:3},
-   'sunset-piano':{roots:[110,146.83,174.61,220],scale:[0,2,4,7,9,11],lead:1},
-   'river-meditation':{roots:[123.47,164.81,196,246.94],scale:[0,2,4,7,9,12],lead:2},
-   'cabin-rain':{roots:[98,130.81,164.81,196],scale:[0,2,3,7,9,10],lead:1},
-   'desert-calm':{roots:[110,146.83,164.81,220],scale:[0,2,4,7,9,11],lead:2}
+ function youtubeProfileFor(seed='daily') {
+  const profiles = {
+    piano:{title:'Piano relajante', visual:'abstract cinematic ambient artwork with soft light, flowing gradients, dreamy atmosphere, premium meditation aesthetic, no landscape, no realistic nature', music:'original slow emotional ambient piano, warm felt piano, soft pads, spacious reverb, no vocals, no nature sounds'},
+    meditation:{title:'Meditación profunda', visual:'abstract ethereal meditation artwork, luminous particles, soft gradients, dark blue and teal atmosphere, cinematic AI art, premium wellness aesthetic, no landscape, no literal nature', music:'original deep meditation ambient, warm synth pads, subtle piano, slow evolving textures, no vocals, no nature sounds'},
+    sleep:{title:'Sueño profundo', visual:'dreamy abstract night artwork, soft moon-like glow, stars as subtle particles, dark navy and violet gradients, cinematic AI aesthetic, no landscape', music:'original deep sleep ambient, very slow soft pads, gentle piano notes, warm low frequencies, no vocals, no nature sounds'},
+    focus:{title:'Música para estudiar', visual:'minimal futuristic study ambience, elegant abstract room-like geometry, soft blue lighting, cinematic AI artwork, clean premium composition, no landscape', music:'original focus music, calm piano and subtle electronic ambient layers, steady unobtrusive texture, no vocals, no nature sounds'},
+    rain:{title:'Lluvia para relajarse', visual:'cinematic abstract window atmosphere with soft rain reflections, blue night lighting, bokeh, cozy premium AI artwork, no outdoor landscape', music:'original calming ambient piano with very subtle rain-like texture, no thunder, no vocals, no natural field recordings'},
+    spa:{title:'Spa y relajación', visual:'luxury spa-inspired abstract ambient artwork, soft turquoise water-like light patterns, candles represented as glow, premium cinematic AI aesthetic, no landscape', music:'original spa ambient music, soft piano, airy pads, gentle bells used sparingly, no vocals, no nature sounds'},
+    relax:{title:'Música relajante', visual:'premium abstract relaxation artwork, flowing light ribbons, soft blue teal gradients, dreamy cinematic atmosphere, high-end AI art, no landscape, no literal nature', music:'original relaxing ambient music, soft piano, warm pads, slow evolution, no vocals, no nature sounds'}
   };
-  const p=presets[profile]||presets['zen-piano'];
-  for(let i=0;i<n;i++){
-   const t=i/sr;let l=0,r=0;
-   for(let j=0;j<p.roots.length;j++){
-    const f=p.roots[j],swell=.72+.28*Math.sin(2*Math.PI*t/(54+j*9));
-    const level=.0105/(j+1)*swell;
-    l+=level*(Math.sin(2*Math.PI*f*t)+.16*Math.sin(2*Math.PI*f*2*t+.4));
-    r+=level*(Math.sin(2*Math.PI*f*t+.025)+.14*Math.sin(2*Math.PI*f*2*t+.45));
-   }
-   const bar=Math.floor(t/8),within=t-bar*8,idx=(bar*2+(s%p.scale.length))%p.scale.length;
-   const midi=57+p.scale[idx]+(p.lead===1&&bar%4===3?12:0),nf=440*Math.pow(2,(midi-69)/12);
-   if(within<5.5){
-    const env=Math.exp(-within*.72)*(1-Math.exp(-within*9));
-    const piano=Math.sin(2*Math.PI*nf*t)+.30*Math.sin(2*Math.PI*nf*2*t)+.10*Math.sin(2*Math.PI*nf*3*t);
-    l+=.034*env*piano;r+=.034*env*(piano*.94+.06*Math.sin(2*Math.PI*nf*1.002*t));
-   }
-   const leadF=p.roots[(Math.floor(t/32)+p.lead)%p.roots.length]*2;
-   const leadEnv=.0035*(.5+.5*Math.sin(2*Math.PI*t/32));
-   l+=leadEnv*(Math.sin(2*Math.PI*leadF*t)+.10*Math.sin(2*Math.PI*leadF*2*t));
-   r+=leadEnv*(Math.sin(2*Math.PI*leadF*t+.018)+.10*Math.sin(2*Math.PI*leadF*2*t));
-   if(profile==='ocean-meditation'||profile==='rain-piano'||profile==='cabin-rain'){
-    const tex=.0012*(.5+.5*Math.sin(2*Math.PI*t/(profile==='ocean-meditation'?7.5:5.2)));
-    l+=tex*Math.sin(2*Math.PI*34*t);r+=tex*Math.sin(2*Math.PI*36*t+.2);
-   }
-   const pan=.5+.5*Math.sin(2*Math.PI*t/71),mid=(l+r)*.5,side=(l-r)*.5;
-   l=mid+side*(.55+.45*pan);r=mid-side*(.55+.45*(1-pan));
-   l=Math.max(-.38,Math.min(.38,l));r=Math.max(-.38,Math.min(.38,r));
-   const pos=44+i*4;b.writeInt16LE(Math.round(l*32767),pos);b.writeInt16LE(Math.round(r*32767),pos+2);
-  }
-  fs.writeFileSync(out,b);
- }
+  const keys=Object.keys(profiles);
+  const n=Math.abs(String(seed).split('').reduce((a,ch)=>a+ch.charCodeAt(0),0))%keys.length;
+  return profiles[keys[n]];
+}
 
- function writeWav(out,seconds,seed){
-  // Arquitectura sonora inspirada en los patrones observados en los vídeos más vistos:
-  // cama ambiental + piano/arpio sintético muy suave + textura de flauta/cuerdas +
-  // naturaleza abstracta. Es original y no utiliza ni copia las grabaciones del canal.
-  const sr=44100, dur=Math.min(300,Math.max(60,seconds)), n=sr*dur;
-  const channels=2, bytesPerSample=2;
-  const b=Buffer.alloc(44+n*channels*bytesPerSample);
-  b.write('RIFF',0);b.writeUInt32LE(36+n*channels*bytesPerSample,4);b.write('WAVE',8);
-  b.write('fmt ',12);b.writeUInt32LE(16,16);b.writeUInt16LE(1,20);b.writeUInt16LE(channels,22);
-  b.writeUInt32LE(sr,24);b.writeUInt32LE(sr*channels*bytesPerSample,28);
-  b.writeUInt16LE(channels*bytesPerSample,32);b.writeUInt16LE(16,34);
-  b.write('data',36);b.writeUInt32LE(n*channels*bytesPerSample,40);
-
-  const s=hashSeed(seed), theme=s%6;
-  // El audio usa exactamente el mismo índice temático que promptFor(seed),
-  // para que paisaje, iluminación y música pertenezcan al mismo ambiente.
-  const roots=[[110,132,165,220],[100,120,150,200],[90,108,135,180],[120,144,180,240],[104,130,156,208],[82,98,123,164]][theme];
-  const phases=roots.map((_,i)=>((s+i*97)%1000)/1000*Math.PI*2);
-  const scale=theme===3?[0,3,5,7,10,12]:theme===5?[0,2,3,7,9,10]:[0,2,4,7,9,11];
-  const ambience=[[.0025,7.5],[.0020,10],[.0017,12],[.0014,15],[.0011,20]];
-
-  for(let i=0;i<n;i++){
-    const t=i/sr;
-    let l=0,r=0;
-
-    // 1) Cama armónica continua, muy discreta.
-    for(let j=0;j<roots.length;j++){
-      const f=roots[j];
-      const swell=.72+.28*Math.sin(2*Math.PI*t/(60+j*12));
-      const tone=Math.sin(2*Math.PI*f*t+phases[j]);
-      const airy=Math.sin(2*Math.PI*f*2*t+phases[j]*.7);
-      const level=.009/(j+1)*swell;
-      l+=level*tone+.0015*airy/(j+1);
-      r+=level*Math.sin(2*Math.PI*f*t+phases[j]+.035)+.0015*Math.sin(2*Math.PI*f*2*t+phases[j]*.7+.05)/(j+1);
-    }
-
-    // 2) "Piano/harpa": pequeñas notas espaciadas, sin convertirse en una canción.
-    // El patrón se repite a los 300 s y cambia según la semilla.
-    const bar=Math.floor(t/12), within=t-bar*12;
-    const noteIndex=(bar+(s%7))%scale.length;
-    const midi=57+scale[noteIndex]+(theme===2? -12:0);
-    const nf=440*Math.pow(2,(midi-69)/12);
-    if(within<4.8){
-      const env=Math.exp(-within*(theme===1?.95:1.25))*(1-Math.exp(-within*8));
-      const pluck=Math.sin(2*Math.PI*nf*t)+.32*Math.sin(2*Math.PI*nf*2*t)+.12*Math.sin(2*Math.PI*nf*3*t);
-      const shimmer=Math.sin(2*Math.PI*nf*1.003*t);
-      l+=.020*env*pluck;
-      r+=.020*env*(pluck*.88+shimmer*.12);
-    }
-
-    // 3) Capa sostenida tipo flauta/cuerda, respirando lentamente.
-    const phrase=Math.sin(2*Math.PI*t/36);
-    const fluteF=roots[(Math.floor(t/36)+theme)%roots.length]*2;
-    const fluteEnv=.0045*(.5+.5*phrase);
-    const flute=Math.sin(2*Math.PI*fluteF*t)+.12*Math.sin(2*Math.PI*fluteF*2*t);
-    l+=fluteEnv*flute;
-    r+=fluteEnv*Math.sin(2*Math.PI*fluteF*t+.018)+.0005*Math.sin(2*Math.PI*fluteF*2*t);
-
-    // 4) Campanas/resonancias muy lejanas y poco frecuentes.
-    const pulse=Math.pow(Math.max(0,Math.sin(2*Math.PI*t/19)),14);
-    const shimmer=Math.pow(Math.max(0,Math.sin(2*Math.PI*t/43+1.1)),20);
-    l+=.0038*pulse*Math.sin(2*Math.PI*roots[0]*3*t);
-    r+=.0038*pulse*Math.sin(2*Math.PI*roots[0]*3*t+.04);
-    l+=.0022*shimmer*Math.sin(2*Math.PI*roots[1]*3.5*t);
-    r+=.0022*shimmer*Math.sin(2*Math.PI*roots[1]*3.5*t+.05);
-
-    // 5) Textura de aire/agua abstracta, periódica para que el bloque de 5 min cierre bien.
-    for(const [level,period] of ambience){
-      const a=Math.sin(2*Math.PI*t/period+phases[0]);
-      const b2=Math.sin(2*Math.PI*t/(period*1.5)+phases[1]);
-      l+=level*(a*.65+b2*.35);
-      r+=level*(a*.65+b2*.35);
-    }
-
-    // Estéreo lento y muy suave.
-    const pan=.5+.5*Math.sin(2*Math.PI*t/73);
-    const mid=(l+r)*.5, side=(l-r)*.5;
-    l=mid+side*(.55+.45*pan);
-    r=mid-side*(.55+.45*(1-pan));
-
-    l=Math.max(-.35,Math.min(.35,l));
-    r=Math.max(-.35,Math.min(.35,r));
-    const pos=44+i*4;
-    b.writeInt16LE(Math.round(l*32767),pos);
-    b.writeInt16LE(Math.round(r*32767),pos+2);
-  }
-  fs.writeFileSync(out,b);
- }
-
- async function createYouTubeThumbnail(image,out,title,profileKey){
-  const labels={
-   'zen-piano':['MÚSICA ZEN RELAJANTE','CALMA · MEDITACIÓN · ANTI ESTRÉS'],
-   'ocean-meditation':['MÚSICA PARA MEDITAR','OCÉANO · CALMA · RELAJACIÓN'],
-   'focus-piano':['MÚSICA PARA ESTUDIAR','CONCENTRACIÓN · TRABAJO · ESTUDIO'],
-   'celtic-flute':['MÚSICA CELTA RELAJANTE','FLAUTA · NATURALEZA · RELAJACIÓN'],
-   'deep-sleep':['MÚSICA PARA DORMIR','SUEÑO PROFUNDO · CALMA · DESCANSO'],
-   'spa-water':['MÚSICA RELAJANTE SPA','YOGA · MEDITACIÓN · BIENESTAR'],
-   'rain-piano':['MÚSICA PARA RELAJARSE','LLUVIA · PIANO · NATURALEZA'],
-   'forest-flute':['MÚSICA DE BOSQUE','FLAUTA · MEDITACIÓN · NATURALEZA'],
-   'sunset-piano':['PIANO RELAJANTE','ATARDECER · CALMA · NATURALEZA'],
-   'river-meditation':['MÚSICA PARA MEDITAR','RÍO · NATURALEZA · CALMA'],
-   'cabin-rain':['MÚSICA PARA DORMIR','LLUVIA · BOSQUE · DESCANSO'],
-   'desert-calm':['MÚSICA PARA MEDITAR','OASIS · CALMA · RELAJACIÓN']
-  };
-  const pair=labels[profileKey]||labels['zen-piano'];
-  const esc=v=>String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
-  const svg=Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity=".08"/><stop offset="1" stop-color="#000" stop-opacity=".72"/></linearGradient></defs><rect width="1280" height="720" fill="url(#g)"/><rect x="42" y="34" width="240" height="48" rx="24" fill="#000" fill-opacity=".42"/><text x="162" y="67" text-anchor="middle" font-family="DejaVu Sans,Arial,sans-serif" font-size="25" font-weight="700" fill="white">RELAXSCAPE</text><text x="52" y="535" font-family="DejaVu Sans,Arial,sans-serif" font-size="48" font-weight="700" fill="white">'+esc(pair[0])+'</text><text x="52" y="588" font-family="DejaVu Sans,Arial,sans-serif" font-size="23" font-weight="500" fill="white">'+esc(pair[1])+'</text></svg>');
-  await sharp(image).resize(1280,720,{fit:'cover'}).composite([{input:svg,blend:'over'}]).jpeg({quality:90,mozjpeg:true}).toFile(out);
-  return out;
- }
-
- function referenceBlueprintFromText(title,analysis,profileKey){
+function referenceBlueprintFromText(title,analysis,profileKey){
   const t=(String(title||"")+" "+String(analysis||"")).toLowerCase();
   const key=profileKey||classifyMusicoterapiaTitle(title);
   const has=(re)=>re.test(t);
@@ -516,21 +312,11 @@ module.exports=function registerDailyRoutes(app){
   return files;
  }
 
- function musicPromptForBlueprint(blueprint,seedIndex){
-  const base={
-   'focus-piano':'original instrumental concentration music, felt piano, soft marimba, warm strings, subtle acoustic guitar, 62 BPM, evolving harmonic loop, no vocals, no drums',
-   'celtic-flute':'original Celtic-inspired instrumental, wooden flute, harp, cello and soft piano, 60 BPM, gentle folk phrasing, no vocals, no drums',
-   'deep-sleep':'original deep sleep ambient instrumental, sparse felt piano, warm strings, airy pads, 50 BPM, extremely slow harmonic movement, no vocals, no drums',
-   'ocean-meditation':'original ocean meditation instrumental, piano, nylon guitar, airy flute, soft strings, 56 BPM, flowing phrasing, no vocals, no drums',
-   'rain-piano':'original rainy-night relaxation instrumental, felt piano, cello, soft strings and subtle room ambience, 54 BPM, no vocals, no drums',
-   'spa-water':'original luxury spa instrumental, piano, harp, soft mallets and warm strings, 58 BPM, elegant and minimal, no vocals, no drums',
-   'forest-flute':'original forest meditation instrumental, wooden flute, harp, acoustic guitar and strings, 57 BPM, organic and spacious, no vocals, no drums',
-   'zen-piano':'original zen instrumental, felt piano, soft strings, harp and airy pads, 58 BPM, spacious and meditative, no vocals, no drums'
-  };
-  return (base[blueprint.key]||base['zen-piano'])+' Variation '+seedIndex+', different melody and voicing, never imitate the reference recording.';
- }
+ function musicPromptForBlueprint(blueprint) {
+  return blueprint?.music || 'original premium relaxing ambient music, soft piano and warm pads, slow evolution, no vocals, no nature sounds';
+}
 
- async function generateBlueprintMusic(out,blueprint,seed,seconds,onProgress){
+async function generateBlueprintMusic(out,blueprint,seed,seconds,onProgress){
   const duration=Math.min(600,Math.max(120,seconds));
   const base='https://ace-step-v1-5.hf.space';
   const caption=musicPromptForBlueprint(blueprint,hashSeed(seed)%1000);
