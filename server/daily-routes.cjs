@@ -176,7 +176,7 @@ async function refreshMusicoterapiaTrends(){
   };
  }
 
- async function generateSceneSet(work,blueprint,seed,onProgress){ const files=[]; const scenes=blueprint.scenes||[]; for(let i=0;i<scenes.length;i++){ const prompt='Create completely original cinematic AI artwork for a long-form relaxation music video. '+scenes[i]+'. Theme: '+blueprint.subject+'. Follow the reference subject, setting and visual identity instead of forcing a landscape. Premium wellness aesthetic, cinematic depth, soft blue teal and violet light where appropriate, elegant gradients, subtle luminous particles and dreamy atmosphere. The visual subject may be an interior, person-free activity, object, abstract space, architecture, night scene, underwater-inspired scene or landscape depending on the reference. Never use logos, copied frames, recognizable copyrighted imagery or text. 16:9 premium streaming quality.'; const out=path.join(work,'scene-'+i+'.jpg'); const ok=await generateFreeAIImage(out,prompt,String(seed)+'-scene-'+i); if(ok&&fs.existsSync(out)&&fs.statSync(out).size>10000)files.push(out); if(typeof onProgress==='function')onProgress(22+Math.round((i+1)/scenes.length*18),'Creando arte IA '+(i+1)+'/'+scenes.length+' · '+blueprint.subject+'…'); } return files; }
+ async function generateSceneSet(work,blueprint,seed,onProgress){ const files=[]; const scenes=(blueprint.scenes||[]).slice(0, Number(blueprint.testSceneCount||6)); for(let i=0;i<scenes.length;i++){ const prompt='Create completely original cinematic AI artwork for a long-form relaxation music video. '+scenes[i]+'. Theme: '+blueprint.subject+'. Follow the reference subject, setting and visual identity instead of forcing a landscape. Premium wellness aesthetic, cinematic depth, soft blue teal and violet light where appropriate, elegant gradients, subtle luminous particles and dreamy atmosphere. The visual subject may be an interior, person-free activity, object, abstract space, architecture, night scene, underwater-inspired scene or landscape depending on the reference. Never use logos, copied frames, recognizable copyrighted imagery or text. 16:9 premium streaming quality.'; const out=path.join(work,'scene-'+i+'.jpg'); const ok=await generateFreeAIImage(out,prompt,String(seed)+'-scene-'+i); if(ok&&fs.existsSync(out)&&fs.statSync(out).size>10000)files.push(out); if(typeof onProgress==='function')onProgress(22+Math.round((i+1)/scenes.length*18),'Creando arte IA '+(i+1)+'/'+scenes.length+' · '+blueprint.subject+'…'); } return files; }
 
  function musicPromptForBlueprint(blueprint) {
   return blueprint?.music || 'original premium relaxing ambient music, soft piano and warm pads, slow evolution, no vocals, no nature sounds';
@@ -241,6 +241,8 @@ async function generateBlueprintMusic(out,blueprint,seed,seconds,onProgress){
    }
    const profileKey=ref?.profile||classifyMusicoterapiaTitle(ref?.title||'');
    const blueprint=referenceBlueprintFromText(ref?.title||'',analysis?.videoAnalysis||'',profileKey);
+   // Prueba de 1 minuto: dos escenas bastan para validar el resultado sin saturar Render.
+   if(minutes<=1)blueprint.testSceneCount=2;
    if(analysis?.audioAnalysis)blueprint.analysis+=' Audio: '+analysis.audioAnalysis.slice(-900);
    progress(18,youtubeMode?'Analizando estilo, escenas y ritmo de la referencia…':'Preparando concepto audiovisual…');
    const scenes=await generateSceneSet(work,blueprint,seed,progress);
@@ -285,7 +287,7 @@ async function generateBlueprintMusic(out,blueprint,seed,seconds,onProgress){
 
  app.post('/api/daily-video-now',async(req,res)=>{
   const id='daily-'+Date.now();
-  const durationMinutes=Math.max(1,Math.min(1440,Number(req.body?.durationMinutes)||60));
+  const durationMinutes=Math.max(1,Math.min(1440,Number(req.body?.durationMinutes)||5));
   const estimatedSeconds=Math.max(180,Math.round(180+durationMinutes*2.2));
   const startedAt=Date.now();
   jobs.set(id,{status:'running',progress:2,message:'Preparando generación audiovisual...',startedAt,estimatedSeconds});
