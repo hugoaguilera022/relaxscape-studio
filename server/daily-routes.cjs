@@ -120,7 +120,7 @@ async function refreshMusicoterapiaTrends(){
   }catch(e){return null;}
  }
 
- async function generateAceStep(out,seed,seconds,onProgress){ const profile=youtubeProfileFor(seed); return generateBlueprintMusic(out,{music:profile.music,subject:profile.title},seed,seconds,onProgress); }
+ async function generateAceStep(out,seed,seconds,onProgress){ return generateBlueprintMusic(out,{music:'original premium relaxing ambient music, soft piano, warm pads, slow evolving harmony, spacious reverb, no vocals, no nature sounds',subject:'deep relaxation'},seed,seconds,onProgress); }
 
  async function getMusicoterapiaReference(seed){
   await refreshMusicoterapiaTrends();
