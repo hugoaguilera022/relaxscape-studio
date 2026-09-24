@@ -147,7 +147,37 @@ async function refreshMusicoterapiaTrends(){
   }
  }
 
- async function generateSceneSet(work,blueprint,seed,onProgress){ const files=[]; const scenes=blueprint.scenes||[]; for(let i=0;i<scenes.length;i++){ const prompt='Create completely original cinematic AI artwork for a long-form relaxation music video. '+scenes[i]+'. Theme: '+blueprint.subject+'. Abstract premium wellness aesthetic, soft blue teal and violet light, elegant gradients, luminous particles, dreamy atmosphere. No landscape, mountains, forest, ocean, animals, realistic nature, field recording imagery, text or logos. 16:9 premium streaming quality.'; const out=path.join(work,'scene-'+i+'.jpg'); const ok=await generateFreeAIImage(out,prompt,String(seed)+'-scene-'+i); if(ok&&fs.existsSync(out)&&fs.statSync(out).size>10000)files.push(out); if(typeof onProgress==='function')onProgress(22+Math.round((i+1)/scenes.length*18),'Creando arte IA '+(i+1)+'/'+scenes.length+' · '+blueprint.subject+'…'); } return files; }
+
+ function referenceBlueprintFromText(title='',analysis='',profileKey='relax'){
+  const t=(String(title)+' '+String(analysis)).toLowerCase();
+  const profiles={
+   sleep:{key:'sleep',subject:'deep sleep and nighttime calm',music:'original deep sleep ambient music, very soft piano, warm sustained pads, slow harmonic movement, spacious reverb, no vocals, no nature sounds'},
+   focus:{key:'focus',subject:'deep focus and concentration',music:'original focus ambient music, soft piano motifs, warm pads, subtle pulse, steady slow evolution, no vocals, no nature sounds'},
+   meditation:{key:'meditation',subject:'meditation and inner calm',music:'original meditation ambient music, delicate piano, warm pads, long sustained tones, very slow evolution, no vocals, no nature sounds'},
+   piano:{key:'piano',subject:'intimate piano relaxation',music:'original relaxing piano ambient music, felt piano, warm pads, spacious reverb, slow expressive phrasing, no vocals, no nature sounds'},
+   rain:{key:'rain',subject:'cozy rain-inspired relaxation atmosphere',music:'original calm ambient music, soft piano, warm pads, gentle repetitive rhythm, no vocals, no recorded nature sounds'},
+   spa:{key:'spa',subject:'premium spa and wellness atmosphere',music:'original spa ambient music, soft piano, warm pads, airy textures, slow evolution, no vocals, no nature sounds'},
+   relax:{key:'relax',subject:'deep relaxation and emotional calm',music:'original premium relaxing ambient music, soft piano, warm pads, slow evolving harmony, spacious reverb, no vocals, no nature sounds'}
+  };
+  const base=profiles[profileKey]||profiles.relax;
+  const scenes=[
+   'Opening composition that establishes the main subject, setting and emotional tone described by the reference analysis.',
+   'A second composition focused on the most recognizable visual element, activity or object from the reference, with slow cinematic movement.',
+   'A closer, more immersive variation of the reference subject, emphasizing texture, light, depth and atmosphere.',
+   'A wider or alternative composition of the same subject and mood, changing framing and visual rhythm without becoming generic.',
+   'A calm transitional composition that preserves the reference identity while introducing subtle new visual details.',
+   'A final serene composition that gradually simplifies the visual movement and sustains the relaxing mood.'
+  ];
+  const context=String(analysis||'').trim();
+  return {
+   ...base,
+   title:String(title||''),
+   analysis:context,
+   scenes:scenes.map(s=>s+' Reference title: '+String(title||'').slice(0,220)+'. Reference analysis: '+context.slice(0,1200))
+  };
+ }
+
+ async function generateSceneSet(work,blueprint,seed,onProgress){ const files=[]; const scenes=blueprint.scenes||[]; for(let i=0;i<scenes.length;i++){ const prompt='Create completely original cinematic AI artwork for a long-form relaxation music video. '+scenes[i]+'. Theme: '+blueprint.subject+'. Follow the reference subject, setting and visual identity instead of forcing a landscape. Premium wellness aesthetic, cinematic depth, soft blue teal and violet light where appropriate, elegant gradients, subtle luminous particles and dreamy atmosphere. The visual subject may be an interior, person-free activity, object, abstract space, architecture, night scene, underwater-inspired scene or landscape depending on the reference. Never use logos, copied frames, recognizable copyrighted imagery or text. 16:9 premium streaming quality.'; const out=path.join(work,'scene-'+i+'.jpg'); const ok=await generateFreeAIImage(out,prompt,String(seed)+'-scene-'+i); if(ok&&fs.existsSync(out)&&fs.statSync(out).size>10000)files.push(out); if(typeof onProgress==='function')onProgress(22+Math.round((i+1)/scenes.length*18),'Creando arte IA '+(i+1)+'/'+scenes.length+' · '+blueprint.subject+'…'); } return files; }
 
  function musicPromptForBlueprint(blueprint) {
   return blueprint?.music || 'original premium relaxing ambient music, soft piano and warm pads, slow evolution, no vocals, no nature sounds';
