@@ -543,7 +543,8 @@ app.get('/health',(_req,res)=>{
 // reiniciándose, respondemos 200 con estado reintentable; Render sigue viendo
 // un proceso HTTP sano mientras el supervisor recupera el core.
 app.use(proxyToCore);
-const server=app.listen(PORT,"0.0.0.0",()=>console.log("RelaxScape YouTube AI wrapper activo en http://0.0.0.0:"+PORT));
+const server=require('./daily-routes.cjs')(app);
+app.listen(PORT,"0.0.0.0",()=>console.log("RelaxScape YouTube AI wrapper activo en http://0.0.0.0:"+PORT));
 server.keepAliveTimeout=HTTP_KEEP_ALIVE_MS;
 server.headersTimeout=HTTP_HEADERS_TIMEOUT_MS;
 server.requestTimeout=0;
