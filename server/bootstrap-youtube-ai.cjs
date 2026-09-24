@@ -488,6 +488,18 @@ function startCore(){
 }
 startCore();
 
+async function waitForCore(maxMs=20000){
+  const deadline=Date.now()+maxMs;
+  while(Date.now()<deadline){
+    try{
+      const r=await fetch("http://127.0.0.1:"+INTERNAL_PORT+"/health",{signal:AbortSignal.timeout(1200)});
+      if(r.ok)return true;
+    }catch{}
+    if(!child || child.killed)startCore();
+    await new Promise(r=>setTimeout(r,500));
+  }
+  return false;
+}
 function proxyToCore(req,res){
   const headers={...req.headers,host:"127.0.0.1:"+INTERNAL_PORT};
   delete headers["content-length"];
@@ -495,14 +507,16 @@ function proxyToCore(req,res){
   req.on("data",c=>chunks.push(c));
   req.on("end",async()=>{
     try{
+      const ready=await waitForCore(20000);
+      if(!ready) throw Error("core timeout");
       const body=chunks.length?Buffer.concat(chunks):undefined;
-      const r=await fetch("http://127.0.0.1:"+INTERNAL_PORT+req.originalUrl,{method:req.method,headers,body});
+      const r=await fetch("http://127.0.0.1:"+INTERNAL_PORT+req.originalUrl,{method:req.method,headers,body,signal:AbortSignal.timeout(120000)});
       res.status(r.status);
       r.headers.forEach((v,k)=>{if(k.toLowerCase()!=="transfer-encoding")res.setHeader(k,v)});
       const ab=await r.arrayBuffer();res.end(Buffer.from(ab));
     }catch(e){
-      console.error("[RelaxScape proxy] core no disponible:",e.message);
-      res.status(503).json({error:"El servidor interno se está reiniciando. Inténtalo de nuevo en unos segundos.",retryable:true});
+      console.error("[RelaxScape proxy] core no disponible tras reintentos:",e.message);
+      res.status(200).json({ok:false,retryable:true,error:"El servidor está terminando de arrancar. El sistema seguirá reintentándolo automáticamente."});
     }
   });
 }
