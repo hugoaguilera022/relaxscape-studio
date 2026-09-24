@@ -1,7 +1,7 @@
 (()=>{
   const $=s=>document.querySelector(s);
   const api=async(url,opt={})=>{const r=await fetch(url,opt);const t=await r.text();let d={};try{d=t?JSON.parse(t):{}}catch{};if(!r.ok)throw Error(d.error||`Error ${r.status}`);return d};
-  const status=(msg,err=false)=>{const e=$('#dailyStatus');if(e){e.innerHTML=(err?'❌ ':'✓ ')+msg;e.classList.toggle('error',err)}};
+  const status=(msg,err=false)=>{const e=$('#dailyStatus');if(e){e.innerHTML=(err?'❌ ':'')+msg;e.classList.toggle('error',err)}};
   const fmt=(s)=>{s=Math.max(0,Math.round(Number(s)||0));if(s<60)return `${s}s`;const m=Math.floor(s/60),sec=s%60;return sec?`${m} min ${sec}s`:`${m} min`};
   async function runNow(){
     const b=$('#runDailyNow');if(b)b.disabled=true;
@@ -12,7 +12,7 @@
       let eta=estimated;
       if(p>=5&&p<100) eta=Math.max(0,Math.round(elapsed*(100-p)/p));
       const etaText=eta!=null?' · quedan ~'+fmt(eta):'';
-      status('Generando vídeo… <b>'+p+'%</b> · '+(message||'Procesando')+' · tiempo transcurrido: '+fmt(elapsed)+etaText);
+      status('<div class="generation-progress"><div class="generation-progress-head"><b>'+p+'%</b><span>'+ (message||'Procesando') +'</span></div><div class="generation-progress-track"><i style="width:'+p+'%"></i></div><div class="generation-progress-time">Tiempo transcurrido: '+fmt(elapsed)+(etaText?' · '+etaText.slice(3):'')+'</div></div>');
     };
     try{
       const minutes=Math.max(1,Math.min(1440,Number($('#scheduleDuration')?.value||60)));
