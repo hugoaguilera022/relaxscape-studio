@@ -2625,19 +2625,7 @@ app.post("/api/mux-video-audio", async (req, res) => {
 
 app.get("/health", (_, res) => res.json({ ok: true, service: "RelaxScape", musicEngine: MUSIC_ENGINE_VERSION }));
 
-try {
-  const rawHour = Number(process.env.DAILY_VIDEO_HOUR ?? 7);
-  const hour = Number.isInteger(rawHour) && rawHour >= 0 && rawHour <= 23 ? rawHour : 7;
-  cron.schedule("5 * * * *", async () => {
-    const local = madridHour();
-    if (local.hour === hour && local.minute < 15) {
-      await runDailyWithRetry();
-    }
-  });
-  console.log("[Cron] Comprobador horario activo:", DAILY_TIME_ZONE, hour + ":00");
-} catch (e) {
-  console.error("[Cron] Desactivado por configuración inválida:", e.message);
-}
+// La producción automática de vídeos se gestiona exclusivamente desde daily-routes.cjs.
 
 process.on("unhandledRejection", e => console.error("[UnhandledRejection]", e));
 process.on("uncaughtException", e => console.error("[UncaughtException]", e));
