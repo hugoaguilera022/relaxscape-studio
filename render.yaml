@@ -1,44 +1,30 @@
 services:
   - type: web
-    name: relaxscape-studio
+    name: autotube-studio
     runtime: node
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /health
     envVars:
-      - key: NODE_ENV
-        value: production
-      - key: DAILY_VIDEO_HOUR
-        value: "05:00"
-      - key: DAILY_TIMEZONE
-        value: "Europe/Madrid"
-      - key: DAILY_WEB_URL
-        value: https://relaxscape-studio.onrender.com
-
-  - type: cron
-    name: relaxscape-daily-video
-    runtime: node
-    schedule: "0 * * * *"
-    buildCommand: npm install
-    startCommand: node daily-cron.cjs
-    envVars:
-      - key: DAILY_WEB_URL
-        value: https://relaxscape-studio.onrender.com
-      - key: DAILY_VIDEO_HOUR
-        value: "05:00"
-      - key: DAILY_TIMEZONE
-        value: "Europe/Madrid"
-
-  - type: cron
-    name: relaxscape-youtube-daily
-    runtime: node
-    schedule: "0 7 * * *"
-    buildCommand: npm install
-    startCommand: node youtube-daily-cron.cjs
-    envVars:
-      - key: DAILY_WEB_URL
-        value: https://relaxscape-studio.onrender.com
-      - key: YOUTUBE_DAILY_MINUTES
-        value: "60"
-      - key: YOUTUBE_PUBLISH_SECRET
+      - key: GEMINI_API_KEY
         sync: false
+      - key: GEMINI_TEXT_MODEL
+        value: gemini-2.5-flash
+      - key: HF_TOKEN
+        sync: false
+      - key: HF_TTS_MODEL
+        value: facebook/mms-tts-spa
+      - key: YOUTUBE_CLIENT_ID
+        sync: false
+      - key: YOUTUBE_CLIENT_SECRET
+        sync: false
+      - key: YOUTUBE_REDIRECT_URI
+        sync: false
+      - key: YOUTUBE_REFRESH_TOKEN
+        sync: false
+      - key: AUTOMATION_SECRET
+        sync: false
+      - key: AUTOMATION_NICHE
+        value: historias sorprendentes, curiosidades, ciencia, historia y explicaciones
+      - key: AUTOMATION_MINUTES
+        value: "7"
