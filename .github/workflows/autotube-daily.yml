@@ -1,0 +1,27 @@
+name: AutoTube — vídeo diario
+
+on:
+  schedule:
+    - cron: "5 19 * * *"
+      timezone: "Europe/Madrid"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Lanzar generación y publicación diaria
+        env:
+          AUTOTUBE_URL: ${{ secrets.AUTOTUBE_URL }}
+          AUTOMATION_SECRET: ${{ secrets.AUTOMATION_SECRET }}
+        run: |
+          set -euo pipefail
+          test -n "$AUTOTUBE_URL"
+          test -n "$AUTOMATION_SECRET"
+          echo "Lanzando AutoTube..."
+          curl --fail --show-error --silent             --max-time 1700             -H "x-automation-secret: $AUTOMATION_SECRET"             -X POST "$AUTOTUBE_URL/api/automation/daily"
+          echo "Proceso diario finalizado."
