@@ -224,8 +224,8 @@ async function generateBlueprintMusic(out,blueprint,seed,seconds,onProgress){
  }
 
 
- async function makeVideo({durationMinutes=60,seed='daily',youtubeMode=false,onProgress,referenceUrl=null}){
-  const minutes=Math.max(1,Math.min(1440,Number(durationMinutes)||60)),seconds=Math.max(60,minutes*60);
+ async function makeVideo({durationMinutes=5,seed='daily',youtubeMode=false,onProgress,referenceUrl=null}){
+  const minutes=Math.max(1,Math.min(1440,Number(durationMinutes)||5)),seconds=Math.max(60,minutes*60);
   const stamp=new Date().toISOString().replace(/[:.]/g,'-');
   const work=path.join(TEMP_DIR,'daily-work-'+stamp);
   const out=path.join(VIDEO_DIR,'daily-'+stamp+'.mp4');
@@ -298,7 +298,7 @@ async function generateBlueprintMusic(out,blueprint,seed,seconds,onProgress){
  app.get('/api/daily-video-status',async(req,res)=>res.json(jobs.get(String(req.query.jobId))||{status:'unknown'}));
  app.post('/api/daily-video-cron',async(req,res)=>{
   const secret=process.env.DAILY_CRON_SECRET;if(secret&&req.get('x-daily-secret')!==secret)return res.status(401).json({error:'Unauthorized'});
-  try{const result=await makeVideo({durationMinutes:req.body?.durationMinutes||60,seed:new Date().toISOString().slice(0,10),youtubeMode:true});res.json({ok:true,result});}
+  try{const result=await makeVideo({durationMinutes:req.body?.durationMinutes||5,seed:new Date().toISOString().slice(0,10),youtubeMode:true});res.json({ok:true,result});}
   catch(e){res.status(500).json({ok:false,error:e.message});}
  });
 };
