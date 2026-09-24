@@ -538,4 +538,5 @@ app.get('/health',(_req,res)=>{
 // El proxy nunca devuelve 502: si el core está reiniciándose, informamos 503
 // y el supervisor interno vuelve a levantarlo automáticamente.
 app.use(proxyToCore);
+require('./daily-routes.cjs')(app);
 app.listen(PORT,"0.0.0.0",()=>console.log("RelaxScape YouTube AI wrapper activo en http://0.0.0.0:"+PORT));
