@@ -1,18 +1,5 @@
 {
-  "name": "relaxscape-video-generator",
-  "version": "1.0.0",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "start": "node server/launcher.cjs",
-    "dev": "node --watch server/index.js"
-  },
-  "dependencies": {
-    "cors": "^2.8.5",
-    "express": "^5.1.0",
-    "ffmpeg-static": "^5.2.0",
-    "multer": "^2.0.2",
-    "node-cron": "^4.2.1",
-    "@huggingface/inference": "^4.13.4"
-  }
+  "name":"autotube-studio","version":"1.0.0","private":true,"type":"commonjs",
+  "scripts":{"start":"node server/autotube.cjs"},
+  "dependencies":{"express":"^5.1.0","ffmpeg-static":"^5.2.0","@huggingface/inference":"^4.13.4","googleapis":"^144.0.0"}
 }
